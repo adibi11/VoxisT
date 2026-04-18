@@ -2,10 +2,12 @@ import Redis from "ioredis";
 import { ConversationCacheState } from "../Types/messageTypes";
 import { ICacheManager } from "./cacheInterface";
 
-export const redisClient = new Redis({
+export const connection ={
   host: "127.0.0.1",
   port: 6379,
-});
+}
+
+export const redisClient = new Redis(connection);
 
 export class RedisCacheManager implements ICacheManager {
 
