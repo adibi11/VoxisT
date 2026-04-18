@@ -21,6 +21,20 @@ export class RedisCacheManager implements ICacheManager {
         const key = `conversation:${clientId}:${businessId}`;
         await redisClient.set(key, JSON.stringify(state));
     }
+    async setCacheConversationKey(clientId: number, businessId: number, conversationKey: string): Promise<void> {
+        const key = `conversationKey:${clientId}:${businessId}`;
+        await redisClient.set(key, conversationKey);
+    }
+    async getCacheConversationKey(clientId: number, businessId: number): Promise<string | null> {
+        const key = `conversationKey:${clientId}:${businessId}`;
+        const data = await redisClient.get(key);
+        return data || null;
+    }
+    async releaseCacheConversationKey(clientId: number, businessId: number): Promise<void> {
+        const key = `conversationKey:${clientId}:${businessId}`;
+        await redisClient.del(key);
+    }
+
 }
 
 
