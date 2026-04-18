@@ -10,4 +10,5 @@ export interface ISqlInterface {
     createDbConversation(clientId: number, businessId: number,content: string): Promise<void>;
     createDbBusiness(businessDto: BusinessDto): Promise<void>;
     getOrCreateClientByPhone(phoneNumber:string):Promise<Client>;
+    upsertParamAnswer(clientId: number, conversationId: number,businessId: number, paramName: string, paramValue: string): Promise<void>;
 }

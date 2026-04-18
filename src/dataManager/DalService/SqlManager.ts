@@ -178,4 +178,52 @@ export class SqlManager implements ISqlInterface {
         };
         return mappedClient;
     }
+    async upsertParamAnswer(
+        clientId: number,
+        conversationId: number,
+        businessId: number,
+        paramName: string,
+        paramValue: string
+        ): Promise<void> {
+
+        const param = await this.prisma.businessParameter.findFirst({
+            where: {
+            businessId,
+            paramName
+            }
+        });
+
+        if (!param) {
+            console.log("Param not found");
+            return;
+        }
+
+        const existing = await this.prisma.parameterAnswer.findFirst({
+            where: {
+            clientId,
+            conversationId,
+            paramId: param.id
+            }
+        });
+
+        if (existing) {
+            await this.prisma.parameterAnswer.update({
+            where: {
+                id: existing.id
+            },
+            data: {
+                paramAnswer: paramValue
+            }
+            });
+        } else {
+            await this.prisma.parameterAnswer.create({
+            data: {
+                clientId,
+                conversationId,
+                paramId: param.id,
+                paramAnswer: paramValue
+            }
+            });
+        }
+    }
 }
