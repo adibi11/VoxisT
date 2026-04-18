@@ -1,0 +1,107 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Message {
+  id             Int           @id @default(autoincrement())
+  externalId     String        @unique
+  type           MessageType
+  content        String
+  status         MessageStatus
+  createdAt      DateTime      @default(now())
+
+  conversationId Int
+  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+}
+
+model Conversation {
+  id                   Int                  @id @default(autoincrement())
+  conclusion           String?
+  conversationStatus   ConversationStatus
+  createdAt            DateTime             @default(now())
+
+  businessId           Int
+  clientId             Int
+  
+  business             Business             @relation(fields: [businessId], references: [id])
+  client               Client               @relation(fields: [clientId], references: [id])
+  messages             Message[]
+  parameterAnswers     ParameterAnswer[]
+}
+
+model Business {
+  id             Int              @id @default(autoincrement())
+  businessName   String
+  businessPhone  String
+  businessEmail  String
+  conversations  Conversation[]
+  parameters     BusinessParameter[]
+}
+
+model Client {
+  id             Int              @id @default(autoincrement())
+  phoneNumber    String           @unique
+  
+
+  conversations  Conversation[]
+  answers        ParameterAnswer[]
+}
+
+model BusinessParameter {
+  id             Int       @id @default(autoincrement())
+  paramName      String
+  businessId     Int
+
+  business       Business  @relation(fields: [businessId], references: [id])
+  answers        ParameterAnswer[]
+
+  @@unique([businessId, paramName])
+}
+
+model ParameterAnswer {
+  id             Int       @id @default(autoincrement())
+  paramAnswer    String
+  createdAt      DateTime  @default(now())
+
+  clientId       Int
+  paramId        Int
+  conversationId Int
+
+  client         Client             @relation(fields: [clientId], references: [id])
+  businessParameter BusinessParameter @relation(fields: [paramId], references: [id])
+  conversation   Conversation       @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, paramId])
+}
+
+enum MessageStatus {
+  received
+  processing
+  completed
+  failed
+}
+
+enum ConversationStatus {
+  start
+  middle
+  done
+  failed
+}
+
+enum MessageType {
+  user
+  bot
+  system
+}

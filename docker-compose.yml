@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:latest
+    container_name: voxis_redis
+    ports:
+      - "6379:6379"
+    
+    
+    
+  postgres:
+    image: postgres:latest
+    container_name: voxis_postgres
+    environment:
+      POSTGRES_USER: voxis_user
+      POSTGRES_PASSWORD: voxis_password
+      POSTGRES_DB: voxis_db
+    ports:
+      - "5432:5432"
+    
