@@ -9,19 +9,19 @@ type ChatMessage = {
 type ConversationCacheState = {
   conversationId: number;
   lastMessages: ChatMessage[];
-  collectedParams: Record<string, string | null>;
+  collectedParams: Record<string,any>;
   updatedAt: Date;
 };
 
 // 🔹 input/output של LLM
 type LLMInput = {
   messages: ChatMessage[];
-  collectedParams: Record<string, string | null>;
+  collectedParams: Record<string, any>;
 };
 
 type LLMOutput = {
   response: string;
-  extractedParams?: Record<string, string>;
+  collectedParams?: Record<string,any>;
 };
 
 function createMockState(): ConversationCacheState {
@@ -59,7 +59,6 @@ function applyLLMResult(
   userMessage: string,
   result: LLMOutput
 ) {
-
   state.lastMessages.push({
     role: "user",
     content: userMessage
@@ -70,8 +69,8 @@ function applyLLMResult(
     content: result.response
   });
 
-  if (result.extractedParams) {
-    for (const [key, value] of Object.entries(result.extractedParams)) {
+  if (result.collectedParams) {
+    for (const [key, value] of Object.entries(result.collectedParams)) {
       state.collectedParams[key] = value;
     }
   }

@@ -1,20 +1,24 @@
-import { Message } from "../dataManager/Types/apiTypes";
+import { Message } from "../dataClients/Types/apiTypes";
 
-import { ActionType } from "../dataManager/Types/apiTypes";
+import { ActionType } from "../dataClients/Types/apiTypes";
 
-import { ICacheManager } from "../dataManager/CacheManager/cacheInterface";
+import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 
-import { ISqlInterface } from "../dataManager/DalService/sqlInterface";
-import { ConversationCacheState } from "../dataManager/Types/messageTypes";
+import { ISqlInterface } from "../dataClients/SqlClient/sqlInterface";
+import { ConversationCacheState } from "../dataClients/Types/messageTypes";
+import { ILlmProvider } from "../llm/llmInterface";
+import { LlmPipeline } from "./messageApply";
 
 
 export class MessageService {
     private cacheManager: ICacheManager;
     private sqlInterface: ISqlInterface;
+    private llmPiplne: LlmPipeline;
 
-    constructor(cacheManager: ICacheManager, sqlInterface: ISqlInterface) {
+    constructor(cacheManager: ICacheManager, sqlInterface: ISqlInterface,llm:ILlmProvider) {
         this.cacheManager = cacheManager;
         this.sqlInterface = sqlInterface;
+        this.llmPiplne = new LlmPipeline(llm);
     }
 
     async  processMessage(message: Message) {
@@ -65,7 +69,13 @@ export class MessageService {
                     return;
                 }
             }
-            console.log("Current conversation state:", conversationState);
+            try{
+                await this.llmPiplne.applyPipline(conversationState,message.data.Body)
+            }
+            catch{
+                throw("LLM Failed interpreting");
+                //Implement fall back in the future for unsuccessfull response.
+            }
             await this.handleCreateMessages(message, conversationState!);
             await this.cacheManager.setCacheState(client.id, message.businessId || 1, conversationState!);
 
@@ -89,9 +99,7 @@ export class MessageService {
             "bot": botResponse
         }
         await this.syncCacheToDb(message.data.clientId, message.businessId || 1, conversationState,responses);
-        conversationState.lastMessages.push({ role: "user", content: message.content });
-        conversationState.lastMessages.push({ role: "bot", content: botResponse });
-        conversationState.updatedAt = new Date();
+        
     }
 
     async syncCacheToDb(clientId: number, businessId: number, conversationState: ConversationCacheState,messages:Record<string, string>) {
@@ -107,7 +115,7 @@ export class MessageService {
         );
         for (const [paramName, paramValue] of Object.entries(conversationState.collectedParams)) {
             if (paramValue) {
-                await this.sqlInterface.upsertParamAnswer(clientId, conversationState.conversationId, businessId, paramName, paramValue);
+                await this.sqlInterface.upsertParamAnswer(clientId, conversationState.conversationId, businessId, paramName, paramValue.toString());
             }
         }
     }

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { OpenAI } from "openai";
-import { LlmInput,LlmOutput } from "../dataManager/Types/llmTypes";
+import { LlmInput,LlmOutput } from "../dataClients/Types/llmTypes";
 import { ILlmProvider } from "./llmInterface";
 import { buildPrompt ,parseResponse} from "./promptHandler";
 

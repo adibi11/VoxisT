@@ -1,9 +1,9 @@
 import express from "express";
 import { QueueManager } from "./QueueManager/queue";
-import { JobData,ActionType } from "./dataManager/Types/apiTypes";
-import { twillioMessage } from "./dataManager/Types/apiTypes";
-import { BusinessDto } from "./dataManager/Types/apiTypes";
-import { SqlManager } from "./dataManager/DalService/SqlManager";
+import { JobData,ActionType } from "./dataClients/Types/apiTypes";
+import { twillioMessage } from "./dataClients/Types/apiTypes";
+import { BusinessDto } from "./dataClients/Types/apiTypes";
+import { SqlManager } from "./dataClients/SqlClient/SqlManager";
 
 const sqlManager = new SqlManager();
 const queueManager = new QueueManager("message-queue");

@@ -1,15 +1,19 @@
 import "dotenv/config";
 import { Job, Worker } from "bullmq";
-import { connection } from "../dataManager/CacheManager/redis";
-import { JobData } from "../dataManager/Types/apiTypes";
-import { Message } from "../dataManager/Types/apiTypes";
+import { connection } from "../dataClients/CacheClient/redis";
+import { JobData } from "../dataClients/Types/apiTypes";
+import { Message } from "../dataClients/Types/apiTypes";
 import { MessageService } from "../MessageService/messageService";
-import { RedisCacheManager } from "../dataManager/CacheManager/redis";
-import { SqlManager } from "../dataManager/DalService/SqlManager";
+import { RedisCacheManager } from "../dataClients/CacheClient/redis";
+import { SqlManager } from "../dataClients/SqlClient/SqlManager";
+import { OpenAIApi } from "../llm/openaiApi";
 
+
+const openAiApi = new OpenAIApi();
 const cacheManager = new RedisCacheManager();
 const sqlInterface = new SqlManager(); // Assuming you have a SqlManager implementation
-const messageService = new MessageService(cacheManager, sqlInterface);
+const messageService = new MessageService(cacheManager, sqlInterface,openAiApi);
+
 
 
 

@@ -1,4 +1,4 @@
-import { LlmInput,LlmOutput } from "../dataManager/Types/llmTypes";
+import { LlmInput,LlmOutput } from "../dataClients/Types/llmTypes";
 
 
 export function buildPrompt(input:LlmInput)
@@ -22,7 +22,7 @@ Respond in JSON:
 
 export function parseResponse(text: string): LlmOutput {
     try {
-        const json = JSON.parse(text);
+        const json = JSON.parse(cleanJson(text));
 
         return {
             response: json.response,
@@ -34,4 +34,11 @@ export function parseResponse(text: string): LlmOutput {
             collectedParams:{}
         };
     }
+}
+
+function cleanJson(text: string): string {
+    return text
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
 }

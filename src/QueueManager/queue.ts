@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import { connection } from "../dataManager/CacheManager/redis";
+import { connection } from "../dataClients/CacheClient/redis";
 
 export class QueueManager {
     public queue: Queue;

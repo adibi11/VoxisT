@@ -60,7 +60,7 @@ export enum MessageType {
 export type ConversationCacheState = {
     conversationId: number;
     stage: "start" | "collecting" | "closing";
-    collectedParams: Record<string, string|null>;
+    collectedParams: Record<string, string | number | null>;
     lastMessages:{
         role: "user" | "bot";
         content: string;

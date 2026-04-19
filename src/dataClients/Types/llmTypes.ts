@@ -5,11 +5,11 @@ export type LlmInput =
         role:"user"|"bot",
         content:string
     }[],
-    collectedParams: Record<string,string|null>
+    collectedParams: Record<string,string | number | null>
 }
 
 export type LlmOutput = 
 {
     response:string,
-    collectedParams: Record<string,string|null>
+    collectedParams: Record<string,string | number | null>
 }
