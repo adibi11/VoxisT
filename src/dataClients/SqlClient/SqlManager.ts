@@ -122,7 +122,7 @@ export class SqlManager implements ISqlInterface {
         type,
         content,
         status: "received", // או processing
-        externalId: crypto.randomUUID() // חשוב!
+        externalId: crypto.randomUUID() 
         }
     });
     }

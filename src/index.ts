@@ -1,5 +1,5 @@
 import express from "express";
-import { QueueManager } from "./QueueManager/queue";
+import { QueueManager } from "./QueueClient/queue";
 import { JobData,ActionType } from "./dataClients/Types/apiTypes";
 import { twillioMessage } from "./dataClients/Types/apiTypes";
 import { BusinessDto } from "./dataClients/Types/apiTypes";

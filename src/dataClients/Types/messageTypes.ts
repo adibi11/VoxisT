@@ -61,9 +61,13 @@ export type ConversationCacheState = {
     conversationId: number;
     stage: "start" | "collecting" | "closing";
     collectedParams: Record<string, string | number | null>;
-    lastMessages:{
-        role: "user" | "bot";
-        content: string;
-    }[];
+    lastMessages:LastMessages[];
     updatedAt: Date;
 }   
+
+
+export type LastMessages =
+{
+    role: "user" | "bot";
+    content: string;
+}

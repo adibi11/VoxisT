@@ -11,7 +11,7 @@ export class LlmPipeline{
         this.llmProvider = llm;
     }
 
-    async applyPipline(state:ConversationCacheState,message:string){
+    async applyPipline(state:ConversationCacheState,message:string): Promise<LlmOutput>{
         console.log("---- BEFORE ----");
         console.log(JSON.stringify(state, null, 2));
 
@@ -32,6 +32,7 @@ export class LlmPipeline{
 
         console.log("\n---- AFTER ----");
         console.log(JSON.stringify(state, null, 2));
+        return result;
         
     }
 }

@@ -5,7 +5,7 @@ import { ActionType } from "../dataClients/Types/apiTypes";
 import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 
 import { ISqlInterface } from "../dataClients/SqlClient/sqlInterface";
-import { ConversationCacheState } from "../dataClients/Types/messageTypes";
+import { ConversationCacheState, LastMessages as LastMessage } from "../dataClients/Types/messageTypes";
 import { ILlmProvider } from "../llm/llmInterface";
 import { LlmPipeline } from "./messageApply";
 
@@ -60,7 +60,13 @@ export class MessageService {
         try {
 
             let conversationState: ConversationCacheState | null = await this.cacheManager.getCacheState(client.id, message.businessId || 1);
+            let messages:LastMessage[] = [];
+            messages.push({
+                role:"user",
+                content: message.data.Body
+            }
 
+            )
             if (!conversationState) {
                 conversationState = await this.sqlInterface.getCacheState(client.id, message.businessId || 1);
                 if (!conversationState) {
@@ -70,13 +76,17 @@ export class MessageService {
                 }
             }
             try{
-                await this.llmPiplne.applyPipline(conversationState,message.data.Body)
+                const botResponse:string = (await this.llmPiplne.applyPipline(conversationState,message.data.Body)).response
+                messages.push({
+                    role:"bot",
+                    content: botResponse
+                });
             }
             catch{
                 throw("LLM Failed interpreting");
                 //Implement fall back in the future for unsuccessfull response.
             }
-            await this.handleCreateMessages(message, conversationState!);
+            await this.handleCreateMessages(message, conversationState!,messages);
             await this.cacheManager.setCacheState(client.id, message.businessId || 1, conversationState!);
 
         }
@@ -88,28 +98,21 @@ export class MessageService {
         }
     }
     
-    async handleCreateMessages(message: Message, conversationState: ConversationCacheState) {
+    async handleCreateMessages(message: Message, conversationState: ConversationCacheState,lastMessages:LastMessage[]) {
         
-        // Update cache state
         //Mock response from bot
-
-        const botResponse = "This is a response from the bot.";
-        const responses : Record<string, string> = {
-            "user": message.content,
-            "bot": botResponse
-        }
-        await this.syncCacheToDb(message.data.clientId, message.businessId || 1, conversationState,responses);
+        await this.syncCacheToDb(message.data.clientId, message.businessId || 1, conversationState,lastMessages);
         
     }
 
-    async syncCacheToDb(clientId: number, businessId: number, conversationState: ConversationCacheState,messages:Record<string, string>) {
+    async syncCacheToDb(clientId: number, businessId: number, conversationState: ConversationCacheState,messages:LastMessage[]) {
         // Sync cache state to DB
         await Promise.all(
             Object.entries(messages).map(([role, content]) =>
                 this.sqlInterface.createMessage(
                     conversationState.conversationId,
                     role === "user" ? "user" : "bot",
-                    content
+                    content.content
                 )
             )
         );
