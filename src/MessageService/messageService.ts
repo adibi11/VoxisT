@@ -64,18 +64,24 @@ export class MessageService {
             messages.push({
                 role:"user",
                 content: message.data.Body
-            }
-
-            )
+            });
             if (!conversationState) {
+                console.log("No conversation state in cache, fetching from DB.");
                 conversationState = await this.sqlInterface.getCacheState(client.id, message.businessId || 1);
                 if (!conversationState) {
                     // Handle the case where no conversation state is found
-                    console.log("No existing conversation state found.");
-                    return;
+                    console.log("No existing conversation state found. exiting.");
+                    await this.sqlInterface.createDbConversation(client.id, message.businessId || 1, message.data.Body);
+                    conversationState = await this.sqlInterface.getCacheState(client.id, message.businessId || 1);
+                    if (!conversationState) {
+                        throw new Error("Failed to create and retrieve conversation state.");
+                    }
                 }
             }
+            console.log("Initial conversation state:", conversationState);
+
             try{
+                console.log("Applying LLM pipeline to message.");
                 const botResponse:string = (await this.llmPiplne.applyPipline(conversationState,message.data.Body)).response
                 messages.push({
                     role:"bot",
@@ -85,9 +91,13 @@ export class MessageService {
             catch{
                 throw("LLM Failed interpreting");
                 //Implement fall back in the future for unsuccessfull response.
+            }try{
+                await this.handleCreateMessages(message, conversationState!,messages);
+                await this.cacheManager.setCacheState(client.id, message.businessId || 1, conversationState!);
             }
-            await this.handleCreateMessages(message, conversationState!,messages);
-            await this.cacheManager.setCacheState(client.id, message.businessId || 1, conversationState!);
+            catch{
+                throw("Failed to create messages in DB");
+            }   
 
         }
         catch (error) {

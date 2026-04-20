@@ -16,6 +16,7 @@ export class SqlManager implements ISqlInterface {
         this.prisma = prisma;
     }   
 
+
     async getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
         const conversation = await this.prisma.conversation.findFirst({
             where: {
@@ -23,6 +24,9 @@ export class SqlManager implements ISqlInterface {
                 businessId: businessId
             }
         });
+        if (!conversation) {
+            return null;
+        }
         const messages = await this.prisma.message.findMany({
             where: {
                 conversationId: conversation ? conversation.id : undefined
@@ -31,7 +35,7 @@ export class SqlManager implements ISqlInterface {
         const paramList: BusinessParam[] = await this.getBusinessParams(businessId, clientId, conversation ? conversation.id : undefined);
 
         return {
-            conversationId: conversation ? conversation.id : -1,
+            conversationId:  conversation.id ,
             stage: messages.length > 0 ? "collecting" : "start",
             lastMessages: messages.map(msg => ({
                 role: msg.type as "user" | "bot",
@@ -132,7 +136,6 @@ export class SqlManager implements ISqlInterface {
             data: {
                 clientId: clientId,
                 businessId: businessId,
-                stage: "received",
                 conclusion: "First message: " + content,
                 conversationStatus: "start",
             },
