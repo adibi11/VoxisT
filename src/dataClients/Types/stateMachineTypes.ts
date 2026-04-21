@@ -1,20 +1,40 @@
 import { LastMessages } from "./messageTypes";
 
-
+export enum ConversationState
+{
+    start = "start",
+    collecting = "collecting",
+    pacing = "pacing",
+    closing = "closing",
+    failure = "failure",
+    ended = "ended"
+}
 
 export enum ConversationEvent
 {
     concern = "clientConcern",
-    extractedParams = "extractedParams",
-    tryEnding = "tryEnding",
     ended = "ended",
     failure = "failure",
+    tryEnding = "tryEnding",
+    finishedPacing = "finishedPacing",
     startConversation = "startConversation"
+}
+
+export enum Action
+{
+    sendWelcomeMessage = "sendWelcomeMessage",
+    askForParams = "askForParams",
+    tryPacing = "tryPacing",
+    tryClosing = "tryClosing",
+    endConversation = "endConversation",
+    applyParams = "applyParams",
+    escalateToHuman = "escalateToHuman",
+    clarify = "clarify"
 }
 
 
 export type StateMachineInput = {
-    currentState: "start" | "collecting" | "closing"|"failure";
+    currentState: ConversationState;
     messageContent: string;
     collectedParams: Record<string, string | number | null>;
     lastMessages:LastMessages[];

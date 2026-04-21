@@ -1,4 +1,5 @@
 
+import {ConversationEvent, ConversationState, StateMachineInput, StateMachineOutput} from "./stateMachineTypes";
 export type Message = {
    userMessage: string;
     botResponse: string;
@@ -59,7 +60,7 @@ export enum MessageType {
 
 export type ConversationCacheState = {
     conversationId: number;
-    stage: "start" | "collecting" | "closing"|"failure";
+    state: ConversationState;
     collectedParams: Record<string, string | number | null>;
     lastMessages:LastMessages[];
     updatedAt: Date;

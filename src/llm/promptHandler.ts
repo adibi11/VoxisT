@@ -31,11 +31,11 @@ ${input.lastMessages.map(m => `${m.role}: ${m.content}`).join("\n")}
 User message:
 ${input.messageContent}
 Based on the conversation and the user message, extract any new events that should be triggered and any new parameters that can be collected. Respond in JSON format like this:
-next state: one of "start", "middle", "tryEnding", "ended", "failure"
+next event:
 The state is based in the parameters that have been collected.
 conclusion: a mid conversation conclusion for the current messages
 {
-  "conversationEvent": concern | extractedParams | tryEnding | ended | failure,
+  "conversationEvent": concern | finishedPacing | tryEnding | ended | failure|startConversation,
   "newConclusion": "Your conclusion here",
   "params": { "paramName": "value" }
 }

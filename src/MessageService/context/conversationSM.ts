@@ -1,10 +1,10 @@
 
-import { ConversationEvent } from "../../dataClients/Types/stateMachineTypes";
-import { StateMachineInput, StateMachineOutput } from "../../dataClients/Types/stateMachineTypes";
+import { Action, ConversationEvent } from "../../dataClients/Types/stateMachineTypes";
+import { StateMachineInput, StateMachineOutput ,ConversationState} from "../../dataClients/Types/stateMachineTypes";
 import { ILlmProvider } from "../../llm/llmInterface";
 export  class ConversationStateMachine
 {
-    
+    public Actions: Action[] = [];
     constructor(private llmProvider: ILlmProvider) {}
 
     async extractEvents(input: StateMachineInput): Promise<StateMachineOutput>
@@ -12,28 +12,58 @@ export  class ConversationStateMachine
         return await this.llmProvider.extractEvents(input);
     }
 
-    recognizeEvents(output: StateMachineOutput, currentState: "start" | "collecting" | "closing"|"failure"): ConversationEvent
+    recognizeNewState(output: StateMachineOutput, input: StateMachineInput): ConversationState
     {
         // Implement rule based event recognition based on the input parameters and message content
-        switch(currentState)
+        switch(input.currentState)
         {
-            case "start":
-                return ConversationEvent.startConversation;
-                
-
-            case "collecting":
-                if(output.conversationEvent === ConversationEvent.extractedParams)
-                    return ConversationEvent.extractedParams;
+            case ConversationState.start:
+                this.Actions.push(Action.sendWelcomeMessage);
+                break;
+            case ConversationState.collecting:
                 if(output.conversationEvent === ConversationEvent.concern)
-                    return ConversationEvent.concern;
-                if(output.conversationEvent === ConversationEvent.tryEnding)
-                    return ConversationEvent.tryEnding;
-                
+                {
+                    this.addAction(Action.askForParams);
+                    if(this.checkAllParamsCollected(input.collectedParams, output.params))
+                    {
+                        this.addAction(Action.applyParams);
+                    }
+                    return ConversationState.pacing;
+                }
+                if(this.checkAllParamsCollected(input.collectedParams, output.params))
+                {
+                    this.addAction(Action.askForParams);
+                    return ConversationState.closing;
+                }
+                else{
+                    return ConversationState.closing;
+                }
 
-            case "closing":
-                return ConversationEvent.ended;
+            case ConversationState.closing:
+                return ConversationState.ended;
 
         }
-        return ConversationEvent.failure;
+        return ConversationState.failure;
+    }
+
+    checkAllParamsCollected(collectedParams: Record<string, string | number | null>, newParams?: Record<string, string | number | null>): boolean
+    {
+        if(!newParams) return false;
+        for(const key in newParams)
+        {
+            if (collectedParams[key] === null || collectedParams[key] === undefined)
+            {
+                return false;
+            }
+
+        }
+        return true;
+    }
+    addAction(action: Action)
+    {
+        if(!this.Actions.includes(action))
+        {
+            this.Actions.push(action);
+        }
     }
 }
