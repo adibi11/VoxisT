@@ -59,10 +59,11 @@ export enum MessageType {
 
 export type ConversationCacheState = {
     conversationId: number;
-    stage: "start" | "collecting" | "closing";
+    stage: "start" | "collecting" | "closing"|"failure";
     collectedParams: Record<string, string | number | null>;
     lastMessages:LastMessages[];
     updatedAt: Date;
+    conclusion?: string;
 }   
 
 

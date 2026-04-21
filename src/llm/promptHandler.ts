@@ -1,7 +1,7 @@
 import { LlmInput,LlmOutput } from "../dataClients/Types/llmTypes";
-
-
-export function buildPrompt(input:LlmInput)
+import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
+import { ConversationEvent } from "../dataClients/Types/stateMachineTypes";
+export function buildMessagePrompt(input:LlmInput)
 {
         return `
 You are a business assistant.
@@ -19,6 +19,45 @@ Respond in JSON:
 }
 `;
 }
+
+export function buildEventPrompt(input: StateMachineInput)
+{
+        return `
+You are an event extractor.
+Known parameters:
+${JSON.stringify(input.collectedParams)}
+Conversation:
+${input.lastMessages.map(m => `${m.role}: ${m.content}`).join("\n")}
+User message:
+${input.messageContent}
+Based on the conversation and the user message, extract any new events that should be triggered and any new parameters that can be collected. Respond in JSON format like this:
+next state: one of "start", "middle", "tryEnding", "ended", "failure"
+The state is based in the parameters that have been collected.
+conclusion: a mid conversation conclusion for the current messages
+{
+  "conversationEvent": concern | extractedParams | tryEnding | ended | failure,
+  "newConclusion": "Your conclusion here",
+  "params": { "paramName": "value" }
+}
+`;
+}
+
+export function parseEventResponse(text: string): StateMachineOutput {
+    try {
+        const json = JSON.parse(cleanJson(text));
+
+        return {
+            conversationEvent: json.conversationEvent,
+            newConclusion: json.newConclusion
+        };
+    } catch {
+        return {
+            conversationEvent: ConversationEvent.failure,
+            newConclusion: ""
+        };
+    }
+}
+        
 
 export function parseResponse(text: string): LlmOutput {
     try {

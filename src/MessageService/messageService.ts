@@ -58,7 +58,6 @@ export class MessageService {
             return;
         }
         try {
-
             let conversationState: ConversationCacheState | null = await this.cacheManager.getCacheState(client.id, message.businessId || 1);
             let messages:LastMessage[] = [];
             messages.push({

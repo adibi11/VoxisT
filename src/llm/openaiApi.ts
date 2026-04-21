@@ -2,7 +2,9 @@ import "dotenv/config";
 import { OpenAI } from "openai";
 import { LlmInput,LlmOutput } from "../dataClients/Types/llmTypes";
 import { ILlmProvider } from "./llmInterface";
-import { buildPrompt ,parseResponse} from "./promptHandler";
+import { buildMessagePrompt ,parseResponse} from "./promptHandler";
+import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
+import { buildEventPrompt, parseEventResponse } from "./promptHandler";
 
 
 
@@ -14,7 +16,7 @@ export class OpenAIApi implements ILlmProvider {
 
     async generateResponse(input: LlmInput): Promise<LlmOutput> {
 
-        const prompt = buildPrompt(input);
+        const prompt = buildMessagePrompt(input);
 
         const completion = await this.llmclient.chat.completions.create({
             model: "gpt-4o",
@@ -29,5 +31,22 @@ export class OpenAIApi implements ILlmProvider {
         const text = completion.choices[0]?.message?.content || "";
 
         return parseResponse(text);
+    }
+    async extractEvents(input: StateMachineInput): Promise<StateMachineOutput> {
+        const prompt = buildEventPrompt(input);
+
+        const completion = await this.llmclient.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "user",
+                    content: prompt
+                }
+            ],
+        });
+
+        const text = completion.choices[0]?.message?.content || "";
+
+        return parseEventResponse(text);
     }
 }
