@@ -22,6 +22,17 @@ Respond in JSON:
 `;
 }
 
+export function buildPacingPrompt(input: StateMachineInput, output: StateMachineOutput): string {
+    return `
+    You are a helpful assistant that provides pacing messages to users who are in the "pacing" state of a conversation. Your goal is to craft empathetic and engaging messages that encourage the user to continue the conversation while they process information or consider their options.
+    CURRENT CONVERSATION STATE: ${input.currentState}
+    COLLECTED PARAMETERS: ${JSON.stringify(input.collectedParams, null, 2)}
+    CONVERSATION HISTORY:
+    ${input.lastMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}
+    LATEST USER MESSAGE: "${input.messageContent}"
+    RECENT EVENT: "${output.conversationEvent}"`;
+}
+
 export function buildEventPrompt(input: StateMachineInput): string {
     return `You are an expert conversation analyst for a business chatbot. Your task is to analyze the current conversation state and user message to determine the next conversation event and extract any new parameters.
 

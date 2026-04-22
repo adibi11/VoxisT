@@ -1,3 +1,4 @@
+import { ignoreOverride } from "openai/_vendor/zod-to-json-schema/Options.mjs";
 import { LastMessages } from "./messageTypes";
 
 export enum ConversationState
@@ -30,7 +31,8 @@ export enum Action
     endConversation = "endConversation",
     applyParams = "applyParams",
     escalateToHuman = "escalateToHuman",
-    clarify = "clarify"
+    clarify = "clarify",
+    ignore = "ignore"
 }
 
 

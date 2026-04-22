@@ -4,4 +4,5 @@ import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stat
 export interface ILlmProvider {
     generateResponse(input: LlmInput): Promise<LlmOutput>;
     extractEvents(input: StateMachineInput): Promise<StateMachineOutput>;
+    getPacingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string>;
 }

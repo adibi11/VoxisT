@@ -5,79 +5,97 @@ import { StateMachineInput, StateMachineOutput ,ConversationState} from "../../d
 import { ILlmProvider } from "../../llm/llmInterface";
 export  class ConversationStateMachine
 {
-    public Actions: Action[] = [];
     
     
-    recognizeNewState(output: StateMachineOutput, input: StateMachineInput): ConversationState
+    
+    
+    recognizeNewState(output: StateMachineOutput, cache: ConversationCacheState): Action[]
     {
         // Implement rule based event recognition based on the input parameters and message content
-        switch(input.currentState)
+        const Actions: Action[] = [];
+        
+        switch(cache.state)
         {
             case ConversationState.start:
-                this.Actions.push(Action.sendWelcomeMessage);
-                return ConversationState.collecting;
+                this.addAction(Action.sendWelcomeMessage, Actions);
+                break;
             case ConversationState.collecting:
                 if(output.conversationEvent === ConversationEvent.concern)
                 {
-                    this.addAction(Action.tryPacing);
-                    if(this.checkAllParamsCollected(input.collectedParams, output.params))
+                    this.addAction(Action.tryPacing, Actions);
+                    if(this.checkAllParamsCollected(cache.collectedParams, output.params))
                     {
-                        this.addAction(Action.applyParams);
+                        this.addAction(Action.applyParams, Actions);
                     }
-                    return ConversationState.pacing;
+                    cache.state = ConversationState.pacing;
+                    break;
                 }
-                if(this.checkAllParamsCollected(input.collectedParams, output.params))
+                
+                if(this.checkAllParamsCollected(cache.collectedParams, output.params))
                 {
-                    this.addAction(Action.applyParams);
-                    this.addAction(Action.tryClosing);
-                    return ConversationState.closing;
+                    this.addAction(Action.applyParams, Actions);
+                    this.addAction(Action.tryClosing, Actions);
+                    cache.state = ConversationState.closing;
+                    
                 }
                 else{
-                    return ConversationState.collecting;
+                    this.addAction(Action.askForParams, Actions);
+                    cache.state = ConversationState.collecting;
                 }
+                break;
 
             case ConversationState.closing:
                 if(output.conversationEvent === ConversationEvent.concern)
                 {
-                    this.addAction(Action.tryPacing);
-                    return ConversationState.pacing;
+                    this.addAction(Action.tryPacing, Actions);
+                    cache.state = ConversationState.pacing;
+
+                    break;
                 }
                 if(output.conversationEvent === ConversationEvent.updateParams)
                 {
-                    this.addAction(Action.applyParams);
-                    return ConversationState.collecting;
+                    this.addAction(Action.applyParams, Actions);
+                    cache.state = ConversationState.collecting;
+                    break;
                 }
-                this.addAction(Action.endConversation);
-                return ConversationState.ended;
+                this.addAction(Action.endConversation, Actions);
+                cache.state = ConversationState.ended;
+                break;
             case ConversationState.pacing:
                 if(output.conversationEvent === ConversationEvent.concern)
                 {
-                    this.addAction(Action.tryPacing);
-                    return ConversationState.pacing;
+                    this.addAction(Action.tryPacing, Actions);
+                    cache.state = ConversationState.pacing;
+
+                    break;
                 }
                 
                 if(output.conversationEvent === ConversationEvent.finishedPacing)
                 {
-                    if(this.checkAllParamsCollected(input.collectedParams, output.params))
+                    if(this.checkAllParamsCollected(cache.collectedParams, output.params))
                     {
-                        this.addAction(Action.applyParams);
-                        this.addAction(Action.tryClosing);
-                        return ConversationState.closing;
+                        this.addAction(Action.applyParams, Actions);
+                        this.addAction(Action.tryClosing, Actions);
+                        cache.state = ConversationState.closing;
+
+                        break;
                     }
-                    this.addAction(Action.tryClosing);
-                    return ConversationState.collecting;
+                    this.addAction(Action.tryClosing, Actions);
+                    cache.state = ConversationState.collecting;
+                    break;
                 }
                 break;
             case ConversationState.ended:
-                this.addAction(Action.endConversation);
-                return ConversationState.ended;
-            case ConversationState.failure:
-                this.addAction(Action.escalateToHuman);
-                return ConversationState.failure;
-
-
+                this.addAction(Action.ignore, Actions);
+                cache.state = ConversationState.ended;
+                break;
+            
+            default:
+                console.warn(`Unrecognized conversation state: ${cache.state}`);
+                cache.state = ConversationState.failure;
+                this.addAction(Action.escalateToHuman, Actions);
         }
-        return input.currentState;
+        return Actions;
     }
 
     checkAllParamsCollected(collectedParams: Record<string, string | number | null>, newParams?: Record<string, string | number | null>): boolean
@@ -93,11 +111,11 @@ export  class ConversationStateMachine
         }
         return true;
     }
-    addAction(action: Action)
+    addAction(action: Action, Actions: Action[])
     {
-        if(!this.Actions.includes(action))
+        if(!Actions.includes(action))
         {
-            this.Actions.push(action);
+            Actions.push(action);
         }
     }
 }
