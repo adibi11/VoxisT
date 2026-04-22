@@ -65,7 +65,8 @@ export type ConversationCacheState = {
     lastMessages:LastMessages[];
     updatedAt: Date;
     conclusion?: string;
-}   
+    phone: string;
+}
 
 
 export type LastMessages =

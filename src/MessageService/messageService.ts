@@ -77,6 +77,7 @@ export class MessageService {
                     }
                 }
             }
+            conversationState.phone = message.data.From;
             console.log("Initial conversation state:", conversationState);
 
             try{

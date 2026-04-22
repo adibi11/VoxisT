@@ -17,7 +17,8 @@ export enum ConversationEvent
     failure = "failure",
     tryEnding = "tryEnding",
     finishedPacing = "finishedPacing",
-    startConversation = "startConversation"
+    startConversation = "startConversation",
+    updateParams = "updateParams"
 }
 
 export enum Action
