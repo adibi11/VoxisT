@@ -3,6 +3,7 @@ import { Action, StateMachineInput, StateMachineOutput } from "../../dataClients
 import { ConversationCacheState } from "../../dataClients/Types/messageTypes";
 import { ConversationStateMachine } from "./conversationSM";
 import { OutputItems } from "openai/resources/evals/runs.mjs";
+import { LlmOutput } from "../../dataClients/Types/llmTypes";
 
 
 export class Executer{
@@ -15,35 +16,42 @@ export class Executer{
         this.StateMachine = new ConversationStateMachine();
     }
 
-    async prepareAndExecute(input: StateMachineInput,cacheState: ConversationCacheState)
+    async prepareAndExecute(input: StateMachineInput,cacheState: ConversationCacheState) :Promise<LlmOutput>
     {        
         const output = await this.llmProvider.extractEvents(input);
         console.log("LLM Output:", output);
-        const newState = this.StateMachine.recognizeNewState(output, cacheState);
+        const actions = this.StateMachine.recognizeNewState(output, cacheState);
+        return this.execute(input, output, cacheState, actions);
+        
     }
 
-    async execute(input: StateMachineInput,output: StateMachineOutput,cacheState: ConversationCacheState,actions: Action[]): Promise<void>
+    async execute(input: StateMachineInput,output: StateMachineOutput,cacheState: ConversationCacheState,actions: Action[]): Promise<LlmOutput>
     {
+        let answer: string = "";
         for(const action of actions)
         {
+            
             switch(action)
             {
                 case Action.sendWelcomeMessage:
                     // Call method to send welcome message
-                    await this.sendWelcomeMessage(input);
+                    answer = "starter";
                     break;
                 case Action.askForParams:
                     // Call method to ask for missing parameters
+                    answer = await this.askForMissingParams(input, cacheState);
                     break;
                 case Action.tryPacing:
                     // Call method to initiate pacing
-                    await this.handlePacing(output,input,cacheState);
+                    answer = await this.handlePacing(output,input,cacheState);
                     break;
                 case Action.tryClosing:
                     // Call method to attempt closing the conversation
+                    answer = await this.tryClosingConversation(input, cacheState);
                     break;
                 case Action.endConversation:
                     // Call method to end the conversation
+                    answer = "ender";
                     break;
                 case Action.applyParams:
                     // Call method to apply new parameters to the conversation context
@@ -55,15 +63,22 @@ export class Executer{
                     this.applyParams(output.params, cacheState);
                     break;
                 case Action.escalateToHuman:
-                    // Call method to escalate the conversation to a human agent
+                    answer = "escalate";
                     break;
                 case Action.clarify:
                     // Call method to ask user for clarification
+                    answer = await this.clarify(input, cacheState);
                     break;
                 default:
                     console.warn(`Unknown action: ${action}`);
             }
         }
+        return {
+            response: answer || "Actions executed. Check logs for details.",
+            collectedParams: cacheState.collectedParams
+            
+
+        };
     }
 
     async handlePacing(output: StateMachineOutput,input: StateMachineInput,cacheState: ConversationCacheState): Promise<string>
@@ -76,10 +91,6 @@ export class Executer{
         
     }
 
-    async handleEscalation(input: StateMachineInput,cacheState: ConversationCacheState): Promise<void>
-    {
-        // Implement any necessary logic for handling escalation, such as notifying a human agent or updating the conversation context
-    }
 
     applyParams(params: Record<string, string | number | null>,cacheState: ConversationCacheState): void
     {
@@ -90,9 +101,22 @@ export class Executer{
         console.log("Updated cache state with new params:", cacheState.collectedParams);
     }
 
-    async sendWelcomeMessage(input: StateMachineInput): Promise<void>
+
+    async askForMissingParams(input: StateMachineInput,cacheState: ConversationCacheState): Promise<string>
     {
-        // Implement logic to send a welcome message to the user, such as through an API call or messaging service
+        // Implement logic to ask the user for any missing parameters, such as through an API call or messaging service
+        return "Please provide the missing information.";
+    }
+
+    async tryClosingConversation(input: StateMachineInput,cacheState: ConversationCacheState): Promise<string>
+    {
+        // Implement logic to attempt closing the conversation, such as sending a closing message and updating the conversation context
+        return "Attempting to close conversation.";
+    }
+    async clarify(input: StateMachineInput,cacheState: ConversationCacheState): Promise<string >
+    {
+        // Implement logic to ask the user for clarification, such as sending a message requesting more information and updating the conversation context
+        return "Could you please clarify that?";
     }
     
 }

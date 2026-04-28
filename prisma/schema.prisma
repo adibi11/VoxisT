@@ -46,6 +46,10 @@ model Business {
   businessName   String
   businessPhone  String
   businessEmail  String
+  language       String
+  straterMessage String
+  enderMessage   String
+  escalationMessage String
   conversations  Conversation[]
   parameters     BusinessParameter[]
 }

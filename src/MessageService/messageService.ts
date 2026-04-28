@@ -18,7 +18,7 @@ export class MessageService {
     constructor(cacheManager: ICacheManager, sqlInterface: ISqlInterface,llm:ILlmProvider) {
         this.cacheManager = cacheManager;
         this.sqlInterface = sqlInterface;
-        this.llmPiplne = new LlmPipeline(llm);
+        this.llmPiplne = new LlmPipeline(llm, sqlInterface);
     }
 
     async  processMessage(message: Message) {
@@ -77,12 +77,12 @@ export class MessageService {
                     }
                 }
             }
-            conversationState.phone = message.data.From;
+           
             console.log("Initial conversation state:", conversationState);
 
             try{
                 console.log("Applying LLM pipeline to message.");
-                const botResponse:string = (await this.llmPiplne.applyPipline(conversationState,message.data.Body)).response
+                const botResponse:string = (await this.llmPiplne.applyPipline(conversationState,message.data.Body,message.businessId || 1)).response
                 messages.push({
                     role:"bot",
                     content: botResponse

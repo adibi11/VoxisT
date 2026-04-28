@@ -10,6 +10,6 @@ export type LlmInput =
 
 export type LlmOutput = 
 {
-    response:string,
+    response:string |"starter"|"ender"|"escalate",
     collectedParams: Record<string,string | number | null>
 }

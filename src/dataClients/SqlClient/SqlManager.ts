@@ -5,6 +5,7 @@ import { BusinessParam } from "../Types/messageTypes";
 import { BusinessDto, MessageType } from "../Types/apiTypes";
 import { ConversationCacheState } from "../Types/messageTypes";
 import { ISqlInterface } from "./sqlInterface";
+import { ConversationState } from "../Types/stateMachineTypes";
 
 
 export const prisma = new PrismaClient();
@@ -16,6 +17,25 @@ export class SqlManager implements ISqlInterface {
         this.prisma = prisma;
     }   
 
+    async getBusiness(businessId: number): Promise<BusinessDto | null> {
+        const business = await this.prisma.business.findUnique({
+            where: {    
+                id: businessId
+            }
+        });
+        if (!business) {
+            return null;
+        }   
+        return {
+            name: business.businessName,
+            phone: business.businessPhone,
+            email: business.businessEmail,
+            parameters: [], // You can implement fetching parameters if needed
+            starterMessage: business.straterMessage,
+            endMessage: business.enderMessage,
+            escalationMessage: business.escalationMessage,
+        };
+    }
 
     async getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
         const conversation = await this.prisma.conversation.findFirst({
@@ -33,10 +53,17 @@ export class SqlManager implements ISqlInterface {
             }
         });
         const paramList: BusinessParam[] = await this.getBusinessParams(businessId, clientId, conversation ? conversation.id : undefined);
-
+        const client = await this.prisma.client.findUnique({
+            where: {
+                id: clientId
+            }
+        });
+        if (!client) {
+            return null;
+        }
         return {
             conversationId:  conversation.id ,
-            stage: messages.length > 0 ? "collecting" : "start",
+            state: messages.length > 0 ? ConversationState.collecting : ConversationState.start,
             lastMessages: messages.map(msg => ({
                 role: msg.type as "user" | "bot",
                 content: msg.content
@@ -50,7 +77,7 @@ export class SqlManager implements ISqlInterface {
                 }
                 return acc;
             }, {} as Record<string, string|null>),
-
+            phone: client.phoneNumber,
             updatedAt: new Date()
         };
 
@@ -149,6 +176,11 @@ export class SqlManager implements ISqlInterface {
                 businessName: businessDto.name,
                 businessPhone: businessDto.phone,
                 businessEmail: businessDto.email,
+                straterMessage: businessDto.starterMessage,
+                enderMessage: businessDto.endMessage,
+                escalationMessage: businessDto.escalationMessage,
+                language: businessDto.language || "en"
+
             },
         });
         const businessParamsData = businessDto.parameters.map(param => ({

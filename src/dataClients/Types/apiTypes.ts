@@ -38,6 +38,10 @@ export type BusinessDto = {
     phone: string;
     email: string;
     parameters: BusinessParamDto[];
+    starterMessage: string;
+    endMessage: string;
+    escalationMessage: string;
+    language?: string;
 }
 
 export type BusinessParamDto = {
