@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from "express";
 import { QueueManager } from "./QueueClient/queue";
 import { JobData,ActionType } from "./dataClients/Types/apiTypes";

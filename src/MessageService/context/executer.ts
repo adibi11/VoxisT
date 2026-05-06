@@ -39,15 +39,15 @@ export class Executer{
                     break;
                 case Action.askForParams:
                     // Call method to ask for missing parameters
-                    answer = await this.askForMissingParams(input, cacheState);
+                    answer = await this.askForMissingParams(input, output);
                     break;
                 case Action.tryPacing:
                     // Call method to initiate pacing
-                    answer = await this.handlePacing(output,input,cacheState);
+                    answer = await this.handlePacing(output,input);
                     break;
                 case Action.tryClosing:
                     // Call method to attempt closing the conversation
-                    answer = await this.tryClosingConversation(input, cacheState);
+                    answer = await this.tryClosingConversation(input, output);
                     break;
                 case Action.endConversation:
                     // Call method to end the conversation
@@ -81,7 +81,7 @@ export class Executer{
         };
     }
 
-    async handlePacing(output: StateMachineOutput,input: StateMachineInput,cacheState: ConversationCacheState): Promise<string>
+    async handlePacing(output: StateMachineOutput,input: StateMachineInput): Promise<string>
     {
         
         const pacingMessage = await this.llmProvider.getPacingMessage(output,input);
@@ -102,16 +102,19 @@ export class Executer{
     }
 
 
-    async askForMissingParams(input: StateMachineInput,cacheState: ConversationCacheState): Promise<string>
+    async askForMissingParams(input: StateMachineInput,output: StateMachineOutput): Promise<string>
     {
-        // Implement logic to ask the user for any missing parameters, such as through an API call or messaging service
-        return "Please provide the missing information.";
+        
+        return await this.llmProvider.generateResponse(input,output);
     }
 
-    async tryClosingConversation(input: StateMachineInput,cacheState: ConversationCacheState): Promise<string>
+    async tryClosingConversation(input: StateMachineInput,output: StateMachineOutput): Promise<string>
     {
         // Implement logic to attempt closing the conversation, such as sending a closing message and updating the conversation context
-        return "Attempting to close conversation.";
+        return await this.llmProvider.getClosingMessage(
+            output,
+            input
+        );
     }
     async clarify(input: StateMachineInput,cacheState: ConversationCacheState): Promise<string >
     {

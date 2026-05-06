@@ -47,7 +47,7 @@ model Business {
   businessPhone  String
   businessEmail  String
   language       String
-  straterMessage String
+  starterMessage String
   enderMessage   String
   escalationMessage String
   conversations  Conversation[]

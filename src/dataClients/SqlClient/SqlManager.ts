@@ -31,7 +31,7 @@ export class SqlManager implements ISqlInterface {
             phone: business.businessPhone,
             email: business.businessEmail,
             parameters: [], // You can implement fetching parameters if needed
-            starterMessage: business.straterMessage,
+            starterMessage: business.starterMessage,
             endMessage: business.enderMessage,
             escalationMessage: business.escalationMessage,
         };
@@ -176,7 +176,7 @@ export class SqlManager implements ISqlInterface {
                 businessName: businessDto.name,
                 businessPhone: businessDto.phone,
                 businessEmail: businessDto.email,
-                straterMessage: businessDto.starterMessage,
+                starterMessage: businessDto.starterMessage,
                 enderMessage: businessDto.endMessage,
                 escalationMessage: businessDto.escalationMessage,
                 language: businessDto.language || "en"

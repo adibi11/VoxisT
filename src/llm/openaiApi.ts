@@ -29,9 +29,9 @@ export class OpenAIApi implements ILlmProvider {
         const text = completion.choices[0]?.message?.content || "";
         return text.trim();
     }
-    async generateResponse(input: LlmInput): Promise<LlmOutput> {
+    async generateResponse(input: StateMachineInput, output: StateMachineOutput): Promise<string> {
 
-        const prompt = buildMessagePrompt(input);
+        const prompt = buildMessagePrompt(output, input);
 
         const completion = await this.llmclient.chat.completions.create({
             model: "gpt-4o",
@@ -45,7 +45,7 @@ export class OpenAIApi implements ILlmProvider {
 
         const text = completion.choices[0]?.message?.content || "";
 
-        return parseResponse(text);
+        return text.trim();
     }
     async extractEvents(input: StateMachineInput): Promise<StateMachineOutput> {
         const prompt = buildEventPrompt(input);
@@ -63,5 +63,21 @@ export class OpenAIApi implements ILlmProvider {
         const text = completion.choices[0]?.message?.content || "";
 
         return parseEventResponse(text);
+    }
+
+    getClosingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string> {
+        const prompt = buildPacingPrompt(input, output);
+        return this.llmclient.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "user",
+                    content: prompt
+                }
+            ],
+        }).then(response => {
+            const text = response.choices[0]?.message?.content || "";
+            return text.trim();
+        });
     }
 }

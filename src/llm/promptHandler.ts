@@ -3,23 +3,18 @@ import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stat
 import { ConversationEvent } from "../dataClients/Types/stateMachineTypes";
 
 
-export function buildMessagePrompt(input:LlmInput)
+export function buildMessagePrompt(output:StateMachineOutput, input: StateMachineInput): string
 {
         return `
 You are a business assistant.
 
-Known parameters:
-${JSON.stringify(input.collectedParams)}
-
-Conversation:
-${input.messages.map(m => `${m.role}: ${m.content}`).join("\n")}
-
-Respond in JSON:
-{
-  "response": "...",
-  "params": { "paramName": "value" }
-}
-`;
+CURRENT CONVERSATION STATE: ${input.currentState}
+COLLECTED PARAMETERS: ${JSON.stringify(input.collectedParams)}
+CONVERSATION HISTORY:
+${input.lastMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}
+LATEST USER MESSAGE: "${input.messageContent}"
+RECENT EVENT: "${output.conversationEvent}"
+Based on the conversation history and missing parameters, generate a solid short and appropriate response to the user in order to collect one of the missing parameters`;
 }
 
 export function buildPacingPrompt(input: StateMachineInput, output: StateMachineOutput): string {
