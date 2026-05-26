@@ -6,15 +6,18 @@ import { BusinessDto, MessageType } from "../Types/apiTypes";
 import { ConversationCacheState } from "../Types/messageTypes";
 import { ISqlInterface } from "./sqlInterface";
 import { ConversationState } from "../Types/stateMachineTypes";
+import { ILogger, logger } from "../../logging/logger";
 
 
 export const prisma = new PrismaClient();
 
 export class SqlManager implements ISqlInterface {
     private prisma: PrismaClient;
+    private logger: ILogger;
 
-    constructor() {
+    constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
+        this.logger = loggerInstance;
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {
@@ -229,7 +232,10 @@ export class SqlManager implements ISqlInterface {
         });
 
         if (!param) {
-            console.log("Param not found");
+            this.logger.warn("param.not_found", {
+                businessId,
+                paramName
+            });
             return;
         }
 

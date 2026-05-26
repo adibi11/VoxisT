@@ -1,6 +1,7 @@
 import { LlmInput,LlmOutput } from "../dataClients/Types/llmTypes";
 import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
 import { ConversationEvent } from "../dataClients/Types/stateMachineTypes";
+import { ILogger, logger } from "../logging/logger";
 
 
 export function buildMessagePrompt(output:StateMachineOutput, input: StateMachineInput): string
@@ -79,13 +80,13 @@ Respond with valid JSON only:
 }`;
 }
 
-export function parseEventResponse(text: string): StateMachineOutput {
+export function parseEventResponse(text: string, loggerInstance: ILogger = logger.child({ component: "PromptHandler" })): StateMachineOutput {
     try {
         const json = JSON.parse(cleanJson(text));
         
         // Validate the event is a known enum value
         if (!Object.values(ConversationEvent).includes(json.conversationEvent)) {
-            console.warn(`Invalid event: ${json.conversationEvent}`);
+            loggerInstance.warn("llm.event.invalid", { conversationEvent: json.conversationEvent });
             return {
                 conversationEvent: ConversationEvent.failure,
                 newConclusion: "Failed to determine valid event"
@@ -98,7 +99,7 @@ export function parseEventResponse(text: string): StateMachineOutput {
             params: json.params || {}
         };
     } catch (error) {
-        console.error("Failed to parse event response:", error);
+        loggerInstance.error("llm.event.parse_failed", { error });
         return {
             conversationEvent: ConversationEvent.failure,
             newConclusion: "Failed to parse LLM response"

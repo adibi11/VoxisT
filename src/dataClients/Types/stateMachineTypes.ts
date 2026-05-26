@@ -1,4 +1,3 @@
-import { ignoreOverride } from "openai/_vendor/zod-to-json-schema/Options.mjs";
 import { LastMessages } from "./messageTypes";
 
 export enum ConversationState

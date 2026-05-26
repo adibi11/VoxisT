@@ -1,4 +1,6 @@
 import { OpenAIApi } from "./openaiApi";
+import { ConversationEvent, ConversationState } from "../dataClients/Types/stateMachineTypes";
+import { logger } from "../logging/logger";
 
 // 🔹 types (כמו אצלך)
 type ChatMessage = {
@@ -8,9 +10,11 @@ type ChatMessage = {
 
 type ConversationCacheState = {
   conversationId: number;
+  state: ConversationState;
   lastMessages: ChatMessage[];
   collectedParams: Record<string,any>;
   updatedAt: Date;
+  phone: string;
 };
 
 // 🔹 input/output של LLM
@@ -27,6 +31,7 @@ type LLMOutput = {
 function createMockState(): ConversationCacheState {
   return {
     conversationId: 1,
+    state: ConversationState.collecting,
     lastMessages: [
       { role: "user", content: "Hi" },
       { role: "bot", content: "What is your budget?" }
@@ -35,7 +40,8 @@ function createMockState(): ConversationCacheState {
       budget: null,
       city: null
     },
-    updatedAt: new Date()
+    updatedAt: new Date(),
+    phone: "+10000000000"
   };
 }
 
@@ -81,32 +87,41 @@ function applyLLMResult(
 // 🔹 main test flow
 async function run() {
 
-  const llm = new OpenAIApi();
+  const testLogger = logger.child({ component: "LlmTest" });
+  const llm = new OpenAIApi(testLogger.child({ component: "OpenAIApi" }));
 
   let state = createMockState();
 
   const newUserMessage = "My budget is 5000";
 
-  console.log("---- BEFORE ----");
-  console.log(JSON.stringify(state, null, 2));
+  testLogger.info("llm_test.before", { state });
 
   // 🔹 build input
-  const input = buildLLMInput(state, newUserMessage);
+  const input = {
+    currentState: state.state,
+    messageContent: newUserMessage,
+    collectedParams: state.collectedParams,
+    lastMessages: state.lastMessages
+  };
 
-  console.log("\n---- LLM INPUT ----");
-  console.log(input);
+  testLogger.info("llm_test.input", { input });
 
   // 🔹 call LLM
-  const result: LLMOutput = await llm.generateResponse(input);
+  const result: LLMOutput = {
+    response: await llm.generateResponse(input, {
+      conversationEvent: ConversationEvent.finishedPacing,
+      newConclusion: "User provided budget",
+      params: { budget: 5000 }
+    }),
+    collectedParams: {}
+  };
 
-  console.log("\n---- LLM OUTPUT ----");
-  console.log(result);
+  testLogger.info("llm_test.output", { result });
 
   // 🔹 apply result to state
   applyLLMResult(state, newUserMessage, result);
 
-  console.log("\n---- AFTER ----");
-  console.log(JSON.stringify(state, null, 2));
+  testLogger.info("llm_test.after", { state });
 }
 
 run();

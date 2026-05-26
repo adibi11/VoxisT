@@ -1,11 +1,16 @@
 
 import { ConversationCacheState } from "../../dataClients/Types/messageTypes";
 import { Action, ConversationEvent } from "../../dataClients/Types/stateMachineTypes";
-import { StateMachineInput, StateMachineOutput ,ConversationState} from "../../dataClients/Types/stateMachineTypes";
-import { ILlmProvider } from "../../llm/llmInterface";
+import { StateMachineOutput ,ConversationState} from "../../dataClients/Types/stateMachineTypes";
+import { ILogger, logger } from "../../logging/logger";
 export  class ConversationStateMachine
 {
-    
+    private logger: ILogger;
+
+    constructor(loggerInstance: ILogger = logger.child({ component: "ConversationStateMachine" }))
+    {
+        this.logger = loggerInstance;
+    }
     
     
     
@@ -18,22 +23,27 @@ export  class ConversationStateMachine
         {
             case ConversationState.start:
                 this.addAction(Action.sendWelcomeMessage, Actions);
+                cache.state = ConversationState.collecting;
                 break;
             case ConversationState.collecting:
                 if(output.conversationEvent === ConversationEvent.concern)
                 {
-                    this.addAction(Action.tryPacing, Actions);
-                    if(this.checkAllParamsCollected(cache.collectedParams, output.params))
+                    if(this.hasValidParams(output.params))
                     {
                         this.addAction(Action.applyParams, Actions);
                     }
+                    this.addAction(Action.tryPacing, Actions);
                     cache.state = ConversationState.pacing;
                     break;
                 }
                 
-                if(this.checkAllParamsCollected(cache.collectedParams, output.params))
+                if(this.hasValidParams(output.params))
                 {
                     this.addAction(Action.applyParams, Actions);
+                }
+
+                if(this.checkAllParamsCollected(cache.collectedParams, output.params))
+                {
                     this.addAction(Action.tryClosing, Actions);
                     cache.state = ConversationState.closing;
                     
@@ -47,6 +57,10 @@ export  class ConversationStateMachine
             case ConversationState.closing:
                 if(output.conversationEvent === ConversationEvent.concern)
                 {
+                    if(this.hasValidParams(output.params))
+                    {
+                        this.addAction(Action.applyParams, Actions);
+                    }
                     this.addAction(Action.tryPacing, Actions);
                     cache.state = ConversationState.pacing;
 
@@ -54,7 +68,10 @@ export  class ConversationStateMachine
                 }
                 if(output.conversationEvent === ConversationEvent.updateParams)
                 {
-                    this.addAction(Action.applyParams, Actions);
+                    if(this.hasValidParams(output.params))
+                    {
+                        this.addAction(Action.applyParams, Actions);
+                    }
                     cache.state = ConversationState.collecting;
                     break;
                 }
@@ -64,6 +81,10 @@ export  class ConversationStateMachine
             case ConversationState.pacing:
                 if(output.conversationEvent === ConversationEvent.concern)
                 {
+                    if(this.hasValidParams(output.params))
+                    {
+                        this.addAction(Action.applyParams, Actions);
+                    }
                     this.addAction(Action.tryPacing, Actions);
                     cache.state = ConversationState.pacing;
 
@@ -72,15 +93,19 @@ export  class ConversationStateMachine
                 
                 if(output.conversationEvent === ConversationEvent.finishedPacing)
                 {
-                    if(this.checkAllParamsCollected(cache.collectedParams, output.params))
+                    if(this.hasValidParams(output.params))
                     {
                         this.addAction(Action.applyParams, Actions);
+                    }
+
+                    if(this.checkAllParamsCollected(cache.collectedParams, output.params))
+                    {
                         this.addAction(Action.tryClosing, Actions);
                         cache.state = ConversationState.closing;
 
                         break;
                     }
-                    this.addAction(Action.tryClosing, Actions);
+                    this.addAction(Action.askForParams, Actions);
                     cache.state = ConversationState.collecting;
                     break;
                 }
@@ -91,7 +116,7 @@ export  class ConversationStateMachine
                 break;
             
             default:
-                console.warn(`Unrecognized conversation state: ${cache.state}`);
+                this.logger.warn("state.unrecognized", { state: cache.state });
                 cache.state = ConversationState.failure;
                 this.addAction(Action.escalateToHuman, Actions);
         }
@@ -100,10 +125,17 @@ export  class ConversationStateMachine
 
     checkAllParamsCollected(collectedParams: Record<string, string | number | null>, newParams?: Record<string, string | number | null>): boolean
     {
-        if(!newParams) return false;
-        for(const key in newParams)
+        const mergedParams = {
+            ...collectedParams,
+            ...(newParams || {})
+        };
+
+        const requiredParamNames = Object.keys(collectedParams);
+        if(requiredParamNames.length === 0) return true;
+
+        for(const key of requiredParamNames)
         {
-            if (collectedParams[key] === null || collectedParams[key] === undefined)
+            if (mergedParams[key] === null || mergedParams[key] === undefined || mergedParams[key] === "")
             {
                 return false;
             }
@@ -111,6 +143,14 @@ export  class ConversationStateMachine
         }
         return true;
     }
+
+    hasValidParams(params?: Record<string, string | number | null>): boolean
+    {
+        return Object.values(params || {}).some((value) =>
+            value !== null && value !== undefined && value !== ""
+        );
+    }
+
     addAction(action: Action, Actions: Action[])
     {
         if(!Actions.includes(action))

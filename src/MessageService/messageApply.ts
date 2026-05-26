@@ -5,26 +5,35 @@ import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stat
 import { ConversationStateMachine } from "./context/conversationSM";
 import { Executer } from "./context/executer";
 import { ISqlInterface } from "../dataClients/SqlClient/sqlInterface";
+import { ILogger, logger } from "../logging/logger";
 
 export class LlmPipeline{
 
     private llmProvider : ILlmProvider
     private sqlInterface: ISqlInterface;
+    private logger: ILogger;
 
-    constructor(llm:ILlmProvider,sqlInterface: ISqlInterface)
+    constructor(llm:ILlmProvider,sqlInterface: ISqlInterface, loggerInstance: ILogger = logger.child({ component: "LlmPipeline" }))
     {
         this.llmProvider = llm;
         this.sqlInterface = sqlInterface;
+        this.logger = loggerInstance;
     }
 
     async applyPipline(state:ConversationCacheState,message:string,businessId: number): Promise<LlmOutput>{
-        console.log("---- BEFORE ----");
-        console.log(JSON.stringify(state, null, 2));
-        const executer = new Executer(this.llmProvider);
+        this.logger.info("conversation.state.before", {
+          conversationId: state.conversationId,
+          state: state.state,
+          collectedParams: state.collectedParams,
+          lastMessagesCount: state.lastMessages.length,
+          phone: state.phone
+        });
+        const executer = new Executer(this.llmProvider, this.logger.child({ component: "Executer" }));
         const stateMachineInput = buildStateMachineInput(state, message);
         const output = await executer.prepareAndExecute(stateMachineInput,state);
-        console.log("---- AFTER ----");
-        console.log(JSON.stringify(state, null, 2));
+        this.logger.info("conversation.state.after", {
+          conversation: state
+        });
         if(output.response === "starter" || output.response === "ender" || output.response === "escalate")
         {
           const business = await this.sqlInterface.getBusiness(businessId);

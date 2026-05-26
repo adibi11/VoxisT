@@ -5,14 +5,20 @@ import { ILlmProvider } from "./llmInterface";
 import { buildMessagePrompt ,buildPacingPrompt,parseResponse} from "./promptHandler";
 import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
 import { buildEventPrompt, parseEventResponse } from "./promptHandler";
+import { ILogger, logger } from "../logging/logger";
 
 
 
 export class OpenAIApi implements ILlmProvider {
+    private logger: ILogger;
 
     private llmclient = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY,
     });
+
+    constructor(loggerInstance: ILogger = logger.child({ component: "OpenAIApi" })) {
+        this.logger = loggerInstance;
+    }
 
     
     async getPacingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string> {
@@ -62,7 +68,7 @@ export class OpenAIApi implements ILlmProvider {
 
         const text = completion.choices[0]?.message?.content || "";
 
-        return parseEventResponse(text);
+        return parseEventResponse(text, this.logger);
     }
 
     getClosingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string> {
