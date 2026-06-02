@@ -90,14 +90,14 @@ export  class ConversationStateMachine
 
                     break;
                 }
+
+                if(this.hasValidParams(output.params))
+                {
+                    this.addAction(Action.applyParams, Actions);
+                }
                 
                 if(output.conversationEvent === ConversationEvent.finishedPacing)
                 {
-                    if(this.hasValidParams(output.params))
-                    {
-                        this.addAction(Action.applyParams, Actions);
-                    }
-
                     if(this.checkAllParamsCollected(cache.collectedParams, output.params))
                     {
                         this.addAction(Action.tryClosing, Actions);
@@ -109,6 +109,16 @@ export  class ConversationStateMachine
                     cache.state = ConversationState.collecting;
                     break;
                 }
+
+                if(this.checkAllParamsCollected(cache.collectedParams, output.params))
+                {
+                    this.addAction(Action.tryClosing, Actions);
+                    cache.state = ConversationState.closing;
+                    break;
+                }
+
+                this.addAction(Action.askForParams, Actions);
+                cache.state = ConversationState.collecting;
                 break;
             case ConversationState.ended:
                 this.addAction(Action.ignore, Actions);

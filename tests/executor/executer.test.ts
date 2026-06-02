@@ -146,4 +146,22 @@ describe("Executer with fake LLM generations", () => {
     });
     expect(cache.state).toBe(ConversationState.collecting);
   });
+
+  it("generates a missing-param response when the user continues normally from pacing", async () => {
+    // Regression coverage for WhatsApp flow: pacing + updateParams used to return the fallback text.
+    const cache = createCache(ConversationState.pacing);
+    const input = inputFromCache(cache, "I need my home cleaned");
+    const llm = new FakeLlmProvider({
+      events: [generatedEvent(ConversationEvent.updateParams, { service: "home cleaning" })],
+      responses: ["Thanks, what city are you located in?"]
+    });
+    const executer = new Executer(llm, new NullLogger());
+
+    const result = await executer.prepareAndExecute(input, cache);
+
+    expect(result.response).toBe("Thanks, what city are you located in?");
+    expect(result.collectedParams.service).toBe("home cleaning");
+    expect(cache.state).toBe(ConversationState.collecting);
+    expect(llm.responseInputs).toHaveLength(1);
+  });
 });

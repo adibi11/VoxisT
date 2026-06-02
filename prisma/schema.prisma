@@ -52,6 +52,32 @@ model Business {
   escalationMessage String
   conversations  Conversation[]
   parameters     BusinessParameter[]
+  users          BusinessUser[]
+}
+
+model AppUser {
+  id             Int              @id @default(autoincrement())
+  email          String           @unique
+  passwordHash   String
+  displayName    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  businesses     BusinessUser[]
+}
+
+model BusinessUser {
+  id             Int              @id @default(autoincrement())
+  userId         Int
+  businessId     Int
+  role           BusinessUserRole @default(owner)
+  createdAt      DateTime         @default(now())
+
+  user           AppUser          @relation(fields: [userId], references: [id])
+  business       Business         @relation(fields: [businessId], references: [id])
+
+  @@unique([userId, businessId])
+  @@index([businessId])
 }
 
 model Client {
@@ -108,4 +134,10 @@ enum MessageType {
   user
   bot
   system
+}
+
+enum BusinessUserRole {
+  owner
+  admin
+  member
 }

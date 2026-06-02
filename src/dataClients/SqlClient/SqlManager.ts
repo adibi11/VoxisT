@@ -8,6 +8,7 @@ import { ConversationCacheState } from "../Types/messageTypes";
 import { ISqlInterface } from "./sqlInterface";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
+import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessagesResponseDto, ConversationSummaryDto } from "../../contracts";
 
 
 export const prisma = new PrismaClient();
@@ -269,5 +270,202 @@ export class SqlManager implements ISqlInterface {
             }
             });
         }
+    }
+
+    async createBusinessUser(email: string, passwordHash: string, displayName: string | undefined, businessId: number): Promise<AuthUserDto> {
+        // Users are connected to businesses through BusinessUser so we can support multi-business access later.
+        const user = await this.prisma.appUser.create({
+            data: {
+                email: email.toLowerCase(),
+                passwordHash,
+                displayName,
+                businesses: {
+                    create: {
+                        businessId,
+                        role: "owner"
+                    }
+                }
+            },
+            include: {
+                businesses: true
+            }
+        });
+
+        return {
+            id: user.id,
+            email: user.email,
+            displayName: user.displayName,
+            businessIds: user.businesses.map((businessUser) => businessUser.businessId)
+        };
+    }
+
+    async getUserWithPasswordByEmail(email: string): Promise<(AuthUserDto & { passwordHash: string }) | null> {
+        const user = await this.prisma.appUser.findUnique({
+            where: {
+                email: email.toLowerCase()
+            },
+            include: {
+                businesses: true
+            }
+        });
+
+        if (!user) {
+            return null;
+        }
+
+        return {
+            id: user.id,
+            email: user.email,
+            displayName: user.displayName,
+            passwordHash: user.passwordHash,
+            businessIds: user.businesses.map((businessUser) => businessUser.businessId)
+        };
+    }
+
+    async getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]> {
+        const businessUsers = await this.prisma.businessUser.findMany({
+            where: { userId },
+            include: {
+                business: true
+            },
+            orderBy: {
+                createdAt: "asc"
+            }
+        });
+
+        return businessUsers.map(({ business }) => ({
+            id: business.id,
+            name: business.businessName,
+            phone: business.businessPhone,
+            email: business.businessEmail
+        }));
+    }
+
+    async getClientsByBusiness(businessId: number): Promise<ClientSummaryDto[]> {
+        const clients = await this.prisma.client.findMany({
+            where: {
+                conversations: {
+                    some: {
+                        businessId
+                    }
+                }
+            },
+            include: {
+                conversations: {
+                    where: { businessId },
+                    orderBy: { createdAt: "desc" },
+                    take: 1
+                },
+                _count: {
+                    select: {
+                        conversations: {
+                            where: { businessId }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                id: "desc"
+            }
+        });
+
+        return clients.map((client) => ({
+            id: client.id,
+            phoneNumber: client.phoneNumber,
+            conversationCount: client._count.conversations,
+            lastConversationAt: client.conversations[0]?.createdAt.toISOString()
+        }));
+    }
+
+    async getConversationsByBusinessAndClient(businessId: number, clientId?: number): Promise<ConversationSummaryDto[]> {
+        const conversations = await this.prisma.conversation.findMany({
+            where: {
+                businessId,
+                ...(clientId ? { clientId } : {})
+            },
+            include: {
+                messages: {
+                    orderBy: { createdAt: "desc" },
+                    take: 1
+                },
+                _count: {
+                    select: {
+                        messages: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+
+        return conversations.map((conversation) => ({
+            id: conversation.id,
+            businessId: conversation.businessId,
+            clientId: conversation.clientId,
+            status: conversation.conversationStatus,
+            conclusion: conversation.conclusion,
+            createdAt: conversation.createdAt.toISOString(),
+            messageCount: conversation._count.messages,
+            lastMessageAt: conversation.messages[0]?.createdAt.toISOString()
+        }));
+    }
+
+    async getMessagesByConversation(businessId: number, conversationId: number): Promise<ConversationMessagesResponseDto | null> {
+        const conversation = await this.prisma.conversation.findFirst({
+            where: {
+                id: conversationId,
+                businessId
+            },
+            include: {
+                messages: {
+                    orderBy: { createdAt: "asc" }
+                },
+                parameterAnswers: {
+                    include: {
+                        businessParameter: true
+                    },
+                    orderBy: { createdAt: "asc" }
+                },
+                _count: {
+                    select: {
+                        messages: true
+                    }
+                }
+            }
+        });
+
+        if (!conversation) {
+            return null;
+        }
+
+        const lastMessage = conversation.messages[conversation.messages.length - 1];
+
+        return {
+            conversation: {
+                id: conversation.id,
+                businessId: conversation.businessId,
+                clientId: conversation.clientId,
+                status: conversation.conversationStatus,
+                conclusion: conversation.conclusion,
+                createdAt: conversation.createdAt.toISOString(),
+                messageCount: conversation._count.messages,
+                lastMessageAt: lastMessage?.createdAt.toISOString()
+            },
+            messages: conversation.messages.map((message) => ({
+                id: message.id,
+                conversationId: message.conversationId,
+                type: message.type,
+                content: message.content,
+                status: message.status,
+                createdAt: message.createdAt.toISOString()
+            })),
+            params: conversation.parameterAnswers.map((answer) => ({
+                id: answer.id,
+                paramName: answer.businessParameter.paramName,
+                paramValue: answer.paramAnswer,
+                createdAt: answer.createdAt.toISOString()
+            }))
+        };
     }
 }

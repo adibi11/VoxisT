@@ -131,6 +131,35 @@ describe("ConversationStateMachine", () => {
     expect(cache.state).toBe(ConversationState.collecting);
   });
 
+  it("resumes parameter collection when a normal update arrives while pacing", () => {
+    // This covers the real WhatsApp case: after a concern, the user continues normally.
+    // Pacing should not fall through with no actions; it should collect/ask like normal.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.pacing);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams, { service: "home cleaning" }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
+  it("asks for missing params when pacing receives no useful extracted params", () => {
+    // Even if the LLM does not extract anything, pacing should produce a user-facing response.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.pacing);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams),
+      cache
+    );
+
+    expect(actions).toEqual([Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
   it("moves from pacing to closing when pacing finishes and all params are present", () => {
     // This is the happy path after the user is ready to continue.
     const machine = new ConversationStateMachine();
