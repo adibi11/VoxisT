@@ -24,6 +24,8 @@ export class LlmPipeline{
         this.logger.info("conversation.state.before", {
           conversationId: state.conversationId,
           state: state.state,
+          channel: state.channel,
+          provider: state.provider,
           collectedParams: state.collectedParams,
           lastMessagesCount: state.lastMessages.length,
           phone: state.phone

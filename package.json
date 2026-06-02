@@ -8,6 +8,7 @@
     "start": "node dist/Api/index.js",
     "dev": "nodemon --watch src --exec ts-node src/Api/index.ts",
     "worker": "ts-node src/Workers/MessageWorker/worker.ts",
+    "outbound-worker": "ts-node src/Workers/OutboundMessageWorker/worker.ts",
     "build": "tsc"
   },
   "keywords": [],

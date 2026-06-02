@@ -1,5 +1,5 @@
 import { ISqlInterface } from "../../src/dataClients/SqlClient/sqlInterface";
-import { BusinessDto } from "../../src/dataClients/Types/apiTypes";
+import { BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 
@@ -49,6 +49,8 @@ export class FakeSqlManager implements ISqlInterface {
     this.conversations.set(this.key(clientId, businessId), {
       conversationId: this.nextConversationId++,
       state: ConversationState.start,
+      channel: CommunicationChannel.Whatsapp,
+      provider: MessageProvider.Twilio,
       collectedParams: this.emptyParamsForBusiness(businessId),
       lastMessages: [],
       updatedAt: new Date(),

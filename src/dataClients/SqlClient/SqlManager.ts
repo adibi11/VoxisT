@@ -3,6 +3,7 @@ import { Client, ConversationEntity } from "../Types/messageTypes";
 import { mapToConversationEntity } from "../Types/mappers";
 import { BusinessParam } from "../Types/messageTypes";
 import { BusinessDto, MessageType } from "../Types/apiTypes";
+import { CommunicationChannel, MessageProvider } from "../Types/apiTypes";
 import { ConversationCacheState } from "../Types/messageTypes";
 import { ISqlInterface } from "./sqlInterface";
 import { ConversationState } from "../Types/stateMachineTypes";
@@ -67,6 +68,8 @@ export class SqlManager implements ISqlInterface {
         return {
             conversationId:  conversation.id ,
             state: messages.length > 0 ? ConversationState.collecting : ConversationState.start,
+            channel: CommunicationChannel.Whatsapp,
+            provider: MessageProvider.Twilio,
             lastMessages: messages.map(msg => ({
                 role: msg.type as "user" | "bot",
                 content: msg.content

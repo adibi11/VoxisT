@@ -9,6 +9,7 @@ import { ConversationCacheState, LastMessages as LastMessage } from "../dataClie
 import { ILlmProvider } from "../llm/llmInterface";
 import { LlmPipeline } from "./messageApply";
 import { ILogger, logger } from "../logging/logger";
+import { IOutboundMessageQueue } from "../QueueClient/queue";
 
 
 export class MessageService {
@@ -16,11 +17,19 @@ export class MessageService {
     private sqlInterface: ISqlInterface;
     private llmPiplne: LlmPipeline;
     private logger: ILogger;
+    private outboundQueue?: IOutboundMessageQueue;
 
-    constructor(cacheManager: ICacheManager, sqlInterface: ISqlInterface,llm:ILlmProvider, loggerInstance: ILogger = logger.child({ component: "MessageService" })) {
+    constructor(
+        cacheManager: ICacheManager,
+        sqlInterface: ISqlInterface,
+        llm: ILlmProvider,
+        loggerInstance: ILogger = logger.child({ component: "MessageService" }),
+        outboundQueue?: IOutboundMessageQueue
+    ) {
         this.cacheManager = cacheManager;
         this.sqlInterface = sqlInterface;
         this.logger = loggerInstance;
+        this.outboundQueue = outboundQueue;
         this.llmPiplne = new LlmPipeline(llm, sqlInterface, this.logger.child({ component: "LlmPipeline" }));
     }
 
@@ -28,6 +37,8 @@ export class MessageService {
         
         this.logger.info("message.processing.received", {
             actionType: message.type,
+            channel: message.channel,
+            provider: message.provider,
             businessId: message.businessId,
             from: message.data?.From,
             to: message.data?.To,
@@ -63,6 +74,8 @@ export class MessageService {
         const flowLogger = this.logger.child({
             clientId: client.id,
             businessId,
+            channel: message.channel,
+            provider: message.provider,
             from: message.data.From,
             to: message.data.To
         });
@@ -96,15 +109,19 @@ export class MessageService {
                 }
             } else {
                 flowLogger.info("conversation.cache.hit", {
-                    conversationId: conversationState.conversationId,
-                    state: conversationState.state,
-                    lastMessagesCount: conversationState.lastMessages.length
+                conversationId: conversationState.conversationId,
+                state: conversationState.state,
+                channel: conversationState.channel,
+                provider: conversationState.provider,
+                lastMessagesCount: conversationState.lastMessages.length
                 });
             }
            
             flowLogger.info("conversation.initialized", {
                 conversationId: conversationState.conversationId,
                 state: conversationState.state,
+                channel: conversationState.channel,
+                provider: conversationState.provider,
                 collectedParams: conversationState.collectedParams,
                 lastMessagesCount: conversationState.lastMessages.length
             });
@@ -138,6 +155,12 @@ export class MessageService {
             catch{
                 throw new Error("Failed to create messages in DB");
             }   
+            try{
+                await this.enqueueOutboundMessage(client.id, businessId, message, conversationState!, messages);
+            }
+            catch{
+                throw new Error("Failed to enqueue outbound message");
+            }
 
         }
         catch (error) {
@@ -178,5 +201,55 @@ export class MessageService {
     applyMessagesToCacheState(conversationState: ConversationCacheState, messages: LastMessage[]) {
         conversationState.lastMessages.push(...messages);
         conversationState.updatedAt = new Date();
+    }
+
+    async enqueueOutboundMessage(
+        clientId: number,
+        businessId: number,
+        inboundMessage: Message,
+        conversationState: ConversationCacheState,
+        messages: LastMessage[]
+    ) {
+        if (!this.outboundQueue) {
+            this.logger.warn("outbound.enqueue.skipped", {
+                reason: "outbound_queue_not_configured",
+                conversationId: conversationState.conversationId,
+                businessId,
+                clientId
+            });
+            return;
+        }
+
+        const botMessage = [...messages].reverse().find((message) => message.role === "bot");
+        if (!botMessage) {
+            this.logger.warn("outbound.enqueue.skipped", {
+                reason: "bot_message_missing",
+                conversationId: conversationState.conversationId,
+                businessId,
+                clientId
+            });
+            return;
+        }
+
+        await this.outboundQueue.addOutboundMessage({
+            message: {
+                channel: inboundMessage.channel,
+                provider: inboundMessage.provider || conversationState.provider!,
+                from: inboundMessage.data.To,
+                to: inboundMessage.data.From,
+                body: botMessage.content,
+                businessId,
+                clientId,
+                conversationId: conversationState.conversationId
+            }
+        });
+
+        this.logger.info("outbound.enqueue.succeeded", {
+            channel: inboundMessage.channel,
+            provider: inboundMessage.provider || conversationState.provider,
+            conversationId: conversationState.conversationId,
+            businessId,
+            clientId
+        });
     }
 }

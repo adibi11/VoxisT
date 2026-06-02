@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Executer } from "../../src/MessageService/context/executer";
+import { CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
 import { ConversationEvent, ConversationState, StateMachineInput, StateMachineOutput } from "../../src/dataClients/Types/stateMachineTypes";
 import { NullLogger } from "../../src/logging/logger";
@@ -16,6 +17,8 @@ function createCache(
   return {
     conversationId: 1,
     state,
+    channel: CommunicationChannel.Whatsapp,
+    provider: MessageProvider.Twilio,
     collectedParams,
     lastMessages: [
       { role: "bot", content: "Hi, how can I help?" }

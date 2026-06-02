@@ -1,4 +1,5 @@
 import { OpenAIApi } from "./openaiApi";
+import { CommunicationChannel, MessageProvider } from "../dataClients/Types/apiTypes";
 import { ConversationEvent, ConversationState } from "../dataClients/Types/stateMachineTypes";
 import { logger } from "../logging/logger";
 
@@ -11,6 +12,8 @@ type ChatMessage = {
 type ConversationCacheState = {
   conversationId: number;
   state: ConversationState;
+  channel: CommunicationChannel;
+  provider?: MessageProvider;
   lastMessages: ChatMessage[];
   collectedParams: Record<string,any>;
   updatedAt: Date;
@@ -32,6 +35,8 @@ function createMockState(): ConversationCacheState {
   return {
     conversationId: 1,
     state: ConversationState.collecting,
+    channel: CommunicationChannel.Whatsapp,
+    provider: MessageProvider.Twilio,
     lastMessages: [
       { role: "user", content: "Hi" },
       { role: "bot", content: "What is your budget?" }

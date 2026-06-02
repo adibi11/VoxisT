@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { MessageService } from "../../src/MessageService/messageService";
-import { ActionType, BusinessDto, Message } from "../../src/dataClients/Types/apiTypes";
+import { ActionType, BusinessDto, CommunicationChannel, Message, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
 import { ConversationEvent, ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { NullLogger } from "../../src/logging/logger";
 import { FakeCacheManager } from "../fakes/FakeCacheManager";
 import { FakeLlmProvider } from "../fakes/FakeLlmProvider";
+import { FakeOutboundMessageQueue } from "../fakes/FakeOutboundMessageQueue";
 import { FakeSqlManager } from "../fakes/FakeSqlManager";
 
 const businessId = 1;
@@ -33,6 +34,8 @@ function createMessage(body: string): Message {
     type: ActionType.HandleMessage,
     content: body,
     status: "received",
+    channel: CommunicationChannel.Whatsapp,
+    provider: MessageProvider.Twilio,
     businessId,
     data: {
       From: clientPhone,
@@ -53,6 +56,8 @@ function createConversationState(
   return {
     conversationId: 1,
     state,
+    channel: CommunicationChannel.Whatsapp,
+    provider: MessageProvider.Twilio,
     collectedParams,
     lastMessages: [],
     updatedAt: new Date("2026-05-25T00:00:00.000Z"),
@@ -75,7 +80,8 @@ describe("MessageService integration flow with fakes", () => {
         }
       ]
     });
-    const service = new MessageService(cache, sql, llm, testLogger);
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
 
     await service.processMessage(createMessage("Hi"));
 
@@ -99,6 +105,20 @@ describe("MessageService integration flow with fakes", () => {
       { role: "bot", content: "Welcome to Test Business. How can I help?" }
     ]);
     expect(cache.releasedLocks).toEqual([{ clientId: 1, businessId }]);
+    expect(outboundQueue.jobs).toEqual([
+      {
+        message: {
+          channel: CommunicationChannel.Whatsapp,
+          provider: MessageProvider.Twilio,
+          from: "+15559999999",
+          to: clientPhone,
+          body: "Welcome to Test Business. How can I help?",
+          businessId,
+          clientId: 1,
+          conversationId: 1
+        }
+      }
+    ]);
   });
 
   it("persists a partial param update and keeps the conversation collecting", async () => {
@@ -121,7 +141,8 @@ describe("MessageService integration flow with fakes", () => {
       ],
       responses: ["Thanks David, what service do you need?"]
     });
-    const service = new MessageService(cache, sql, llm, testLogger);
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
 
     await service.processMessage(createMessage("My name is David"));
 
@@ -150,6 +171,8 @@ describe("MessageService integration flow with fakes", () => {
       { role: "user", content: "My name is David" },
       { role: "bot", content: "Thanks David, what service do you need?" }
     ]);
+    expect(outboundQueue.jobs).toHaveLength(1);
+    expect(outboundQueue.jobs[0].message.body).toBe("Thanks David, what service do you need?");
   });
 
   it("persists final params and stores the closing conversation state", async () => {
@@ -179,7 +202,8 @@ describe("MessageService integration flow with fakes", () => {
       ],
       closingMessages: ["Great, I have everything I need."]
     });
-    const service = new MessageService(cache, sql, llm, testLogger);
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
 
     await service.processMessage(createMessage("I need consulting on Monday"));
 
@@ -222,6 +246,8 @@ describe("MessageService integration flow with fakes", () => {
       { role: "user", content: "I need consulting on Monday" },
       { role: "bot", content: "Great, I have everything I need." }
     ]);
+    expect(outboundQueue.jobs).toHaveLength(1);
+    expect(outboundQueue.jobs[0].message.body).toBe("Great, I have everything I need.");
   });
 
   it("does not call the LLM or persist anything when the conversation lock is unavailable", async () => {
@@ -231,7 +257,8 @@ describe("MessageService integration flow with fakes", () => {
     const sql = new FakeSqlManager();
     sql.seedBusiness(businessId, createBusiness());
     const llm = new FakeLlmProvider();
-    const service = new MessageService(cache, sql, llm, testLogger);
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
 
     await service.processMessage(createMessage("My name is David"));
 
@@ -239,6 +266,7 @@ describe("MessageService integration flow with fakes", () => {
     expect(sql.createdConversations).toHaveLength(0);
     expect(sql.messages).toHaveLength(0);
     expect(sql.paramAnswers).toHaveLength(0);
+    expect(outboundQueue.jobs).toHaveLength(0);
     expect(cache.releasedLocks).toHaveLength(0);
   });
 
@@ -259,7 +287,8 @@ describe("MessageService integration flow with fakes", () => {
       ],
       responses: ["Thanks David, what service do you need?"]
     });
-    const service = new MessageService(cache, sql, llm, testLogger);
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
 
     await service.processMessage(createMessage("My name is David"));
 
@@ -276,6 +305,7 @@ describe("MessageService integration flow with fakes", () => {
       { role: "user", content: "My name is David" },
       { role: "bot", content: "Thanks David, what service do you need?" }
     ]);
+    expect(outboundQueue.jobs).toHaveLength(1);
   });
 
   it("fails the job when Redis has stale conversation state that does not exist in SQL", async () => {
@@ -295,7 +325,8 @@ describe("MessageService integration flow with fakes", () => {
         }
       ]
     });
-    const service = new MessageService(cache, sql, llm, testLogger);
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
 
     await expect(service.processMessage(createMessage("Hi"))).rejects.toThrow(
       "Failed to create messages in DB"
@@ -303,6 +334,7 @@ describe("MessageService integration flow with fakes", () => {
 
     expect(sql.createdConversations).toHaveLength(0);
     expect(sql.messages).toHaveLength(0);
+    expect(outboundQueue.jobs).toHaveLength(0);
     expect(cache.releasedLocks).toEqual([{ clientId: 1, businessId }]);
   });
 });

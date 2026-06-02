@@ -1,15 +1,16 @@
 import "dotenv/config";
 import express from "express";
 import { QueueManager } from "../QueueClient/queue";
-import { JobData,ActionType } from "../dataClients/Types/apiTypes";
+import { CommunicationChannel, JobData,ActionType, MessageProvider } from "../dataClients/Types/apiTypes";
 import { twillioMessage } from "../dataClients/Types/apiTypes";
 import { BusinessDto } from "../dataClients/Types/apiTypes";
 import { SqlManager } from "../dataClients/SqlClient/SqlManager";
 import { logger } from "../logging/logger";
+import { MESSAGE_QUEUE_NAME } from "../QueueClient/queueNames";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
-const queueManager = new QueueManager("message-queue", logger.child({ component: "QueueManager", queueName: "message-queue" }));
+const queueManager = new QueueManager(MESSAGE_QUEUE_NAME, logger.child({ component: "QueueManager", queueName: MESSAGE_QUEUE_NAME }));
 const app = express();
 const PORT = 3000;
 
@@ -22,12 +23,16 @@ app.post("/webhook", async (req, res) => {
       type: ActionType.HandleMessage,
       content: event.Body,
       status: "received",
+      channel: getTwilioChannel(event),
+      provider: MessageProvider.Twilio,
       data: event
     }
    };
   appLogger.info("webhook.message.received", {
     from: event.From,
     to: event.To,
+    channel: jobData.event.channel,
+    provider: jobData.event.provider,
     bodyLength: event.Body?.length,
     actionType: jobData.event.type
   });
@@ -61,3 +66,11 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   appLogger.info("server.started", { port: PORT });
 });
+
+function getTwilioChannel(event: twillioMessage): CommunicationChannel {
+  if (event.From?.startsWith("whatsapp:") || event.To?.startsWith("whatsapp:")) {
+    return CommunicationChannel.Whatsapp;
+  }
+
+  return CommunicationChannel.Whatsapp;
+}

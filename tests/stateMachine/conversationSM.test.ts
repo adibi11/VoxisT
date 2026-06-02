@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ConversationStateMachine } from "../../src/MessageService/context/conversationSM";
+import { CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
 import { Action, ConversationEvent, ConversationState, StateMachineOutput } from "../../src/dataClients/Types/stateMachineTypes";
 
@@ -14,6 +15,8 @@ function createCache(
   return {
     conversationId: 1,
     state,
+    channel: CommunicationChannel.Whatsapp,
+    provider: MessageProvider.Twilio,
     collectedParams,
     lastMessages: [],
     updatedAt: new Date("2026-05-25T00:00:00.000Z"),

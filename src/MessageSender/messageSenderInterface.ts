@@ -1,11 +1,8 @@
-export enum OutboundMessageChannel {
-  Whatsapp = "whatsapp",
-  Sms = "sms",
-  Voice = "voice"
-}
+import { CommunicationChannel, MessageProvider } from "../dataClients/Types/apiTypes";
 
 export type OutboundMessage = {
-  channel: OutboundMessageChannel;
+  channel: CommunicationChannel;
+  provider: MessageProvider;
   from: string;
   to: string;
   body: string;
