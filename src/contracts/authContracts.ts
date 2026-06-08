@@ -4,12 +4,26 @@ export type LoginRequestDto = {
   password: string;
 };
 
-// Temporary bootstrap contract for creating a business-scoped user while the UI/admin flow is still young.
+export type RegisterBusinessRequestDto = {
+  name: string;
+  phone: string;
+  email: string;
+  parameters: {
+    paramName: string;
+    paramValue?: string;
+  }[];
+  starterMessage: string;
+  endMessage: string;
+  escalationMessage: string;
+  language?: string;
+};
+
+// Bootstrap contract for creating both a business and its first owner login.
 export type RegisterBusinessUserRequestDto = {
   email: string;
   password: string;
   displayName?: string;
-  businessId: number;
+  business: RegisterBusinessRequestDto;
 };
 
 // User data intentionally excludes password/hash fields.

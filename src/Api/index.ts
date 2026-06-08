@@ -11,6 +11,7 @@ import { hashPassword, verifyPassword } from "../auth/password";
 import { signJwt } from "../auth/jwt";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess } from "./authMiddleware";
 import { LoginRequestDto, RegisterBusinessUserRequestDto } from "../contracts";
+import cors from "cors";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
@@ -18,23 +19,46 @@ const queueManager = new QueueManager(MESSAGE_QUEUE_NAME, logger.child({ compone
 const app = express();
 const PORT = 3000;
 
+const corsMiddleware = cors({
+  origin: (origin, callback) => {
+    if (!origin || getAllowedOrigins().includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS origin denied: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false,
+  optionsSuccessStatus: 204
+});
+
+app.use(corsMiddleware);
+app.options(/.*/, corsMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 app.post("/auth/register", async (req, res) => {
   try {
     const request = req.body as RegisterBusinessUserRequestDto;
-    if (!request.email || !request.password || !request.businessId) {
-      return res.status(400).json({ message: "email, password and businessId are required" });
+    if (!request.email || !request.password || !request.business?.name || !request.business?.phone || !request.business?.email) {
+      return res.status(400).json({ message: "email, password and business details are required" });
     }
 
-    const user = await sqlManager.createBusinessUser(
+    const user = await sqlManager.registerBusinessOwner(
       request.email,
       hashPassword(request.password),
       request.displayName,
-      request.businessId
+      request.business
     );
     const token = signJwt({
+      userId: user.id,
+      email: user.email,
+      businessIds: user.businessIds
+    });
+
+    appLogger.info("auth.register.succeeded", {
       userId: user.id,
       email: user.email,
       businessIds: user.businessIds
@@ -66,6 +90,12 @@ app.post("/auth/login", async (req, res) => {
     });
     const { passwordHash: _passwordHash, ...safeUser } = user;
 
+    appLogger.info("auth.login.succeeded", {
+      userId: user.id,
+      email: user.email,
+      businessIds: user.businessIds
+    });
+
     return res.status(200).json({ token, user: safeUser });
   } catch (error) {
     appLogger.error("auth.login.failed", { error });
@@ -76,7 +106,12 @@ app.post("/auth/login", async (req, res) => {
 app.get("/me/businesses", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    return res.status(200).json(await sqlManager.getBusinessesForUser(authReq.auth.userId));
+    const businesses = await sqlManager.getBusinessesForUser(authReq.auth.userId);
+    appLogger.info("businesses.list.succeeded", {
+      userId: authReq.auth.userId,
+      count: businesses.length
+    });
+    return res.status(200).json(businesses);
   } catch (error) {
     appLogger.error("businesses.list.failed", { error });
     return res.status(500).json({ message: "Failed to fetch businesses" });
@@ -94,7 +129,13 @@ app.get("/businesses/:businessId/clients", requireAuth, async (req, res) => {
       return;
     }
 
-    return res.status(200).json(await sqlManager.getClientsByBusiness(businessId));
+    const clients = await sqlManager.getClientsByBusiness(businessId);
+    appLogger.info("clients.list.succeeded", {
+      userId: authReq.auth.userId,
+      businessId,
+      count: clients.length
+    });
+    return res.status(200).json(clients);
   } catch (error) {
     appLogger.error("clients.list.failed", { error });
     return res.status(500).json({ message: "Failed to fetch clients" });
@@ -113,7 +154,14 @@ app.get("/businesses/:businessId/conversations", requireAuth, async (req, res) =
       return;
     }
 
-    return res.status(200).json(await sqlManager.getConversationsByBusinessAndClient(businessId, clientId));
+    const conversations = await sqlManager.getConversationsByBusinessAndClient(businessId, clientId);
+    appLogger.info("conversations.list.succeeded", {
+      userId: authReq.auth.userId,
+      businessId,
+      clientId,
+      count: conversations.length
+    });
+    return res.status(200).json(conversations);
   } catch (error) {
     appLogger.error("conversations.list.failed", { error });
     return res.status(500).json({ message: "Failed to fetch conversations" });
@@ -136,6 +184,14 @@ app.get("/businesses/:businessId/conversations/:conversationId/messages", requir
     if (!result) {
       return res.status(404).json({ message: "Conversation not found" });
     }
+
+    appLogger.info("conversation.messages.succeeded", {
+      userId: authReq.auth.userId,
+      businessId,
+      conversationId,
+      messageCount: result.messages.length,
+      paramsCount: result.params.length
+    });
 
     return res.status(200).json(result);
   } catch (error) {
@@ -216,4 +272,11 @@ function getTwilioChannel(event: twillioMessage): CommunicationChannel {
 
 function isValidTwilioMessage(event: Partial<twillioMessage> | undefined): event is twillioMessage {
   return Boolean(event?.From && event?.To && event?.Body);
+}
+
+function getAllowedOrigins(): string[] {
+  return (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001,http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 }

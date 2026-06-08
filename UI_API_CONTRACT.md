@@ -4,7 +4,7 @@ This document is the source of truth for the React UI. Build UI API clients and 
 
 ## Base Rules
 
-- API base URL in local development: `http://localhost:3000`
+- API base URL in local development: `http://localhost:3000` (use it as an envirnment variable)
 - JSON endpoints use `Content-Type: application/json`
 - Protected endpoints require:
 
@@ -28,14 +28,28 @@ type LoginRequestDto = {
 
 ### `RegisterBusinessUserRequestDto`
 
-Temporary bootstrap endpoint for creating a user linked to one business.
+Bootstrap endpoint for creating both a business and its first owner user.
 
 ```ts
+type RegisterBusinessRequestDto = {
+  name: string;
+  phone: string;
+  email: string;
+  parameters: {
+    paramName: string;
+    paramValue?: string;
+  }[];
+  starterMessage: string;
+  endMessage: string;
+  escalationMessage: string;
+  language?: string;
+};
+
 type RegisterBusinessUserRequestDto = {
   email: string;
   password: string;
   displayName?: string;
-  businessId: number;
+  business: RegisterBusinessRequestDto;
 };
 ```
 
@@ -138,9 +152,9 @@ type ConversationMessagesResponseDto = {
 
 ## Endpoints
 
-### Register Business User
+### Register Business And Owner User
 
-Creates a UI login user linked to an existing business.
+Creates a new business, creates its first owner user, links them, and returns a JWT scoped to the new business id.
 
 ```http
 POST /auth/register
@@ -159,7 +173,20 @@ Example:
   "email": "owner@example.com",
   "password": "change-me",
   "displayName": "Owner",
-  "businessId": 1
+  "business": {
+    "name": "Example Cleaning",
+    "phone": "whatsapp:+15559999999",
+    "email": "owner@example.com",
+    "parameters": [
+      { "paramName": "name" },
+      { "paramName": "budget" },
+      { "paramName": "city" }
+    ],
+    "starterMessage": "Hi! How can I help you today?",
+    "endMessage": "Thanks, we have everything we need.",
+    "escalationMessage": "I am escalating this to a human.",
+    "language": "en"
+  }
 }
 ```
 
@@ -362,5 +389,5 @@ Status codes:
 - Do not hardcode business id. Use `/me/businesses` after login.
 - Always attach JWT to protected requests.
 - Treat `status` as display text for now; enums may become stricter later.
-- The API currently has a temporary register endpoint for bootstrapping. A future production UI may hide this behind admin-only access.
+- The register endpoint is currently the bootstrap flow for creating a business and its owner user. A future production UI may split this into an admin/onboarding flow.
 - The UI should tolerate empty arrays for clients, conversations, messages, and params.

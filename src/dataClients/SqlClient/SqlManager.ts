@@ -272,23 +272,44 @@ export class SqlManager implements ISqlInterface {
         }
     }
 
-    async createBusinessUser(email: string, passwordHash: string, displayName: string | undefined, businessId: number): Promise<AuthUserDto> {
-        // Users are connected to businesses through BusinessUser so we can support multi-business access later.
-        const user = await this.prisma.appUser.create({
-            data: {
-                email: email.toLowerCase(),
-                passwordHash,
-                displayName,
-                businesses: {
-                    create: {
-                        businessId,
-                        role: "owner"
+    async registerBusinessOwner(email: string, passwordHash: string, displayName: string | undefined, businessDto: BusinessDto): Promise<AuthUserDto> {
+        // Registration is transactional: the UI owner and business must be created together.
+        const user = await this.prisma.$transaction(async (tx) => {
+            const business = await tx.business.create({
+                data: {
+                    businessName: businessDto.name,
+                    businessPhone: businessDto.phone,
+                    businessEmail: businessDto.email,
+                    starterMessage: businessDto.starterMessage,
+                    enderMessage: businessDto.endMessage,
+                    escalationMessage: businessDto.escalationMessage,
+                    language: businessDto.language || "en",
+                    parameters: {
+                        createMany: {
+                            data: businessDto.parameters.map((param) => ({
+                                paramName: param.paramName
+                            }))
+                        }
                     }
                 }
-            },
-            include: {
-                businesses: true
-            }
+            });
+
+            return tx.appUser.create({
+                data: {
+                    email: email.toLowerCase(),
+                    passwordHash,
+                    displayName,
+                    businesses: {
+                        create: {
+                            businessId: business.id,
+                            role: "owner"
+                        }
+                    }
+                },
+                include: {
+                    businesses: true
+                }
+            });
         });
 
         return {
