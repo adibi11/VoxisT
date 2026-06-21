@@ -1,5 +1,6 @@
 
 import {ConversationEvent, ConversationState, StateMachineInput, StateMachineOutput} from "./stateMachineTypes";
+import { CommunicationChannel, MessageProvider } from "./apiTypes";
 export type Message = {
    userMessage: string;
     botResponse: string;
@@ -29,6 +30,20 @@ export type Business = {
     name: string;
     phone: string;
     email: string;
+}
+
+export type BusinessContext = {
+    id?: number;
+    businessId: number;
+    businessProfile: {
+        name: string;
+        language: string;
+        tone: string;
+    };
+    description?: string | null;
+    serviceCatalog: unknown;
+    conversationPolicy: unknown;
+    knownClientContext?: unknown;
 }
 
 export type Client = {
@@ -61,6 +76,8 @@ export enum MessageType {
 export type ConversationCacheState = {
     conversationId: number;
     state: ConversationState;
+    channel: CommunicationChannel;
+    provider?: MessageProvider;
     collectedParams: Record<string, string | number | null>;
     lastMessages:LastMessages[];
     updatedAt: Date;

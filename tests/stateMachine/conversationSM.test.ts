@@ -1,0 +1,212 @@
+import { describe, expect, it } from "vitest";
+import { ConversationStateMachine } from "../../src/MessageService/context/conversationSM";
+import { CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
+import { ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
+import { Action, ConversationEvent, ConversationState, StateMachineOutput } from "../../src/dataClients/Types/stateMachineTypes";
+
+function createCache(
+  state: ConversationState,
+  collectedParams: Record<string, string | number | null> = {
+    name: null,
+    service: null,
+    preferredDate: null
+  }
+): ConversationCacheState {
+  return {
+    conversationId: 1,
+    state,
+    channel: CommunicationChannel.Whatsapp,
+    provider: MessageProvider.Twilio,
+    collectedParams,
+    lastMessages: [],
+    updatedAt: new Date("2026-05-25T00:00:00.000Z"),
+    phone: "+10000000000"
+  };
+}
+
+function llmOutput(
+  conversationEvent: ConversationEvent,
+  params?: Record<string, string | number | null>
+): StateMachineOutput {
+  return {
+    conversationEvent,
+    newConclusion: `Fake LLM event: ${conversationEvent}`,
+    params
+  };
+}
+
+describe("ConversationStateMachine", () => {
+  it("moves from start to collecting after sending the welcome message", () => {
+    // First contact should send the business welcome once, then prepare to collect params.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.start);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.startConversation),
+      cache
+    );
+
+    expect(actions).toEqual([Action.sendWelcomeMessage]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
+  it("asks for params when collecting and the LLM extracted nothing useful", () => {
+    // No extracted params means the bot should keep collecting instead of closing.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.collecting);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams),
+      cache
+    );
+
+    expect(actions).toEqual([Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
+  it("applies a partial param immediately and still asks for the missing fields", () => {
+    // This locks in the product rule: valid extracted params are saved immediately.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.collecting);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams, { name: "David" }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
+  it("applies the final missing params and moves to closing", () => {
+    // When the merged old + new params satisfy all required fields, the bot can close.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.collecting, {
+      name: "David",
+      service: null,
+      preferredDate: null
+    });
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams, {
+        service: "window cleaning",
+        preferredDate: "Monday"
+      }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.applyParams, Action.tryClosing]);
+    expect(cache.state).toBe(ConversationState.closing);
+  });
+
+  it("applies params before pacing when the user also expresses concern", () => {
+    // A concern changes the tone to pacing, but extracted facts should not be thrown away.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.collecting);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.concern, { service: "pricing help" }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.applyParams, Action.tryPacing]);
+    expect(cache.state).toBe(ConversationState.pacing);
+  });
+
+  it("asks for missing params after pacing finishes if the conversation is incomplete", () => {
+    // Coming out of pacing should return to collection when required fields are still missing.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.pacing, {
+      name: "David",
+      service: null,
+      preferredDate: null
+    });
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.finishedPacing, { service: "consulting" }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
+  it("resumes parameter collection when a normal update arrives while pacing", () => {
+    // This covers the real WhatsApp case: after a concern, the user continues normally.
+    // Pacing should not fall through with no actions; it should collect/ask like normal.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.pacing);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams, { service: "home cleaning" }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
+  it("asks for missing params when pacing receives no useful extracted params", () => {
+    // Even if the LLM does not extract anything, pacing should produce a user-facing response.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.pacing);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams),
+      cache
+    );
+
+    expect(actions).toEqual([Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
+  });
+
+  it("moves from pacing to closing when pacing finishes and all params are present", () => {
+    // This is the happy path after the user is ready to continue.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.pacing, {
+      name: "David",
+      service: "consulting",
+      preferredDate: null
+    });
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.finishedPacing, { preferredDate: "Tuesday" }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.applyParams, Action.tryClosing]);
+    expect(cache.state).toBe(ConversationState.closing);
+  });
+
+  it("ends the conversation from closing when there is no concern or update", () => {
+    // Closing is the confirmation stage; a normal ending event should finish the conversation.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.closing, {
+      name: "David",
+      service: "consulting",
+      preferredDate: "Tuesday"
+    });
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.tryEnding),
+      cache
+    );
+
+    expect(actions).toEqual([Action.endConversation]);
+    expect(cache.state).toBe(ConversationState.ended);
+  });
+
+  it("ignores any new input once the conversation is ended", () => {
+    // Ended conversations should be stable and should not re-open accidentally.
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.ended);
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams, { name: "Later user" }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.ignore]);
+    expect(cache.state).toBe(ConversationState.ended);
+  });
+});

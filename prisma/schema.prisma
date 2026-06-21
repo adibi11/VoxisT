@@ -1,12 +1,7 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider      = "prisma-client"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -15,77 +10,113 @@ datasource db {
 }
 
 model Message {
-  id             Int           @id @default(autoincrement())
-  externalId     String        @unique
-  type           MessageType
+  id             Int      @id @default(autoincrement())
+  externalId     String   @unique
+  messageIndex   Int      @default(0)
   content        String
-  status         MessageStatus
-  createdAt      DateTime      @default(now())
-
+  createdAt      DateTime @default(now())
   conversationId Int
-  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+  status         MessageStatus
+  type           MessageType
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, messageIndex])
 }
-
 model Conversation {
-  id                   Int                  @id @default(autoincrement())
-  conclusion           String?
-  conversationStatus   ConversationStatus
-  createdAt            DateTime             @default(now())
-
-  businessId           Int
-  clientId             Int
-  
-  business             Business             @relation(fields: [businessId], references: [id])
-  client               Client               @relation(fields: [clientId], references: [id])
-  messages             Message[]
-  parameterAnswers     ParameterAnswer[]
+  id                 Int                @id @default(autoincrement())
+  conclusion         String?
+  conversationStatus ConversationStatus
+  businessId         Int
+  clientId           Int
+  createdAt          DateTime           @default(now())
+  business           Business           @relation(fields: [businessId], references: [id])
+  client             Client             @relation(fields: [clientId], references: [id])
+  messages           Message[]
+  parameterAnswers   ParameterAnswer[]
 }
 
 model Business {
-  id             Int              @id @default(autoincrement())
-  businessName   String
-  businessPhone  String
-  businessEmail  String
-  language       String
-  straterMessage String
-  enderMessage   String
+  id                Int                 @id @default(autoincrement())
+  businessName      String
+  businessPhone     String
+  businessEmail     String
+  enderMessage      String
   escalationMessage String
-  conversations  Conversation[]
-  parameters     BusinessParameter[]
+  language          String
+  starterMessage    String
+  parameters        BusinessParameter[]
+  users             BusinessUser[]
+  conversations     Conversation[]
+  context           BusinessContext?
+}
+
+model BusinessContext {
+  id                 Int      @id @default(autoincrement())
+  businessId         Int      @unique
+  profileName        String
+  profileLanguage    String
+  profileTone        String
+  description        String?
+  serviceCatalog     Json
+  conversationPolicy Json
+  knownClientContext Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  business           Business @relation(fields: [businessId], references: [id])
+}
+
+model AppUser {
+  id           Int             @id @default(autoincrement())
+  email        String          @unique
+  passwordHash String
+  displayName  String?
+  platformRole PlatformRole    @default(user)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  businesses   BusinessUser[]
+}
+
+model BusinessUser {
+  id         Int              @id @default(autoincrement())
+  userId     Int
+  businessId Int
+  role       BusinessUserRole @default(owner)
+  createdAt  DateTime         @default(now())
+  business   Business         @relation(fields: [businessId], references: [id])
+  user       AppUser          @relation(fields: [userId], references: [id])
+
+  @@unique([userId, businessId])
+  @@index([businessId])
 }
 
 model Client {
-  id             Int              @id @default(autoincrement())
-  phoneNumber    String           @unique
-  
-
-  conversations  Conversation[]
-  answers        ParameterAnswer[]
+  id            Int               @id @default(autoincrement())
+  phoneNumber   String            @unique
+  conversations Conversation[]
+  answers       ParameterAnswer[]
 }
 
 model BusinessParameter {
-  id             Int       @id @default(autoincrement())
-  paramName      String
-  businessId     Int
-
-  business       Business  @relation(fields: [businessId], references: [id])
-  answers        ParameterAnswer[]
+  id         Int               @id @default(autoincrement())
+  paramName  String
+  businessId Int
+  business   Business          @relation(fields: [businessId], references: [id])
+  answers    ParameterAnswer[]
 
   @@unique([businessId, paramName])
 }
 
 model ParameterAnswer {
-  id             Int       @id @default(autoincrement())
-  paramAnswer    String
-  createdAt      DateTime  @default(now())
-
-  clientId       Int
-  paramId        Int
-  conversationId Int
-
-  client         Client             @relation(fields: [clientId], references: [id])
+  id                Int               @id @default(autoincrement())
+  paramAnswer       String
+  createdAt         DateTime          @default(now())
+  clientId          Int
+  paramId           Int
+  conversationId    Int
+  client            Client            @relation(fields: [clientId], references: [id])
+  conversation      Conversation      @relation(fields: [conversationId], references: [id])
   businessParameter BusinessParameter @relation(fields: [paramId], references: [id])
-  conversation   Conversation       @relation(fields: [conversationId], references: [id])
 
   @@index([conversationId, paramId])
 }
@@ -99,13 +130,29 @@ enum MessageStatus {
 
 enum ConversationStatus {
   start
-  middle
-  done
-  failed
+  collecting
+  pacing
+  closing
+  failure
+  ended
+  scheduling
+  schedulingConfirmed
+  schedulingFailed
 }
 
 enum MessageType {
   user
   bot
   system
+}
+
+enum BusinessUserRole {
+  owner
+  admin
+  member
+}
+
+enum PlatformRole {
+  admin
+  user
 }

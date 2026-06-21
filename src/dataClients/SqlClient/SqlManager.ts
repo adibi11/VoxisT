@@ -1,20 +1,25 @@
 import { Prisma, PrismaClient } from "../../generated/prisma/client";
-import { Client, ConversationEntity } from "../Types/messageTypes";
+import { BusinessContext, Client, ConversationEntity } from "../Types/messageTypes";
 import { mapToConversationEntity } from "../Types/mappers";
 import { BusinessParam } from "../Types/messageTypes";
 import { BusinessDto, MessageType } from "../Types/apiTypes";
+import { CommunicationChannel, MessageProvider } from "../Types/apiTypes";
 import { ConversationCacheState } from "../Types/messageTypes";
 import { ISqlInterface } from "./sqlInterface";
 import { ConversationState } from "../Types/stateMachineTypes";
+import { ILogger, logger } from "../../logging/logger";
+import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessagesResponseDto, ConversationSummaryDto, PlatformRoleDto } from "../../contracts";
 
 
 export const prisma = new PrismaClient();
 
 export class SqlManager implements ISqlInterface {
     private prisma: PrismaClient;
+    private logger: ILogger;
 
-    constructor() {
+    constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
+        this.logger = loggerInstance;
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {
@@ -31,7 +36,7 @@ export class SqlManager implements ISqlInterface {
             phone: business.businessPhone,
             email: business.businessEmail,
             parameters: [], // You can implement fetching parameters if needed
-            starterMessage: business.straterMessage,
+            starterMessage: business.starterMessage,
             endMessage: business.enderMessage,
             escalationMessage: business.escalationMessage,
         };
@@ -47,10 +52,15 @@ export class SqlManager implements ISqlInterface {
         if (!conversation) {
             return null;
         }
+        // Fetch messages for the conversation by ascending order of messageIndex and id
         const messages = await this.prisma.message.findMany({
             where: {
                 conversationId: conversation ? conversation.id : undefined
-            }
+            },
+            orderBy: [
+                { messageIndex: "asc" },
+                { id: "asc" }
+            ]
         });
         const paramList: BusinessParam[] = await this.getBusinessParams(businessId, clientId, conversation ? conversation.id : undefined);
         const client = await this.prisma.client.findUnique({
@@ -63,7 +73,9 @@ export class SqlManager implements ISqlInterface {
         }
         return {
             conversationId:  conversation.id ,
-            state: messages.length > 0 ? ConversationState.collecting : ConversationState.start,
+            state: mapConversationStatusToState(conversation.conversationStatus),
+            channel: CommunicationChannel.Whatsapp,
+            provider: MessageProvider.Twilio,
             lastMessages: messages.map(msg => ({
                 role: msg.type as "user" | "bot",
                 content: msg.content
@@ -147,15 +159,29 @@ export class SqlManager implements ISqlInterface {
     }
 
     async createMessage(conversationId: number,type: "user"| "bot",content: string): Promise<void> {
-    await this.prisma.message.create({
-        data: {
-        conversationId,
-        type,
-        content,
-        status: "received", // או processing
-        externalId: crypto.randomUUID() 
-        }
-    });
+        await this.prisma.$transaction(async (tx) => {
+            const currentMax = await tx.message.aggregate({
+                where: {
+                    conversationId
+                },
+                _max: {
+                    messageIndex: true
+                }
+            });
+
+            await tx.message.create({
+                data: {
+                    conversationId,
+                    messageIndex: (currentMax._max.messageIndex || 0) + 1,
+                    type,
+                    content,
+                    status: "received",
+                    externalId: crypto.randomUUID()
+                }
+            });
+        });
+        
+       
     }
 
     async createDbConversation(clientId: number, businessId: number,content: string): Promise<void> {
@@ -163,7 +189,7 @@ export class SqlManager implements ISqlInterface {
             data: {
                 clientId: clientId,
                 businessId: businessId,
-                conclusion: "First message: " + content,
+                conclusion:  content,
                 conversationStatus: "start",
             },
         });
@@ -176,7 +202,7 @@ export class SqlManager implements ISqlInterface {
                 businessName: businessDto.name,
                 businessPhone: businessDto.phone,
                 businessEmail: businessDto.email,
-                straterMessage: businessDto.starterMessage,
+                starterMessage: businessDto.starterMessage,
                 enderMessage: businessDto.endMessage,
                 escalationMessage: businessDto.escalationMessage,
                 language: businessDto.language || "en"
@@ -229,7 +255,12 @@ export class SqlManager implements ISqlInterface {
         });
 
         if (!param) {
-            console.log("Param not found");
+            // Log a warning if the parameter is not found for the given business
+            //Should not happen
+            this.logger.warn("param.not_found", {
+                businessId,
+                paramName
+            });
             return;
         }
 
@@ -261,4 +292,356 @@ export class SqlManager implements ISqlInterface {
             });
         }
     }
+    // Register a new business owner and create the associated business in a single transaction
+    async registerBusinessOwner(email: string, passwordHash: string, displayName: string | undefined, businessDto: BusinessDto, platformRole: PlatformRoleDto = "user"): Promise<AuthUserDto> {
+        // Registration is transactional: the UI owner and business must be created together.
+        const user = await this.prisma.$transaction(async (tx) => {
+            const business = await tx.business.create({
+                data: {
+                    businessName: businessDto.name,
+                    businessPhone: businessDto.phone,
+                    businessEmail: businessDto.email,
+                    starterMessage: businessDto.starterMessage,
+                    enderMessage: businessDto.endMessage,
+                    escalationMessage: businessDto.escalationMessage,
+                    language: businessDto.language || "en",
+                    parameters: {
+                        createMany: {
+                            data: businessDto.parameters.map((param) => ({
+                                paramName: param.paramName
+                            }))
+                        }
+                    }
+                }
+            });
+
+            const userData: any = {
+                    email: email.toLowerCase(),
+                    passwordHash,
+                    displayName,
+                    platformRole,
+                    businesses: {
+                        create: {
+                            businessId: business.id,
+                            role: "owner"
+                        }
+                    }
+                };
+
+            return tx.appUser.create({
+                data: userData,
+                include: {
+                    businesses: true
+                }
+            });
+        });
+
+        return {
+            id: user.id,
+            email: user.email,
+            displayName: user.displayName,
+            platformRole: (user as any).platformRole === "admin" ? "admin" : "user",
+            businessIds: user.businesses.map((businessUser) => businessUser.businessId),
+            businessMemberships: user.businesses.map((businessUser) => ({
+                businessId: businessUser.businessId,
+                role: businessUser.role
+            }))
+        };
+    }
+
+    async getUserWithPasswordByEmail(email: string): Promise<(AuthUserDto & { passwordHash: string }) | null> {
+        const user = await this.prisma.appUser.findUnique({
+            where: {
+                email: email.toLowerCase()
+            },
+            include: {
+                businesses: true
+            }
+        });
+
+        if (!user) {
+            return null;
+        }
+
+        return {
+            id: user.id,
+            email: user.email,
+            displayName: user.displayName,
+            passwordHash: user.passwordHash,
+            platformRole: (user as any).platformRole === "admin" ? "admin" : "user",
+            businessIds: user.businesses.map((businessUser) => businessUser.businessId),
+            businessMemberships: user.businesses.map((businessUser) => ({
+                businessId: businessUser.businessId,
+                role: businessUser.role
+            }))
+        };
+    }
+
+    async getAllBusinesses(): Promise<BusinessSummaryDto[]> {
+        const businesses = await this.prisma.business.findMany({
+            orderBy: {
+                id: "asc"
+            }
+        });
+
+        return businesses.map((business) => ({
+            id: business.id,
+            name: business.businessName,
+            phone: business.businessPhone,
+            email: business.businessEmail
+        }));
+    }
+
+    async getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]> {
+        const businessUsers = await this.prisma.businessUser.findMany({
+            where: { userId },
+            include: {
+                business: true
+            },
+            orderBy: {
+                createdAt: "asc"
+            }
+        });
+
+        return businessUsers.map(({ business }) => ({
+            id: business.id,
+            name: business.businessName,
+            phone: business.businessPhone,
+            email: business.businessEmail
+        }));
+    }
+    //Get all clients for a given business, including the count of conversations and the timestamp of the last conversation in descending order of the last conversation timestamp. If a client has no conversations, it will not be included in the result.
+    async getClientsByBusiness(businessId: number): Promise<ClientSummaryDto[]> {
+        const clients = await this.prisma.client.findMany({
+            where: {
+                conversations: {
+                    some: {
+                        businessId
+                    }
+                }
+            },
+            include: {
+                conversations: {
+                    where: { businessId },
+                    orderBy: { createdAt: "desc" },
+                    take: 1
+                },
+                _count: {
+                    select: {
+                        conversations: {
+                            where: { businessId }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                id: "desc"
+            }
+        });
+
+        return clients.map((client) => ({
+            id: client.id,
+            phoneNumber: client.phoneNumber,
+            conversationCount: client._count.conversations,
+            lastConversationAt: client.conversations[0]?.createdAt.toISOString()
+        }));
+    }
+
+    async getConversationsByBusinessAndClient(businessId: number, clientId?: number): Promise<ConversationSummaryDto[]> {
+        const conversations = await this.prisma.conversation.findMany({
+            where: {
+                businessId,
+                ...(clientId ? { clientId } : {})
+            },
+            include: {
+                messages: {
+                    orderBy: [
+                        { messageIndex: "desc" },
+                        { id: "desc" }
+                    ],
+                    take: 1
+                },
+                _count: {
+                    select: {
+                        messages: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+
+        return conversations.map((conversation) => ({
+            id: conversation.id,
+            businessId: conversation.businessId,
+            clientId: conversation.clientId,
+            status: conversation.conversationStatus,
+            conclusion: conversation.conclusion,
+            createdAt: conversation.createdAt.toISOString(),
+            messageCount: conversation._count.messages,
+            lastMessageAt: conversation.messages[0]?.createdAt.toISOString()
+        }));
+    }
+
+    async getMessagesByConversation(businessId: number, conversationId: number): Promise<ConversationMessagesResponseDto | null> {
+        const conversation = await this.prisma.conversation.findFirst({
+            where: {
+                id: conversationId,
+                businessId
+            },
+            include: {
+                messages: {
+                    orderBy: [
+                        { messageIndex: "asc" },
+                        { id: "asc" }
+                    ]
+                },
+                parameterAnswers: {
+                    include: {
+                        businessParameter: true
+                    },
+                    orderBy: { createdAt: "asc" }
+                },
+                _count: {
+                    select: {
+                        messages: true
+                    }
+                }
+            }
+        });
+
+        if (!conversation) {
+            return null;
+        }
+
+        const lastMessage = conversation.messages[conversation.messages.length - 1];
+
+        return {
+            conversation: {
+                id: conversation.id,
+                businessId: conversation.businessId,
+                clientId: conversation.clientId,
+                status: conversation.conversationStatus,
+                conclusion: conversation.conclusion,
+                createdAt: conversation.createdAt.toISOString(),
+                messageCount: conversation._count.messages,
+                lastMessageAt: lastMessage?.createdAt.toISOString()
+            },
+            messages: conversation.messages.map((message) => ({
+                id: message.id,
+                conversationId: message.conversationId,
+                type: message.type,
+                content: message.content,
+                status: message.status,
+                createdAt: message.createdAt.toISOString()
+            })),
+            params: conversation.parameterAnswers.map((answer) => ({
+                id: answer.id,
+                paramName: answer.businessParameter.paramName,
+                paramValue: answer.paramAnswer,
+                createdAt: answer.createdAt.toISOString()
+            }))
+        };
+    }
+
+    async getBusinessContext(businessId: number): Promise<BusinessContext | null> {
+        const context = await this.prisma.businessContext.findUnique({
+            where: {
+                businessId
+            }
+        });
+
+        return context ? mapPrismaBusinessContext(context) : null;
+    }
+
+    async upsertBusinessContext(context: BusinessContext): Promise<BusinessContext> {
+        const savedContext = await this.prisma.businessContext.upsert({
+            where: {
+                businessId: context.businessId
+            },
+            create: {
+                businessId: context.businessId,
+                profileName: context.businessProfile.name,
+                profileLanguage: context.businessProfile.language,
+                profileTone: context.businessProfile.tone,
+                description: context.description,
+                serviceCatalog: toPrismaJson(context.serviceCatalog),
+                conversationPolicy: toPrismaJson(context.conversationPolicy),
+                knownClientContext: context.knownClientContext === undefined
+                    ? undefined
+                    : toPrismaJson(context.knownClientContext)
+            },
+            update: {
+                profileName: context.businessProfile.name,
+                profileLanguage: context.businessProfile.language,
+                profileTone: context.businessProfile.tone,
+                description: context.description,
+                serviceCatalog: toPrismaJson(context.serviceCatalog),
+                conversationPolicy: toPrismaJson(context.conversationPolicy),
+                knownClientContext: context.knownClientContext === undefined
+                    ? undefined
+                    : toPrismaJson(context.knownClientContext)
+            }
+        });
+
+        return mapPrismaBusinessContext(savedContext);
+    }
+
+    async updateConversationState(conversationId: number, state: ConversationState): Promise<void> {
+        await this.prisma.conversation.update({
+            where: {
+                id: conversationId
+            },
+            data: {
+                conversationStatus: mapConversationStateToStatus(state)
+            }
+        });
+    }
+}
+
+function mapConversationStatusToState(status: string): ConversationState {
+    if (Object.values(ConversationState).includes(status as ConversationState)) {
+        return status as ConversationState;
+    }
+
+    if (status === "done") return ConversationState.ended;
+    if (status === "middle") return ConversationState.collecting;
+    if (status === "failed") return ConversationState.failure;
+
+    return ConversationState.start;
+}
+
+function mapConversationStateToStatus(state: ConversationState): any {
+    return state;
+}
+
+function mapPrismaBusinessContext(context: {
+    id: number;
+    businessId: number;
+    profileName: string;
+    profileLanguage: string;
+    profileTone: string;
+    description: string | null;
+    serviceCatalog: Prisma.JsonValue;
+    conversationPolicy: Prisma.JsonValue;
+    knownClientContext: Prisma.JsonValue | null;
+}): BusinessContext {
+    return {
+        id: context.id,
+        businessId: context.businessId,
+        businessProfile: {
+            name: context.profileName,
+            language: context.profileLanguage,
+            tone: context.profileTone
+        },
+        description: context.description,
+        serviceCatalog: context.serviceCatalog,
+        conversationPolicy: context.conversationPolicy,
+        knownClientContext: context.knownClientContext ?? undefined
+    };
+}
+
+function toPrismaJson(value: unknown): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
 }

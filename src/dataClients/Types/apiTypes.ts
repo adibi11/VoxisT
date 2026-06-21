@@ -1,9 +1,23 @@
 
+export enum CommunicationChannel {
+    Whatsapp = "whatsapp",
+    Sms = "sms",
+    Voice = "voice",
+    Webchat = "webchat"
+}
+
+export enum MessageProvider {
+    Twilio = "twilio",
+    Internal = "internal"
+}
+
 
 export type Message = {
    type: ActionType;
    content: string;
    status: string;
+   channel: CommunicationChannel;
+   provider?: MessageProvider;
    businessId?: number;
    data?: any;
 };
@@ -31,6 +45,7 @@ export type twillioMessage = {
     From: string;
     To: string;
     Body: string;
+    MessageSid?: string;
 }
 
 export type BusinessDto = {
