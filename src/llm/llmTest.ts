@@ -106,7 +106,8 @@ async function run() {
     currentState: state.state,
     messageContent: newUserMessage,
     collectedParams: state.collectedParams,
-    lastMessages: state.lastMessages
+    lastMessages: state.lastMessages,
+    businessContext: null
   };
 
   testLogger.info("llm_test.input", { input });

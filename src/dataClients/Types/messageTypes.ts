@@ -32,6 +32,20 @@ export type Business = {
     email: string;
 }
 
+export type BusinessContext = {
+    id?: number;
+    businessId: number;
+    businessProfile: {
+        name: string;
+        language: string;
+        tone: string;
+    };
+    description?: string | null;
+    serviceCatalog: unknown;
+    conversationPolicy: unknown;
+    knownClientContext?: unknown;
+}
+
 export type Client = {
     id: number;
     name: string;

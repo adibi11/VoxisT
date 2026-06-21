@@ -1,4 +1,27 @@
-import { LastMessages } from "./messageTypes";
+import type { LastMessages } from "./messageTypes";
+
+export type BusinessContextForPrompt = {
+    businessProfile: {
+        name: string;
+        language: string;
+        tone: string;
+    };
+    description: string | null;
+    serviceCatalog: {
+        allowedServices: string[];
+        commonIntents: string[];
+    };
+    conversationPolicy: {
+        paceWhen: string[];
+        escalateWhen: string[];
+        closeWhen: string[];
+    };
+    knownClientContext: {
+        summary?: string;
+        reusablePreferences: string[];
+        previousAnswers: Record<string, string>;
+    } | null;
+}
 
 export enum ConversationState
 {
@@ -7,7 +30,10 @@ export enum ConversationState
     pacing = "pacing",
     closing = "closing",
     failure = "failure",
-    ended = "ended"
+    ended = "ended",
+    scheduling = "scheduling",
+    schedulingConfirmed = "schedulingConfirmed",
+    schedulingFailed = "schedulingFailed"
 }
 
 export enum ConversationEvent
@@ -40,6 +66,7 @@ export type StateMachineInput = {
     messageContent: string;
     collectedParams: Record<string, string | number | null>;
     lastMessages:LastMessages[];
+    businessContext: BusinessContextForPrompt | null;
     conclusion?: string;
 }
 

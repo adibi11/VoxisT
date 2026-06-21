@@ -33,7 +33,8 @@ function inputFromCache(cache: ConversationCacheState, messageContent: string): 
     currentState: cache.state,
     messageContent,
     collectedParams: cache.collectedParams,
-    lastMessages: cache.lastMessages
+    lastMessages: cache.lastMessages,
+    businessContext: null
   };
 }
 

@@ -6,6 +6,30 @@ export type BusinessSummaryDto = {
   email: string;
 };
 
+export type BusinessContextProfileDto = {
+  name: string;
+  language: string;
+  tone: string;
+};
+
+export type UpsertBusinessContextRequestDto = {
+  businessProfile: BusinessContextProfileDto;
+  description?: string | null;
+  serviceCatalog: unknown;
+  conversationPolicy: unknown;
+  knownClientContext?: unknown;
+};
+
+export type BusinessContextResponseDto = {
+  id?: number;
+  businessId: number;
+  businessProfile: BusinessContextProfileDto;
+  description?: string | null;
+  serviceCatalog: unknown;
+  conversationPolicy: unknown;
+  knownClientContext?: unknown;
+};
+
 // Client list item for a specific business.
 export type ClientSummaryDto = {
   id: number;

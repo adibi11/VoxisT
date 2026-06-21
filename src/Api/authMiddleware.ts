@@ -22,8 +22,21 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export function requireBusinessAccess(req: AuthenticatedRequest, res: Response, businessId: number): boolean {
+  if (req.auth.platformRole === "admin") {
+    return true;
+  }
+
   if (!req.auth.businessIds.includes(businessId)) {
     res.status(403).json({ message: "Business access denied" });
+    return false;
+  }
+
+  return true;
+}
+
+export function requirePlatformAdmin(req: AuthenticatedRequest, res: Response): boolean {
+  if (req.auth.platformRole !== "admin") {
+    res.status(403).json({ message: "Platform admin access required" });
     return false;
   }
 

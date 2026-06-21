@@ -1,7 +1,7 @@
-import { ConversationCacheState } from "../dataClients/Types/messageTypes";
+import { BusinessContext, ConversationCacheState } from "../dataClients/Types/messageTypes";
 import { LlmInput, LlmOutput } from "../dataClients/Types/llmTypes";
 import { ILlmProvider } from "../llm/llmInterface";
-import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
+import { BusinessContextForPrompt, StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
 import { ConversationStateMachine } from "./context/conversationSM";
 import { Executer } from "./context/executer";
 import { ISqlInterface } from "../dataClients/SqlClient/sqlInterface";
@@ -31,7 +31,8 @@ export class LlmPipeline{
           phone: state.phone
         });
         const executer = new Executer(this.llmProvider, this.logger.child({ component: "Executer" }));
-        const stateMachineInput = buildStateMachineInput(state, message);
+        const businessContext = sanitizeBusinessContext(await this.sqlInterface.getBusinessContext(businessId));
+        const stateMachineInput = buildStateMachineInput(state, message, businessContext);
         const output = await executer.prepareAndExecute(stateMachineInput,state);
         this.logger.info("conversation.state.after", {
           conversation: state
@@ -59,14 +60,116 @@ export class LlmPipeline{
 
 function buildStateMachineInput(
     state: ConversationCacheState,
-    newMessage: string
+    newMessage: string,
+    businessContext: BusinessContextForPrompt | null
 ): StateMachineInput {
     return {
         currentState: state.state,
         messageContent: newMessage,
         collectedParams: state.collectedParams,
-        lastMessages: state.lastMessages
+        lastMessages: state.lastMessages,
+        businessContext
     };
+}
+
+function sanitizeBusinessContext(context: BusinessContext | null): BusinessContextForPrompt | null {
+    if (!context) {
+        return null;
+    }
+
+    return {
+        businessProfile: {
+            name: sanitizeText(context.businessProfile.name, 120) || "Unknown business",
+            language: sanitizeText(context.businessProfile.language, 40) || "en",
+            tone: sanitizeText(context.businessProfile.tone, 200) || "professional and concise"
+        },
+        description: sanitizeNullableText(context.description, 1200),
+        serviceCatalog: {
+            allowedServices: sanitizeStringList(readListField(context.serviceCatalog, "allowedServices"), 30, 160),
+            commonIntents: sanitizeStringList(readListField(context.serviceCatalog, "commonIntents"), 20, 160)
+        },
+        conversationPolicy: {
+            paceWhen: sanitizeStringList(readListField(context.conversationPolicy, "paceWhen"), 10, 180),
+            escalateWhen: sanitizeStringList(readListField(context.conversationPolicy, "escalateWhen"), 10, 180),
+            closeWhen: sanitizeStringList(readListField(context.conversationPolicy, "closeWhen"), 10, 180)
+        },
+        knownClientContext: sanitizeKnownClientContext(context.knownClientContext)
+    };
+}
+
+function sanitizeKnownClientContext(value: unknown): BusinessContextForPrompt["knownClientContext"] {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const summary = sanitizeNullableText(value.summary, 600) || undefined;
+    const reusablePreferences = sanitizeStringList(readListField(value, "reusablePreferences"), 10, 160);
+    const previousAnswers = sanitizeStringRecord(value.previousAnswers, 20, 80, 200);
+
+    if (!summary && reusablePreferences.length === 0 && Object.keys(previousAnswers).length === 0) {
+        return null;
+    }
+
+    return {
+        summary,
+        reusablePreferences,
+        previousAnswers
+    };
+}
+
+function readListField(value: unknown, fieldName: string): unknown[] {
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (isRecord(value) && Array.isArray(value[fieldName])) {
+        return value[fieldName];
+    }
+
+    return [];
+}
+
+function sanitizeStringList(values: unknown[], maxItems: number, maxChars: number): string[] {
+    return values
+        .map((value) => sanitizeText(value, maxChars))
+        .filter((value): value is string => Boolean(value))
+        .slice(0, maxItems);
+}
+
+function sanitizeStringRecord(value: unknown, maxEntries: number, maxKeyChars: number, maxValueChars: number): Record<string, string> {
+    if (!isRecord(value)) {
+        return {};
+    }
+
+    const entries = Object.entries(value)
+        .map(([key, entryValue]) => [
+            sanitizeText(key, maxKeyChars),
+            sanitizeText(entryValue, maxValueChars)
+        ] as const)
+        .filter(([key, entryValue]) => Boolean(key && entryValue))
+        .slice(0, maxEntries);
+
+    return Object.fromEntries(entries);
+}
+
+function sanitizeNullableText(value: unknown, maxChars: number): string | null {
+    return sanitizeText(value, maxChars) || null;
+}
+
+function sanitizeText(value: unknown, maxChars: number): string {
+    if (typeof value !== "string" && typeof value !== "number") {
+        return "";
+    }
+
+    return String(value)
+        .replace(/```/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, maxChars);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function buildLLMInput(

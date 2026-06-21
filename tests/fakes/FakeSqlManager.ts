@@ -1,6 +1,7 @@
 import { ISqlInterface } from "../../src/dataClients/SqlClient/sqlInterface";
+import { AuthUserDto, BusinessSummaryDto, PlatformRoleDto } from "../../src/contracts";
 import { BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
-import { Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
+import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 
 type SavedMessage = {
@@ -21,6 +22,7 @@ export class FakeSqlManager implements ISqlInterface {
   public clientsByPhone = new Map<string, Client>();
   public conversations = new Map<string, ConversationCacheState>();
   public businesses = new Map<number, BusinessDto>();
+  public businessContexts = new Map<number, BusinessContext>();
   public messages: SavedMessage[] = [];
   public paramAnswers: SavedParamAnswer[] = [];
   public createdConversations: { clientId: number; businessId: number; content: string }[] = [];
@@ -61,6 +63,42 @@ export class FakeSqlManager implements ISqlInterface {
   async createDbBusiness(businessDto: BusinessDto): Promise<void> {
     const businessId = this.businesses.size + 1;
     this.businesses.set(businessId, businessDto);
+  }
+
+  async registerBusinessOwner(
+    email: string,
+    _passwordHash: string,
+    displayName: string | undefined,
+    businessDto: BusinessDto,
+    platformRole: PlatformRoleDto = "user"
+  ): Promise<AuthUserDto> {
+    const businessId = this.businesses.size + 1;
+    this.businesses.set(businessId, businessDto);
+    return {
+      id: this.nextClientId++,
+      email,
+      displayName,
+      platformRole,
+      businessIds: [businessId],
+      businessMemberships: [{ businessId, role: "owner" }]
+    };
+  }
+
+  async getUserWithPasswordByEmail(_email: string): Promise<(AuthUserDto & { passwordHash: string }) | null> {
+    return null;
+  }
+
+  async getBusinessesForUser(_userId: number): Promise<BusinessSummaryDto[]> {
+    return this.getAllBusinesses();
+  }
+
+  async getAllBusinesses(): Promise<BusinessSummaryDto[]> {
+    return [...this.businesses.entries()].map(([id, business]) => ({
+      id,
+      name: business.name,
+      phone: business.phone,
+      email: business.email
+    }));
   }
 
   async getOrCreateClientByPhone(phoneNumber: string): Promise<Client> {
@@ -104,6 +142,24 @@ export class FakeSqlManager implements ISqlInterface {
 
   async getBusiness(businessId: number): Promise<BusinessDto | null> {
     return this.businesses.get(businessId) || null;
+  }
+
+  async getBusinessContext(businessId: number): Promise<BusinessContext | null> {
+    return this.businessContexts.get(businessId) || null;
+  }
+
+  async upsertBusinessContext(context: BusinessContext): Promise<BusinessContext> {
+    this.businessContexts.set(context.businessId, context);
+    return context;
+  }
+
+  async updateConversationState(conversationId: number, state: ConversationState): Promise<void> {
+    for (const conversation of this.conversations.values()) {
+      if (conversation.conversationId === conversationId) {
+        conversation.state = state;
+        return;
+      }
+    }
   }
 
   seedBusiness(businessId: number, business: BusinessDto): void {

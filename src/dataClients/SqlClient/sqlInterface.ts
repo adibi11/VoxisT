@@ -1,6 +1,8 @@
-import { ConversationCacheState, ConversationEntity } from "../Types/messageTypes";
+import { ConversationCacheState, ConversationEntity, BusinessContext } from "../Types/messageTypes";
 import { BusinessDto } from "../Types/apiTypes";
 import { Client } from "../Types/messageTypes";
+import { ConversationState } from "../Types/stateMachineTypes";
+import { AuthUserDto, BusinessSummaryDto, PlatformRoleDto } from "../../contracts";
 
 
 export interface ISqlInterface {
@@ -12,4 +14,11 @@ export interface ISqlInterface {
     getOrCreateClientByPhone(phoneNumber:string):Promise<Client>;
     upsertParamAnswer(clientId: number, conversationId: number,businessId: number, paramName: string, paramValue: string): Promise<void>;
     getBusiness(businessId: number): Promise<BusinessDto | null>;
+    getBusinessContext(businessId: number): Promise<BusinessContext | null>;
+    upsertBusinessContext(context: BusinessContext): Promise<BusinessContext>;
+    updateConversationState(conversationId: number, state: ConversationState): Promise<void>;
+    registerBusinessOwner(email: string, passwordHash: string, displayName: string | undefined, businessDto: BusinessDto, platformRole?: PlatformRoleDto): Promise<AuthUserDto>;
+    getUserWithPasswordByEmail(email: string): Promise<(AuthUserDto & { passwordHash: string }) | null>;
+    getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]>;
+    getAllBusinesses(): Promise<BusinessSummaryDto[]>;
 }

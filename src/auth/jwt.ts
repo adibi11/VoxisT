@@ -42,7 +42,9 @@ export function verifyJwt(token: string, secret = getJwtSecret()): JwtClaimsDto 
   return {
     userId: parsed.userId,
     email: parsed.email,
-    businessIds: parsed.businessIds
+    platformRole: parsed.platformRole || "user",
+    businessIds: parsed.businessIds || [],
+    businessMemberships: parsed.businessMemberships || []
   };
 }
 
