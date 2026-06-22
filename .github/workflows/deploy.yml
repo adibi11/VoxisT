@@ -41,7 +41,7 @@ jobs:
 
     steps:
       -name: Deploy API
-        run: echo "Deploying API..."
+      run: echo "Deploying API..."
     
   deploy-message-worker:
     needs: detect-changes
@@ -50,7 +50,7 @@ jobs:
 
     steps:
       -name: Deploy Worker
-        run: echo "Deploying Worker..."
+      run: echo "Deploying Worker..."
   deploy-outbound:
     needs: detect-changes
     if: needs.detect-changes.outputs.outbound_changed == 'true'
@@ -58,5 +58,5 @@ jobs:
 
     steps:
       -name: Deploy Outbound
-        run: echo "Deploying Outbound..."
+      run: echo "Deploying Outbound..."
       
