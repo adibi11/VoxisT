@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - master
-        
-      
   pull_request:
     branches:
       - master
@@ -20,43 +18,44 @@ jobs:
       outbound_changed: ${{ steps.filter.outputs.outbound }}
 
     steps:
-      
-      -name: Detect changes
-      uses: dorny/paths-filter@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      id: filter
-      with:
-        filters: |
-          api:
-            - 'version/api.json'
-          worker:
-            - 'version/worker.json'
-          outbound:
-            - 'version/outbound.json'
-      
-    deploy-api:
-      needs: detect-changes
-      if: needs.detect-changes.outputs.api_changed == 'true'
-      runs-on: ubuntu-latest
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'versions/api.json'
+            worker:
+              - 'versions/worker.json'
+            outbound:
+              - 'versions/outbound.json'
 
-      steps:
-        -name: Deploy API
+  deploy-api:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy API
         run: echo "Deploying API..."
-      
-    deploy-message-worker:
-      needs: detect-changes
-      if: needs.detect-changes.outputs.worker_changed == 'true'
-      runs-on: ubuntu-latest
 
-      steps:
-        -name: Deploy Worker
+  deploy-message-worker:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.worker_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy Worker
         run: echo "Deploying Worker..."
-    deploy-outbound:
-      needs: detect-changes
-      if: needs.detect-changes.outputs.outbound_changed == 'true'
-      runs-on: ubuntu-latest
 
-      steps:
-        -name: Deploy Outbound
+  deploy-outbound:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.outbound_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy Outbound
         run: echo "Deploying Outbound..."
-      
