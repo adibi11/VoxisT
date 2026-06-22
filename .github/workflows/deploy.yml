@@ -1,0 +1,94 @@
+name: Voxis Deploy
+
+on:
+  push:
+    branches:
+      - master
+        
+      
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+
+    outputs:
+      api_changed: ${{ steps.changes.outputs.api_changed }}
+      worker_changed: ${{ steps.changes.outputs.worker_changed }}
+      outbound_changed: ${{ steps.changes.outputs.outbound_changed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect version changes
+        id: changes
+        run: |
+          git fetch origin HEAD~1
+
+          API_CHANGED=false
+          WORKER_CHANGED=false
+          OUTBOUND_CHANGED=false
+
+          if git diff --name-only HEAD~1 HEAD | grep "versions/api.json"; then
+            API_CHANGED=true
+          fi
+
+          if git diff --name-only HEAD~1 HEAD | grep "versions/worker.json"; then
+            WORKER_CHANGED=true
+          fi
+
+          if git diff --name-only HEAD~1 HEAD | grep "versions/outbound.json"; then
+            OUTBOUND_CHANGED=true
+          fi
+
+          echo "api_changed=$API_CHANGED" >> $GITHUB_OUTPUT
+          echo "worker_changed=$WORKER_CHANGED" >> $GITHUB_OUTPUT
+          echo "outbound_changed=$OUTBOUND_CHANGED" >> $GITHUB_OUTPUT
+
+  deploy-api:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api_changed == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: echo "Build API"
+
+      - run: echo "Push API image to ECR"
+
+      - run: echo "Update ECS API service"
+
+  deploy-worker:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.worker_changed == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: echo "Build Worker"
+
+      - run: echo "Push Worker image to ECR"
+
+      - run: echo "Update ECS Worker service"
+
+  deploy-outbound:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.outbound_changed == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: echo "Build Outbound Worker"
+
+      - run: echo "Push Outbound image to ECR"
+
+      - run: echo "Update ECS Outbound service"
