@@ -11,7 +11,9 @@ on:
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
-
+    permissions:
+          contents: read
+          pull-requests: read
     outputs:
       api_changed: ${{ steps.filter.outputs.api }}
       worker_changed: ${{ steps.filter.outputs.worker }}
