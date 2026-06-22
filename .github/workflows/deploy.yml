@@ -45,7 +45,7 @@ jobs:
       - name: Read API version
         id: read_api_version
         run: |
-          API_VERSION=$(jq -r '.version' versions/api.json)
+          API_VERSION=$(jq -r '.version' ...versions/api.json)
           echo "API_VERSION=$API_VERSION" >> $GITHUB_OUTPUT
   deploy-message-worker:
     needs: detect-changes
@@ -58,7 +58,7 @@ jobs:
       - name: Read Worker version
         id: read_worker_version
         run: |
-          WORKER_VERSION=$(jq -r '.version' versions/worker.json)
+          WORKER_VERSION=$(jq -r '.version' ...versions/worker.json)
           echo "WORKER_VERSION=$WORKER_VERSION" >> $GITHUB_OUTPUT
 
   deploy-outbound:
@@ -72,7 +72,7 @@ jobs:
       - name: Read Outbound version
         id: read_outbound_version
         run: |
-          OUTBOUND_VERSION=$(jq -r '.version' versions/outbound.json)
+          OUTBOUND_VERSION=$(jq -r '.version' ...versions/outbound.json)
           echo "OUTBOUND_VERSION=$OUTBOUND_VERSION" >> $GITHUB_OUTPUT
 
    
