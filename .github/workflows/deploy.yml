@@ -20,9 +20,7 @@ jobs:
       outbound_changed: ${{ steps.filter.outputs.outbound }}
 
     steps:
-      -name: Checkout code
-       uses: actions/checkout@v3
-
+      
       -name: Detect changes
         uses: dorny/paths-filter@v2
         id: filter
