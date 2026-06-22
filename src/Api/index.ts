@@ -12,12 +12,14 @@ import { signJwt } from "../auth/jwt";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requirePlatformAdmin } from "./authMiddleware";
 import { LoginRequestDto, RegisterBusinessUserRequestDto, UpsertBusinessContextRequestDto } from "../contracts";
 import cors from "cors";
+import version from "../../versions/api.json";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
 const queueManager = new QueueManager(MESSAGE_QUEUE_NAME, logger.child({ component: "QueueManager", queueName: MESSAGE_QUEUE_NAME }));
 const app = express();
 const PORT = 3000;
+const API_VERSION = version.version || "1.0.0";
 
 const corsMiddleware = cors({
   origin: (origin, callback) => {
@@ -315,7 +317,14 @@ app.post("/business",async (req, res) => {
   }});
     
 
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" ,
+    timestamp: new Date().toISOString(),
+    version: API_VERSION});
+    
+  });
   
+
 
 app.get("/", (req, res) => {
   res.send("Server is running");

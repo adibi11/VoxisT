@@ -43,10 +43,42 @@ export class SqlManager implements ISqlInterface {
     }
 
     async getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
-        const conversation = await this.prisma.conversation.findFirst({
+        return this.getLatestConversationCacheState(clientId, businessId);
+    }
+
+    async getLatestConversationCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
+        const conversations = await this.prisma.conversation.findMany({
             where: {
                 clientId: clientId,
                 businessId: businessId
+            },
+            include: {
+                messages: {
+                    orderBy: [
+                        { messageIndex: "desc" },
+                        { id: "desc" }
+                    ],
+                    take: 1
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+
+        const conversation = conversations
+            .sort((left, right) => getConversationActivityTime(right).getTime() - getConversationActivityTime(left).getTime())[0];
+
+        if (!conversation) {
+            return null;
+        }
+        return this.getCacheStateByConversationId(conversation.id);
+    }
+
+    async getCacheStateByConversationId(conversationId: number): Promise<ConversationCacheState | null> {
+        const conversation = await this.prisma.conversation.findUnique({
+            where: {
+                id: conversationId
             }
         });
         if (!conversation) {
@@ -55,22 +87,23 @@ export class SqlManager implements ISqlInterface {
         // Fetch messages for the conversation by ascending order of messageIndex and id
         const messages = await this.prisma.message.findMany({
             where: {
-                conversationId: conversation ? conversation.id : undefined
+                conversationId: conversation.id
             },
             orderBy: [
                 { messageIndex: "asc" },
                 { id: "asc" }
             ]
         });
-        const paramList: BusinessParam[] = await this.getBusinessParams(businessId, clientId, conversation ? conversation.id : undefined);
+        const paramList: BusinessParam[] = await this.getBusinessParams(conversation.businessId, conversation.clientId, conversation.id);
         const client = await this.prisma.client.findUnique({
             where: {
-                id: clientId
+                id: conversation.clientId
             }
         });
         if (!client) {
             return null;
         }
+        const lastMessage = messages[messages.length - 1];
         return {
             conversationId:  conversation.id ,
             state: mapConversationStatusToState(conversation.conversationStatus),
@@ -90,7 +123,7 @@ export class SqlManager implements ISqlInterface {
                 return acc;
             }, {} as Record<string, string|null>),
             phone: client.phoneNumber,
-            updatedAt: new Date()
+            updatedAt: lastMessage?.createdAt || conversation.createdAt
         };
 
     }
@@ -184,8 +217,8 @@ export class SqlManager implements ISqlInterface {
        
     }
 
-    async createDbConversation(clientId: number, businessId: number,content: string): Promise<void> {
-        await this.prisma.conversation.create({
+    async createDbConversation(clientId: number, businessId: number,content: string): Promise<ConversationCacheState> {
+        const conversation = await this.prisma.conversation.create({
             data: {
                 clientId: clientId,
                 businessId: businessId,
@@ -193,6 +226,11 @@ export class SqlManager implements ISqlInterface {
                 conversationStatus: "start",
             },
         });
+        const state = await this.getCacheStateByConversationId(conversation.id);
+        if (!state) {
+            throw new Error("Failed to create and retrieve conversation state.");
+        }
+        return state;
         
     }
 
@@ -614,6 +652,10 @@ function mapConversationStatusToState(status: string): ConversationState {
 
 function mapConversationStateToStatus(state: ConversationState): any {
     return state;
+}
+
+function getConversationActivityTime(conversation: { createdAt: Date; messages: { createdAt: Date }[] }): Date {
+    return conversation.messages[0]?.createdAt || conversation.createdAt;
 }
 
 function mapPrismaBusinessContext(context: {

@@ -7,9 +7,11 @@ import { AuthUserDto, BusinessSummaryDto, PlatformRoleDto } from "../../contract
 
 export interface ISqlInterface {
     getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;
+    getCacheStateByConversationId(conversationId: number): Promise<ConversationCacheState | null>;
+    getLatestConversationCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;
     getConversationEntity(clientId: number, businessId: number): Promise<ConversationEntity>;
     createMessage(conversationId: number,type: "user"| "bot",content: string): Promise<void> ;
-    createDbConversation(clientId: number, businessId: number,content: string): Promise<void>;
+    createDbConversation(clientId: number, businessId: number,content: string): Promise<ConversationCacheState>;
     createDbBusiness(businessDto: BusinessDto): Promise<void>;
     getOrCreateClientByPhone(phoneNumber:string):Promise<Client>;
     upsertParamAnswer(clientId: number, conversationId: number,businessId: number, paramName: string, paramValue: string): Promise<void>;

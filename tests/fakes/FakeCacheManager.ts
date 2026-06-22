@@ -3,6 +3,7 @@ import { ConversationCacheState } from "../../src/dataClients/Types/messageTypes
 
 export class FakeCacheManager implements ICacheManager {
   public states = new Map<string, ConversationCacheState>();
+  public activeConversationIds = new Map<string, number>();
   public lockedKeys = new Set<string>();
   public lockRequests: { clientId: number; businessId: number }[] = [];
   public releasedLocks: { clientId: number; businessId: number }[] = [];
@@ -13,17 +14,39 @@ export class FakeCacheManager implements ICacheManager {
     state: ConversationCacheState;
   }[]) {
     for (const item of initialStates || []) {
-      this.states.set(this.key(item.clientId, item.businessId), this.cloneState(item.state));
+      this.activeConversationIds.set(this.key(item.clientId, item.businessId), item.state.conversationId);
+      this.states.set(this.conversationKey(item.state.conversationId), this.cloneState(item.state));
     }
   }
 
   async getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
-    const state = this.states.get(this.key(clientId, businessId));
-    return state ? this.cloneState(state) : null;
+    const conversationId = await this.getActiveConversationId(clientId, businessId);
+    if (!conversationId) {
+      return null;
+    }
+    return this.getCacheStateByConversationId(conversationId);
   }
 
   async setCacheState(clientId: number, businessId: number, state: ConversationCacheState): Promise<void> {
-    this.states.set(this.key(clientId, businessId), this.cloneState(state));
+    await this.setActiveConversationId(clientId, businessId, state.conversationId);
+    await this.setCacheStateByConversationId(state.conversationId, state);
+  }
+
+  async getCacheStateByConversationId(conversationId: number): Promise<ConversationCacheState | null> {
+    const state = this.states.get(this.conversationKey(conversationId));
+    return state ? this.cloneState(state) : null;
+  }
+
+  async setCacheStateByConversationId(conversationId: number, state: ConversationCacheState): Promise<void> {
+    this.states.set(this.conversationKey(conversationId), this.cloneState(state));
+  }
+
+  async getActiveConversationId(clientId: number, businessId: number): Promise<number | null> {
+    return this.activeConversationIds.get(this.key(clientId, businessId)) || null;
+  }
+
+  async setActiveConversationId(clientId: number, businessId: number, conversationId: number): Promise<void> {
+    this.activeConversationIds.set(this.key(clientId, businessId), conversationId);
   }
 
   async acquireLock(clientId: number, businessId: number): Promise<boolean> {
@@ -47,6 +70,10 @@ export class FakeCacheManager implements ICacheManager {
 
   private key(clientId: number, businessId: number): string {
     return `${clientId}:${businessId}`;
+  }
+
+  private conversationKey(conversationId: number): string {
+    return `${conversationId}`;
   }
 
   private cloneState(state: ConversationCacheState): ConversationCacheState {

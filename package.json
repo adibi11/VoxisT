@@ -9,9 +9,13 @@
     "dev": "nodemon --watch src --exec ts-node src/Api/index.ts",
     "worker": "ts-node src/Workers/MessageWorker/worker.ts",
     "outbound-worker": "ts-node src/Workers/OutboundMessageWorker/worker.ts",
+    "db:seed": "ts-node src/dataClients/SqlClient/seed.ts",
     "build": "tsc",
     "start:messageWorker": "node dist/Workers/MessageWorker/worker.js",
     "start:outbound": "node dist/Workers/OutboundMessageWorker/worker.js"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -30,7 +34,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.5.2",
+    "@types/node": "^25.9.4",
     "dotenv": "^17.4.2",
     "nodemon": "^3.1.14",
     "prisma": "^6.19.3",

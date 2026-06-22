@@ -51,16 +51,17 @@ function createConversationState(
     name: null,
     service: null,
     preferredDate: null
-  }
+  },
+  options: { conversationId?: number; updatedAt?: Date } = {}
 ): ConversationCacheState {
   return {
-    conversationId: 1,
+    conversationId: options.conversationId || 1,
     state,
     channel: CommunicationChannel.Whatsapp,
     provider: MessageProvider.Twilio,
     collectedParams,
     lastMessages: [],
-    updatedAt: new Date("2026-05-25T00:00:00.000Z"),
+    updatedAt: options.updatedAt || new Date(),
     phone: clientPhone
   };
 }
@@ -386,6 +387,119 @@ describe("MessageService integration flow with fakes", () => {
       { role: "bot", content: "Thanks David, what service do you need?" }
     ]);
     expect(outboundQueue.jobs).toHaveLength(1);
+  });
+
+  it("starts a new conversation when the latest SQL conversation is ended", async () => {
+    const endedState = createConversationState(ConversationState.ended, undefined, {
+      conversationId: 1,
+      updatedAt: new Date()
+    });
+    const cache = new FakeCacheManager();
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    sql.seedConversation(1, businessId, endedState);
+    const llm = new FakeLlmProvider({
+      events: [
+        {
+          conversationEvent: ConversationEvent.startConversation,
+          newConclusion: "User started again after an ended conversation"
+        }
+      ]
+    });
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
+
+    await service.processMessage(createMessage("Hi again"));
+
+    expect(sql.createdConversations).toEqual([
+      { clientId: 1, businessId, content: "Hi again" }
+    ]);
+    expect(sql.messages).toEqual([
+      { conversationId: 2, type: "user", content: "Hi again" },
+      { conversationId: 2, type: "bot", content: "Welcome to Test Business. How can I help?" }
+    ]);
+
+    const savedCache = await cache.getCacheState(1, businessId);
+    expect(savedCache?.conversationId).toBe(2);
+    expect(savedCache?.state).toBe(ConversationState.collecting);
+  });
+
+  it("starts a new conversation when the latest conversation is inactive for more than three days", async () => {
+    const oldState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 1,
+      updatedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000)
+    });
+    const cache = new FakeCacheManager();
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    sql.seedConversation(1, businessId, oldState);
+    const llm = new FakeLlmProvider({
+      events: [
+        {
+          conversationEvent: ConversationEvent.startConversation,
+          newConclusion: "User returned after the inactivity timeout"
+        }
+      ]
+    });
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
+
+    await service.processMessage(createMessage("I need help again"));
+
+    expect(sql.createdConversations).toEqual([
+      { clientId: 1, businessId, content: "I need help again" }
+    ]);
+    expect(sql.messages).toEqual([
+      { conversationId: 2, type: "user", content: "I need help again" },
+      { conversationId: 2, type: "bot", content: "Welcome to Test Business. How can I help?" }
+    ]);
+
+    const savedCache = await cache.getCacheState(1, businessId);
+    expect(savedCache?.conversationId).toBe(2);
+    expect(savedCache?.state).toBe(ConversationState.collecting);
+  });
+
+  it("continues a recent closing conversation so the user can confirm or update parameters", async () => {
+    const closingState = createConversationState(
+      ConversationState.closing,
+      {
+        name: "David",
+        service: "consulting",
+        preferredDate: "Monday"
+      },
+      {
+        conversationId: 1,
+        updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000)
+      }
+    );
+    const cache = new FakeCacheManager();
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    sql.seedConversation(1, businessId, closingState);
+    const llm = new FakeLlmProvider({
+      events: [
+        {
+          conversationEvent: ConversationEvent.updateParams,
+          newConclusion: "User updated the preferred date",
+          params: { preferredDate: "Tuesday" }
+        }
+      ]
+    });
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
+
+    await service.processMessage(createMessage("Actually Tuesday is better"));
+
+    expect(sql.createdConversations).toHaveLength(0);
+    expect(sql.messages).toEqual([
+      { conversationId: 1, type: "user", content: "Actually Tuesday is better" },
+      { conversationId: 1, type: "bot", content: "Actions executed. Check logs for details." }
+    ]);
+
+    const savedCache = await cache.getCacheState(1, businessId);
+    expect(savedCache?.conversationId).toBe(1);
+    expect(savedCache?.state).toBe(ConversationState.collecting);
+    expect(savedCache?.collectedParams.preferredDate).toBe("Tuesday");
   });
 
   it("fails the job when Redis has stale conversation state that does not exist in SQL", async () => {

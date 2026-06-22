@@ -20,7 +20,7 @@ type SavedParamAnswer = {
 
 export class FakeSqlManager implements ISqlInterface {
   public clientsByPhone = new Map<string, Client>();
-  public conversations = new Map<string, ConversationCacheState>();
+  public conversations = new Map<number, { clientId: number; businessId: number; state: ConversationCacheState }>();
   public businesses = new Map<number, BusinessDto>();
   public businessContexts = new Map<number, BusinessContext>();
   public messages: SavedMessage[] = [];
@@ -31,8 +31,20 @@ export class FakeSqlManager implements ISqlInterface {
   private nextConversationId = 1;
 
   async getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
-    const state = this.conversations.get(this.key(clientId, businessId));
-    return state ? this.cloneState(state) : null;
+    return this.getLatestConversationCacheState(clientId, businessId);
+  }
+
+  async getLatestConversationCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
+    const conversation = [...this.conversations.values()]
+      .filter((item) => item.clientId === clientId && item.businessId === businessId)
+      .sort((left, right) => right.state.updatedAt.getTime() - left.state.updatedAt.getTime())[0];
+
+    return conversation ? this.hydrateState(conversation.state) : null;
+  }
+
+  async getCacheStateByConversationId(conversationId: number): Promise<ConversationCacheState | null> {
+    const conversation = this.conversations.get(conversationId);
+    return conversation ? this.hydrateState(conversation.state) : null;
   }
 
   async getConversationEntity(_clientId: number, _businessId: number): Promise<ConversationEntity> {
@@ -40,15 +52,17 @@ export class FakeSqlManager implements ISqlInterface {
   }
 
   async createMessage(conversationId: number, type: "user" | "bot", content: string): Promise<void> {
-    if (!this.hasConversation(conversationId)) {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) {
       throw new Error(`Conversation ${conversationId} does not exist`);
     }
     this.messages.push({ conversationId, type, content });
+    conversation.state.updatedAt = new Date();
   }
 
-  async createDbConversation(clientId: number, businessId: number, content: string): Promise<void> {
+  async createDbConversation(clientId: number, businessId: number, content: string): Promise<ConversationCacheState> {
     this.createdConversations.push({ clientId, businessId, content });
-    this.conversations.set(this.key(clientId, businessId), {
+    const state = {
       conversationId: this.nextConversationId++,
       state: ConversationState.start,
       channel: CommunicationChannel.Whatsapp,
@@ -57,7 +71,9 @@ export class FakeSqlManager implements ISqlInterface {
       lastMessages: [],
       updatedAt: new Date(),
       phone: this.findClientPhone(clientId)
-    });
+    };
+    this.conversations.set(state.conversationId, { clientId, businessId, state });
+    return this.cloneState(state);
   }
 
   async createDbBusiness(businessDto: BusinessDto): Promise<void> {
@@ -154,11 +170,9 @@ export class FakeSqlManager implements ISqlInterface {
   }
 
   async updateConversationState(conversationId: number, state: ConversationState): Promise<void> {
-    for (const conversation of this.conversations.values()) {
-      if (conversation.conversationId === conversationId) {
-        conversation.state = state;
-        return;
-      }
+    const conversation = this.conversations.get(conversationId);
+    if (conversation) {
+      conversation.state.state = state;
     }
   }
 
@@ -167,15 +181,12 @@ export class FakeSqlManager implements ISqlInterface {
   }
 
   seedConversation(clientId: number, businessId: number, state: ConversationCacheState): void {
-    this.conversations.set(this.key(clientId, businessId), this.cloneState(state));
+    this.conversations.set(state.conversationId, { clientId, businessId, state: this.cloneState(state) });
+    this.nextConversationId = Math.max(this.nextConversationId, state.conversationId + 1);
   }
 
   private hasConversation(conversationId: number): boolean {
-    return [...this.conversations.values()].some((state) => state.conversationId === conversationId);
-  }
-
-  private key(clientId: number, businessId: number): string {
-    return `${clientId}:${businessId}`;
+    return this.conversations.has(conversationId);
   }
 
   private emptyParamsForBusiness(businessId: number): Record<string, string | number | null> {
@@ -201,5 +212,19 @@ export class FakeSqlManager implements ISqlInterface {
       lastMessages: state.lastMessages.map((message) => ({ ...message })),
       updatedAt: new Date(state.updatedAt)
     };
+  }
+
+  private hydrateState(state: ConversationCacheState): ConversationCacheState {
+    const savedMessages = this.messages
+      .filter((message) => message.conversationId === state.conversationId)
+      .map((message) => ({
+        role: message.type,
+        content: message.content
+      }));
+    const cloned = this.cloneState(state);
+    if (savedMessages.length > 0) {
+      cloned.lastMessages = savedMessages;
+    }
+    return cloned;
   }
 }

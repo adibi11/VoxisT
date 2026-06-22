@@ -11,6 +11,13 @@ import { LlmPipeline } from "./messageApply";
 import { ILogger, logger } from "../logging/logger";
 import { IOutboundMessageQueue } from "../QueueClient/queue";
 
+const CONVERSATION_TIMEOUT_MS = 3 * 24 * 60 * 60 * 1000;
+const CLOSED_CONVERSATION_STATES = new Set([
+    "ended",
+    "failure",
+    "schedulingConfirmed",
+    "schedulingFailed"
+]);
 
 export class MessageService {
     private cacheManager: ICacheManager;
@@ -89,33 +96,12 @@ export class MessageService {
         }
         flowLogger.info("conversation.lock.acquired");
         try {
-            let conversationState: ConversationCacheState | null = await this.cacheManager.getCacheState(client.id, businessId);
             let messages:LastMessage[] = [];
             messages.push({
                 role:"user",
                 content: message.data.Body
             });
-            if (!conversationState) {
-                flowLogger.info("conversation.cache.miss");
-                conversationState = await this.sqlInterface.getCacheState(client.id, businessId);
-                if (!conversationState) {
-                    // Handle the case where no conversation state is found
-                    flowLogger.info("conversation.db.miss.creating");
-                    await this.sqlInterface.createDbConversation(client.id, businessId, message.data.Body);
-                    conversationState = await this.sqlInterface.getCacheState(client.id, businessId);
-                    if (!conversationState) {
-                        throw new Error("Failed to create and retrieve conversation state.");
-                    }
-                }
-            } else {
-                flowLogger.info("conversation.cache.hit", {
-                conversationId: conversationState.conversationId,
-                state: conversationState.state,
-                channel: conversationState.channel,
-                provider: conversationState.provider,
-                lastMessagesCount: conversationState.lastMessages.length
-                });
-            }
+            const conversationState = await this.getConversationState(client.id, businessId, message.data.Body);
            
             flowLogger.info("conversation.initialized", {
                 conversationId: conversationState.conversationId,
@@ -129,6 +115,7 @@ export class MessageService {
             try{
                 flowLogger.info("llm.pipeline.started", { conversationId: conversationState.conversationId });
                 const botResponse:string = (await this.llmPiplne.applyPipline(conversationState,message.data.Body,businessId)).response
+                //Push the response to the messages array to be persisted in the DB and cache state.
                 messages.push({
                     role:"bot",
                     content: botResponse
@@ -142,7 +129,9 @@ export class MessageService {
                 throw new Error("LLM Failed interpreting");
                 //Implement fall back in the future for unsuccessfull response.
             }try{
+                // Persist the messages to the DB and update the cache state
                 await this.handleCreateMessages(client.id, message, conversationState!,messages);
+                // Update the cache state with the new messages
                 this.applyMessagesToCacheState(conversationState!, messages);
                 await this.cacheManager.setCacheState(client.id, businessId, conversationState!);
                 flowLogger.info("conversation.persisted", {
@@ -156,6 +145,7 @@ export class MessageService {
                 throw new Error("Failed to create messages in DB");
             }   
             try{
+                // Enqueue the outbound message for delivery
                 await this.enqueueOutboundMessage(client.id, businessId, message, conversationState!, messages);
             }
             catch{
@@ -182,15 +172,14 @@ export class MessageService {
 
     async syncCacheToDb(clientId: number, businessId: number, conversationState: ConversationCacheState,messages:LastMessage[]) {
         // Sync cache state to DB
-        await Promise.all(
-            messages.map((message) =>
-                this.sqlInterface.createMessage(
-                    conversationState.conversationId,
-                    message.role,
-                    message.content
-                )
-            )
-        );
+        for (const message of messages) {
+            await this.sqlInterface.createMessage(
+                conversationState.conversationId,
+                message.role,
+                message.content
+            );
+        }
+        await this.sqlInterface.updateConversationState(conversationState.conversationId, conversationState.state);
         for (const [paramName, paramValue] of Object.entries(conversationState.collectedParams)) {
             if (paramValue) {
                 await this.sqlInterface.upsertParamAnswer(clientId, conversationState.conversationId, businessId, paramName, paramValue.toString());
@@ -251,5 +240,99 @@ export class MessageService {
             businessId,
             clientId
         });
+    }
+
+    //getConversationState retrieves the current conversation state for a given client and business. 
+    // If no active conversation exists or if the existing conversation has expired or is closed, 
+    // it creates a new conversation and caches it.
+    private async getConversationState(clientId: number, businessId: number, initialContent: string): Promise<ConversationCacheState> {
+        const now = new Date();
+        const activeConversationId = await this.cacheManager.getActiveConversationId(clientId, businessId);
+        // If an active conversation ID exists, attempt to retrieve its cached state
+        if (activeConversationId) {
+            // If a cached state exists for the active conversation, check if it should continue
+            const cachedState = await this.cacheManager.getCacheStateByConversationId(activeConversationId);
+            if (cachedState) {
+                if (this.shouldContinueConversation(cachedState, now)) {
+                    this.logger.info("conversation.cache.hit", {
+                        clientId,
+                        businessId,
+                        conversationId: cachedState.conversationId,
+                        state: cachedState.state,
+                        lastMessagesCount: cachedState.lastMessages.length
+                    });
+                    return cachedState;
+                }
+                // If the cached state is expired or closed, log the event and create a new conversation
+                this.logger.info("conversation.cache.expired_or_closed", {
+                    clientId,
+                    businessId,
+                    conversationId: cachedState.conversationId,
+                    state: cachedState.state,
+                    updatedAt: cachedState.updatedAt
+                });
+                return this.createAndCacheConversation(clientId, businessId, initialContent);
+            }
+        }
+
+        this.logger.info("conversation.cache.miss", {
+            clientId,
+            businessId,
+            activeConversationId
+        });
+        // If no active conversation ID exists or if the cached state is not found, check the database for the latest conversation state
+        const latestState = await this.sqlInterface.getLatestConversationCacheState(clientId, businessId);
+        if (latestState && this.shouldContinueConversation(latestState, now)) {
+            await this.cacheManager.setCacheStateByConversationId(latestState.conversationId, latestState);
+            await this.cacheManager.setActiveConversationId(clientId, businessId, latestState.conversationId);
+            this.logger.info("conversation.db.hit", {
+                clientId,
+                businessId,
+                conversationId: latestState.conversationId,
+                state: latestState.state,
+                lastMessagesCount: latestState.lastMessages.length
+            });
+            return latestState;
+        }
+
+        if (latestState) {
+            this.logger.info("conversation.db.expired_or_closed", {
+                clientId,
+                businessId,
+                conversationId: latestState.conversationId,
+                state: latestState.state,
+                updatedAt: latestState.updatedAt
+            });
+        } else {
+            this.logger.info("conversation.db.miss.creating", { clientId, businessId });
+        }
+
+        return this.createAndCacheConversation(clientId, businessId, initialContent);
+    }
+
+    private async createAndCacheConversation(clientId: number, businessId: number, initialContent: string): Promise<ConversationCacheState> {
+        const conversationState = await this.sqlInterface.createDbConversation(clientId, businessId, initialContent);
+        await this.cacheManager.setCacheStateByConversationId(conversationState.conversationId, conversationState);
+        await this.cacheManager.setActiveConversationId(clientId, businessId, conversationState.conversationId);
+        this.logger.info("conversation.created", {
+            clientId,
+            businessId,
+            conversationId: conversationState.conversationId,
+            state: conversationState.state
+        });
+        return conversationState;
+    }
+
+    private shouldContinueConversation(conversationState: ConversationCacheState, now: Date): boolean {
+        if (CLOSED_CONVERSATION_STATES.has(conversationState.state)) {
+            return false;
+        }
+
+        const updatedAt = new Date(conversationState.updatedAt);
+        if (!Number.isFinite(updatedAt.getTime())) {
+            return false;
+        }
+
+        return now.getTime() - updatedAt.getTime() <= CONVERSATION_TIMEOUT_MS;
     }
 }

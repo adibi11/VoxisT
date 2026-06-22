@@ -1,6 +1,6 @@
 # VoxisT UI API Contract
 DATABASE_URL="postgresql://postgres:Kuw54277@voxis.cx2w4ssw0kc1.eu-central-1.rds.amazonaws.com:5432/postgres"
-
+DATABASE_URL=postgresql://voxis_user:voxis_password@localhost:5432/voxis_db
 This document is the source of truth for the React UI. Build UI API clients and screens according to these DTOs and endpoints.
 
 ## Base Rules
