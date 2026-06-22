@@ -22,16 +22,17 @@ jobs:
     steps:
       
       -name: Detect changes
-        uses: dorny/paths-filter@v2
-        id: filter
-        with:
-          filters: |
-            api:
-              - 'version/api.json'
-            worker:
-              - 'version/worker.json'
-            outbound:
-              - 'version/outbound.json'
+      uses: dorny/paths-filter@v3
+
+      id: filter
+      with:
+        filters: |
+          api:
+            - 'version/api.json'
+          worker:
+            - 'version/worker.json'
+          outbound:
+            - 'version/outbound.json'
       
   deploy-api:
     needs: detect-changes
