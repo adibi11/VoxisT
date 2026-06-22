@@ -34,14 +34,6 @@ jobs:
               - 'versions/worker.json'
             outbound:
               - 'versions/outbound.json'
-
-  configure-aws:
-    needs: detect-changes
-    runs-on: ubuntu-latest
-
-
-
-
   deploy-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api_changed == 'true'
@@ -55,8 +47,6 @@ jobs:
         run: |
           API_VERSION=$(jq -r '.version' versions/api.json)
           echo "API_VERSION=$API_VERSION" >> $GITHUB_OUTPUT
-      
-
   deploy-message-worker:
     needs: detect-changes
     if: needs.detect-changes.outputs.worker_changed == 'true'
