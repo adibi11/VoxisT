@@ -43,7 +43,8 @@ jobs:
 
     steps:
       - name: Deploy API
-        run: echo "Deploying API..."
+        uses: actions/checkout@v4
+
       - name: Read API version
         id: read_api_version
         run: |
@@ -56,6 +57,7 @@ jobs:
 
     steps:
       - name: Deploy Worker
+        uses: actions/checkout@v4
         run: echo "Deploying Worker..."
       - name: Read Worker version
         id: read_worker_version
@@ -70,6 +72,7 @@ jobs:
 
     steps:
       - name: Deploy Outbound
+        uses: actions/checkout@v4
         run: echo "Deploying Outbound..."
       - name: Read Outbound version
         id: read_outbound_version
