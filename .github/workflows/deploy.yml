@@ -7,13 +7,15 @@ on:
   pull_request:
     branches:
       - master
+
 permissions:
   contents: read
   pull-requests: read
+
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
-    
+
     outputs:
       api_changed: ${{ steps.filter.outputs.api }}
       worker_changed: ${{ steps.filter.outputs.worker }}
@@ -34,36 +36,52 @@ jobs:
               - 'versions/worker.json'
             outbound:
               - 'versions/outbound.json'
-      - name: Current Repository State
-        run : ls -la
+
+      - name: Debug repository
+        run: |
+          pwd
+          ls -la
+          ls -la versions
+
   deploy-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api_changed == 'true'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy API
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Read API version
         id: read_api_version
         run: |
+          ls -la versions
           API_VERSION=$(jq -r '.version' versions/api.json)
           echo "API_VERSION=$API_VERSION" >> $GITHUB_OUTPUT
+          echo "API version is $API_VERSION"
+
+      - name: Deploy API
+        run: echo "Deploying API version ${{ steps.read_api_version.outputs.API_VERSION }}..."
+
   deploy-message-worker:
     needs: detect-changes
     if: needs.detect-changes.outputs.worker_changed == 'true'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Worker
+      - name: Checkout
         uses: actions/checkout@v4
-        run: echo "Deploying Worker..."
+
       - name: Read Worker version
         id: read_worker_version
         run: |
+          ls -la versions
           WORKER_VERSION=$(jq -r '.version' versions/worker.json)
           echo "WORKER_VERSION=$WORKER_VERSION" >> $GITHUB_OUTPUT
+          echo "Worker version is $WORKER_VERSION"
+
+      - name: Deploy Worker
+        run: echo "Deploying Worker version ${{ steps.read_worker_version.outputs.WORKER_VERSION }}..."
 
   deploy-outbound:
     needs: detect-changes
@@ -71,13 +89,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Outbound
+      - name: Checkout
         uses: actions/checkout@v4
-        run: echo "Deploying Outbound..."
+
       - name: Read Outbound version
         id: read_outbound_version
         run: |
+          ls -la versions
           OUTBOUND_VERSION=$(jq -r '.version' versions/outbound.json)
           echo "OUTBOUND_VERSION=$OUTBOUND_VERSION" >> $GITHUB_OUTPUT
+          echo "Outbound version is $OUTBOUND_VERSION"
 
-   
+      - name: Deploy Outbound
+        run: echo "Deploying Outbound version ${{ steps.read_outbound_version.outputs.OUTBOUND_VERSION }}..."
