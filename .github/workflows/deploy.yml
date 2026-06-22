@@ -34,29 +34,29 @@ jobs:
           outbound:
             - 'version/outbound.json'
       
-  deploy-api:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.api_changed == 'true'
-    runs-on: ubuntu-latest
+    deploy-api:
+      needs: detect-changes
+      if: needs.detect-changes.outputs.api_changed == 'true'
+      runs-on: ubuntu-latest
 
-    steps:
-      -name: Deploy API
-      run: echo "Deploying API..."
-    
-  deploy-message-worker:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.worker_changed == 'true'
-    runs-on: ubuntu-latest
+      steps:
+        -name: Deploy API
+        run: echo "Deploying API..."
+      
+    deploy-message-worker:
+      needs: detect-changes
+      if: needs.detect-changes.outputs.worker_changed == 'true'
+      runs-on: ubuntu-latest
 
-    steps:
-      -name: Deploy Worker
-      run: echo "Deploying Worker..."
-  deploy-outbound:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.outbound_changed == 'true'
-    runs-on: ubuntu-latest
+      steps:
+        -name: Deploy Worker
+        run: echo "Deploying Worker..."
+    deploy-outbound:
+      needs: detect-changes
+      if: needs.detect-changes.outputs.outbound_changed == 'true'
+      runs-on: ubuntu-latest
 
-    steps:
-      -name: Deploy Outbound
-      run: echo "Deploying Outbound..."
+      steps:
+        -name: Deploy Outbound
+        run: echo "Deploying Outbound..."
       
