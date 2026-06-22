@@ -15,80 +15,49 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      api_changed: ${{ steps.changes.outputs.api_changed }}
-      worker_changed: ${{ steps.changes.outputs.worker_changed }}
-      outbound_changed: ${{ steps.changes.outputs.outbound_changed }}
+      api_changed: ${{ steps.filter.outputs.api }}
+      worker_changed: ${{ steps.filter.outputs.worker }}
+      outbound_changed: ${{ steps.filter.outputs.outbound }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      -name: Checkout code
+       uses: actions/checkout@v3
 
-      - name: Detect version changes
-        id: changes
-        run: |
-          git fetch origin HEAD~1
-
-          API_CHANGED=false
-          WORKER_CHANGED=false
-          OUTBOUND_CHANGED=false
-
-          if git diff --name-only HEAD~1 HEAD | grep "versions/api.json"; then
-            API_CHANGED=true
-          fi
-
-          if git diff --name-only HEAD~1 HEAD | grep "versions/worker.json"; then
-            WORKER_CHANGED=true
-          fi
-
-          if git diff --name-only HEAD~1 HEAD | grep "versions/outbound.json"; then
-            OUTBOUND_CHANGED=true
-          fi
-
-          echo "api_changed=$API_CHANGED" >> $GITHUB_OUTPUT
-          echo "worker_changed=$WORKER_CHANGED" >> $GITHUB_OUTPUT
-          echo "outbound_changed=$OUTBOUND_CHANGED" >> $GITHUB_OUTPUT
-
+      -name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'version/api.json'
+            worker:
+              - 'version/worker.json'
+            outbound:
+              - 'version/outbound.json'
+      
   deploy-api:
     needs: detect-changes
     if: needs.detect-changes.outputs.api_changed == 'true'
-
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      - run: echo "Build API"
-
-      - run: echo "Push API image to ECR"
-
-      - run: echo "Update ECS API service"
-
-  deploy-worker:
+      -name: Deploy API
+        run: echo "Deploying API..."
+    
+  deploy-message-worker:
     needs: detect-changes
     if: needs.detect-changes.outputs.worker_changed == 'true'
-
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      - run: echo "Build Worker"
-
-      - run: echo "Push Worker image to ECR"
-
-      - run: echo "Update ECS Worker service"
-
+      -name: Deploy Worker
+        run: echo "Deploying Worker..."
   deploy-outbound:
     needs: detect-changes
     if: needs.detect-changes.outputs.outbound_changed == 'true'
-
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      - run: echo "Build Outbound Worker"
-
-      - run: echo "Push Outbound image to ECR"
-
-      - run: echo "Update ECS Outbound service"
+      -name: Deploy Outbound
+        run: echo "Deploying Outbound..."
+      
