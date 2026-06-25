@@ -1,9 +1,8 @@
 import "dotenv/config";
 import { Worker } from "bullmq";
-import { connection } from "../../dataClients/CacheClient/redis";
+import { connection, RedisCacheManager, verifyRedisConnection } from "../../dataClients/CacheClient/redis";
 import { JobData } from "../../dataClients/Types/apiTypes";
 import { MessageService } from "../../MessageService/messageService";
-import { RedisCacheManager } from "../../dataClients/CacheClient/redis";
 import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
 import { OpenAIApi } from "../../llm/openaiApi";
 import { logger } from "../../logging/logger";
@@ -53,7 +52,8 @@ const worker = new Worker(
     
   },
   {
-    connection
+    connection,
+    autorun: false
   }
 );
 
@@ -64,3 +64,25 @@ worker.on("completed", (job) => {
 worker.on("failed", (job, err) => {
   workerLogger.error("job.failed", { jobId: job?.id, error: err });
 });
+
+worker.on("error", (error) => {
+  workerLogger.error("worker.redis.error", { error });
+});
+
+startWorker().catch((error) => {
+  workerLogger.error("worker.startup.failed", { error });
+  process.exit(1);
+});
+
+async function startWorker(): Promise<void> {
+  await verifyRedisConnection(workerLogger);
+  await worker.waitUntilReady();
+  workerLogger.info("worker.connection.verify.succeeded", { queueName: MESSAGE_QUEUE_NAME });
+
+  void worker.run().catch((error) => {
+    workerLogger.error("worker.run.failed", { error });
+    process.exit(1);
+  });
+
+  workerLogger.info("worker.started", { queueName: MESSAGE_QUEUE_NAME });
+}

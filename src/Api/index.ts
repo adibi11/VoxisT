@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { QueueManager } from "../QueueClient/queue";
+import { verifyRedisConnection } from "../dataClients/CacheClient/redis";
 import { CommunicationChannel, JobData,ActionType, MessageProvider } from "../dataClients/Types/apiTypes";
 import { twillioMessage } from "../dataClients/Types/apiTypes";
 import { BusinessDto } from "../dataClients/Types/apiTypes";
@@ -330,9 +331,20 @@ app.get("/", (req, res) => {
   res.send("Server is running");
 });
 
-app.listen(PORT, () => {
-  appLogger.info("server.started", { port: PORT });
+startServer().catch((error) => {
+  appLogger.error("server.startup.failed", { error });
+  process.exit(1);
 });
+
+async function startServer(): Promise<void> {
+  await verifyRedisConnection(appLogger);
+  await queueManager.queue.waitUntilReady();
+  appLogger.info("queue.connection.verify.succeeded", { queueName: MESSAGE_QUEUE_NAME });
+
+  app.listen(PORT, () => {
+    appLogger.info("server.started", { port: PORT });
+  });
+}
 
 function getTwilioChannel(event: twillioMessage): CommunicationChannel {
   if (event.From?.startsWith("whatsapp:") || event.To?.startsWith("whatsapp:")) {

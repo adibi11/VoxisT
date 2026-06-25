@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Worker } from "bullmq";
-import { connection } from "../../dataClients/CacheClient/redis";
+import { connection, verifyRedisConnection } from "../../dataClients/CacheClient/redis";
 import { OutboundMessageJobData } from "../../dataClients/Types/outboundTypes";
 import { logger } from "../../logging/logger";
 import { TwilioMessageSender } from "../../MessageSender/twilioMessageSender";
@@ -44,7 +44,8 @@ const worker = new Worker(
     }
   },
   {
-    connection
+    connection,
+    autorun: false
   }
 );
 
@@ -55,3 +56,25 @@ worker.on("completed", (job) => {
 worker.on("failed", (job, err) => {
   workerLogger.error("outbound.job.failed", { jobId: job?.id, error: err });
 });
+
+worker.on("error", (error) => {
+  workerLogger.error("outbound.worker.redis.error", { error });
+});
+
+startWorker().catch((error) => {
+  workerLogger.error("outbound.worker.startup.failed", { error });
+  process.exit(1);
+});
+
+async function startWorker(): Promise<void> {
+  await verifyRedisConnection(workerLogger);
+  await worker.waitUntilReady();
+  workerLogger.info("outbound.worker.connection.verify.succeeded", { queueName: OUTBOUND_MESSAGE_QUEUE_NAME });
+
+  void worker.run().catch((error) => {
+    workerLogger.error("outbound.worker.run.failed", { error });
+    process.exit(1);
+  });
+
+  workerLogger.info("outbound.worker.started", { queueName: OUTBOUND_MESSAGE_QUEUE_NAME });
+}
