@@ -99,8 +99,8 @@ describe("ConversationStateMachine", () => {
     expect(cache.state).toBe(ConversationState.closing);
   });
 
-  it("applies params before pacing when the user also expresses concern", () => {
-    // A concern changes the tone to pacing, but extracted facts should not be thrown away.
+  it("applies params from a concern without changing to a pacing state", () => {
+    // Concern is now conversational posture only; business state still follows params.
     const machine = new ConversationStateMachine();
     const cache = createCache(ConversationState.collecting);
 
@@ -109,72 +109,46 @@ describe("ConversationStateMachine", () => {
       cache
     );
 
-    expect(actions).toEqual([Action.applyParams, Action.tryPacing]);
-    expect(cache.state).toBe(ConversationState.pacing);
+    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
+    expect(cache.state).toBe(ConversationState.collecting);
   });
 
-  it("asks for missing params after pacing finishes if the conversation is incomplete", () => {
-    // Coming out of pacing should return to collection when required fields are still missing.
+  it("moves to closing from a concern when all params are present", () => {
+    // The durable state follows parameter completeness, not the emotional event.
     const machine = new ConversationStateMachine();
-    const cache = createCache(ConversationState.pacing, {
+    const cache = createCache(ConversationState.collecting, {
       name: "David",
       service: null,
       preferredDate: null
     });
 
     const actions = machine.recognizeNewState(
-      llmOutput(ConversationEvent.finishedPacing, { service: "consulting" }),
+      llmOutput(ConversationEvent.concern, {
+        service: "consulting",
+        preferredDate: "Tuesday"
+      }),
       cache
     );
 
-    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
-    expect(cache.state).toBe(ConversationState.collecting);
+    expect(actions).toEqual([Action.applyParams, Action.tryClosing]);
+    expect(cache.state).toBe(ConversationState.closing);
   });
 
-  it("resumes parameter collection when a normal update arrives while pacing", () => {
-    // This covers the real WhatsApp case: after a concern, the user continues normally.
-    // Pacing should not fall through with no actions; it should collect/ask like normal.
+  it("keeps closing open unless the LLM extraction explicitly ends it", () => {
+    // Closing -> ended requires an explicit ending flag from extraction.
     const machine = new ConversationStateMachine();
-    const cache = createCache(ConversationState.pacing);
-
-    const actions = machine.recognizeNewState(
-      llmOutput(ConversationEvent.updateParams, { service: "home cleaning" }),
-      cache
-    );
-
-    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
-    expect(cache.state).toBe(ConversationState.collecting);
-  });
-
-  it("asks for missing params when pacing receives no useful extracted params", () => {
-    // Even if the LLM does not extract anything, pacing should produce a user-facing response.
-    const machine = new ConversationStateMachine();
-    const cache = createCache(ConversationState.pacing);
+    const cache = createCache(ConversationState.closing, {
+      name: "David",
+      service: "consulting",
+      preferredDate: "Tuesday"
+    });
 
     const actions = machine.recognizeNewState(
       llmOutput(ConversationEvent.updateParams),
       cache
     );
 
-    expect(actions).toEqual([Action.askForParams]);
-    expect(cache.state).toBe(ConversationState.collecting);
-  });
-
-  it("moves from pacing to closing when pacing finishes and all params are present", () => {
-    // This is the happy path after the user is ready to continue.
-    const machine = new ConversationStateMachine();
-    const cache = createCache(ConversationState.pacing, {
-      name: "David",
-      service: "consulting",
-      preferredDate: null
-    });
-
-    const actions = machine.recognizeNewState(
-      llmOutput(ConversationEvent.finishedPacing, { preferredDate: "Tuesday" }),
-      cache
-    );
-
-    expect(actions).toEqual([Action.applyParams, Action.tryClosing]);
+    expect(actions).toEqual([Action.tryClosing]);
     expect(cache.state).toBe(ConversationState.closing);
   });
 

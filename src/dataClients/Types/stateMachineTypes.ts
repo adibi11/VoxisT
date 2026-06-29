@@ -27,7 +27,6 @@ export enum ConversationState
 {
     start = "start",
     collecting = "collecting",
-    pacing = "pacing",
     closing = "closing",
     failure = "failure",
     ended = "ended",
@@ -42,16 +41,36 @@ export enum ConversationEvent
     ended = "ended",
     failure = "failure",
     tryEnding = "tryEnding",
-    finishedPacing = "finishedPacing",
     startConversation = "startConversation",
     updateParams = "updateParams"
+}
+
+export enum ConversationMode
+{
+    neutral = "neutral",
+    leadin = "leadin",
+    validating = "validating",
+    reflecting = "reflecting",
+    pacing = "pacing",
+    clarifying = "clarifying"
+}
+
+export enum ResponseIntent
+{
+    welcome = "welcome",
+    askForParam = "askForParam",
+    acknowledgeConcern = "acknowledgeConcern",
+    clarify = "clarify",
+    close = "close",
+    end = "end",
+    escalate = "escalate",
+    ignore = "ignore"
 }
 
 export enum Action
 {
     sendWelcomeMessage = "sendWelcomeMessage",
     askForParams = "askForParams",
-    tryPacing = "tryPacing",
     tryClosing = "tryClosing",
     endConversation = "endConversation",
     applyParams = "applyParams",
@@ -72,6 +91,8 @@ export type StateMachineInput = {
 
 export type StateMachineOutput = {
     conversationEvent: ConversationEvent;
+    conversationMode?: ConversationMode;
+    responseIntent?: ResponseIntent;
     newConclusion: string;
     params?: Record<string, string | number | null>;
 }

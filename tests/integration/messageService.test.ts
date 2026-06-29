@@ -483,7 +483,8 @@ describe("MessageService integration flow with fakes", () => {
           newConclusion: "User updated the preferred date",
           params: { preferredDate: "Tuesday" }
         }
-      ]
+      ],
+      closingMessages: ["Updated to Tuesday. I have everything I need."]
     });
     const outboundQueue = new FakeOutboundMessageQueue();
     const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
@@ -493,12 +494,12 @@ describe("MessageService integration flow with fakes", () => {
     expect(sql.createdConversations).toHaveLength(0);
     expect(sql.messages).toEqual([
       { conversationId: 1, type: "user", content: "Actually Tuesday is better" },
-      { conversationId: 1, type: "bot", content: "Actions executed. Check logs for details." }
+      { conversationId: 1, type: "bot", content: "Updated to Tuesday. I have everything I need." }
     ]);
 
     const savedCache = await cache.getCacheState(1, businessId);
     expect(savedCache?.conversationId).toBe(1);
-    expect(savedCache?.state).toBe(ConversationState.collecting);
+    expect(savedCache?.state).toBe(ConversationState.closing);
     expect(savedCache?.collectedParams.preferredDate).toBe("Tuesday");
   });
 

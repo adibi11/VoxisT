@@ -4,23 +4,19 @@ import { ILlmProvider } from "../../src/llm/llmInterface";
 export class FakeLlmProvider implements ILlmProvider {
   public extractEventInputs: StateMachineInput[] = [];
   public responseInputs: { input: StateMachineInput; output: StateMachineOutput }[] = [];
-  public pacingInputs: { input: StateMachineInput; output: StateMachineOutput }[] = [];
   public closingInputs: { input: StateMachineInput; output: StateMachineOutput }[] = [];
 
   private eventQueue: StateMachineOutput[];
   private responseQueue: string[];
-  private pacingQueue: string[];
   private closingQueue: string[];
 
   constructor(options?: {
     events?: StateMachineOutput[];
     responses?: string[];
-    pacingMessages?: string[];
     closingMessages?: string[];
   }) {
     this.eventQueue = [...(options?.events || [])];
     this.responseQueue = [...(options?.responses || [])];
-    this.pacingQueue = [...(options?.pacingMessages || [])];
     this.closingQueue = [...(options?.closingMessages || [])];
   }
 
@@ -30,10 +26,6 @@ export class FakeLlmProvider implements ILlmProvider {
 
   enqueueResponse(response: string): void {
     this.responseQueue.push(response);
-  }
-
-  enqueuePacingMessage(response: string): void {
-    this.pacingQueue.push(response);
   }
 
   enqueueClosingMessage(response: string): void {
@@ -52,11 +44,6 @@ export class FakeLlmProvider implements ILlmProvider {
   async generateResponse(input: StateMachineInput, output: StateMachineOutput): Promise<string> {
     this.responseInputs.push({ input, output });
     return this.responseQueue.shift() || "fake response";
-  }
-
-  async getPacingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string> {
-    this.pacingInputs.push({ input, output });
-    return this.pacingQueue.shift() || "fake pacing message";
   }
 
   async getClosingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string> {

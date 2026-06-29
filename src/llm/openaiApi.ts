@@ -2,7 +2,7 @@ import "dotenv/config";
 import { OpenAI } from "openai";
 import { LlmInput,LlmOutput } from "../dataClients/Types/llmTypes";
 import { ILlmProvider } from "./llmInterface";
-import { buildMessagePrompt ,buildPacingPrompt,parseResponse} from "./promptHandler";
+import { buildMessagePrompt ,buildClosingPrompt,parseResponse} from "./promptHandler";
 import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
 import { buildEventPrompt, parseEventResponse } from "./promptHandler";
 import { ILogger, logger } from "../logging/logger";
@@ -19,28 +19,12 @@ export class OpenAIApi implements ILlmProvider {
     constructor(loggerInstance: ILogger = logger.child({ component: "OpenAIApi" })) {
         this.logger = loggerInstance;
     }
-
-    
-    async getPacingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string> {
-        const prompt = buildPacingPrompt(input, output);
-        const completion = await this.llmclient.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-        });
-        const text = completion.choices[0]?.message?.content || "";
-        return text.trim();
-    }
     async generateResponse(input: StateMachineInput, output: StateMachineOutput): Promise<string> {
 
         const prompt = buildMessagePrompt(output, input);
 
         const completion = await this.llmclient.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-5.5",
             messages: [
                 {
                     role: "user",
@@ -72,7 +56,7 @@ export class OpenAIApi implements ILlmProvider {
     }
 
     getClosingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string> {
-        const prompt = buildPacingPrompt(input, output);
+        const prompt = buildClosingPrompt(input, output);
         return this.llmclient.chat.completions.create({
             model: "gpt-4o",
             messages: [

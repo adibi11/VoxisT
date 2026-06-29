@@ -1,3 +1,9 @@
+.git
+.agents
+.codex
+node_modules
+dist
+coverage
 .env
-
-/node_modules
+npm-debug.log
+docker-compose*.yml

@@ -105,22 +105,22 @@ describe("Executer with fake LLM generations", () => {
     expect(llm.closingInputs).toHaveLength(1);
   });
 
-  it("generates a pacing message when the LLM detects a user concern", async () => {
-    // Concern handling should save any extracted facts and then switch response tone to pacing.
+  it("keeps a concern in the business flow and asks for missing params", async () => {
+    // Concern is now conversation mode only; the executor still follows business-state actions.
     const cache = createCache(ConversationState.collecting);
     const input = inputFromCache(cache, "I am worried about the price, this is for consulting");
     const llm = new FakeLlmProvider({
       events: [generatedEvent(ConversationEvent.concern, { service: "consulting" })],
-      pacingMessages: ["I understand the concern. We can go step by step."]
+      responses: ["Thanks, what date works best?"]
     });
     const executer = new Executer(llm, new NullLogger());
 
     const result = await executer.prepareAndExecute(input, cache);
 
-    expect(result.response).toBe("I understand the concern. We can go step by step.");
+    expect(result.response).toBe("Thanks, what date works best?");
     expect(result.collectedParams.service).toBe("consulting");
-    expect(cache.state).toBe(ConversationState.pacing);
-    expect(llm.pacingInputs).toHaveLength(1);
+    expect(cache.state).toBe(ConversationState.collecting);
+    expect(llm.responseInputs).toHaveLength(1);
   });
 
   it("ignores null and empty generated params instead of erasing collected values", async () => {
@@ -148,9 +148,8 @@ describe("Executer with fake LLM generations", () => {
     expect(cache.state).toBe(ConversationState.collecting);
   });
 
-  it("generates a missing-param response when the user continues normally from pacing", async () => {
-    // Regression coverage for WhatsApp flow: pacing + updateParams used to return the fallback text.
-    const cache = createCache(ConversationState.pacing);
+  it("generates a missing-param response when the user continues normally", async () => {
+    const cache = createCache(ConversationState.collecting);
     const input = inputFromCache(cache, "I need my home cleaned");
     const llm = new FakeLlmProvider({
       events: [generatedEvent(ConversationEvent.updateParams, { service: "home cleaning" })],

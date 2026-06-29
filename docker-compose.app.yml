@@ -1,0 +1,64 @@
+name: voxis-app
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: voxis-app:local
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://voxis_user:voxis_password@host.docker.internal:5432/voxis_db}
+      REDIS_HOST: ${APP_REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${APP_REDIS_PORT:-6379}
+      REDIS_VERIFY_TIMEOUT_MS: ${REDIS_VERIFY_TIMEOUT_MS:-30000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3000:3000"
+    command: ["node", "dist/Api/index.js"]
+    restart: unless-stopped
+
+  message-worker:
+    image: voxis-app:local
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://voxis_user:voxis_password@host.docker.internal:5432/voxis_db}
+      REDIS_HOST: ${APP_REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${APP_REDIS_PORT:-6379}
+      REDIS_VERIFY_TIMEOUT_MS: ${REDIS_VERIFY_TIMEOUT_MS:-30000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["node", "dist/Workers/MessageWorker/worker.js"]
+    restart: unless-stopped
+
+  outbound-worker:
+    image: voxis-app:local
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://voxis_user:voxis_password@host.docker.internal:5432/voxis_db}
+      REDIS_HOST: ${APP_REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${APP_REDIS_PORT:-6379}
+      REDIS_VERIFY_TIMEOUT_MS: ${REDIS_VERIFY_TIMEOUT_MS:-30000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["node", "dist/Workers/OutboundMessageWorker/worker.js"]
+    restart: unless-stopped
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    depends_on:
+      - api
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: ["http", "http://api:3000"]
+    ports:
+      - "4040:4040"
+    restart: unless-stopped

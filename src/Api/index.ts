@@ -184,6 +184,34 @@ app.put("/businesses/:businessId/context", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/businesses/:businessId/context", requireAuth, async (req, res) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = Number(req.params.businessId);
+    if (!Number.isFinite(businessId)) {
+      return res.status(400).json({ message: "Invalid businessId" });
+    }
+    if (!requireBusinessAccess(authReq, res, businessId)) {
+      return;
+    }
+
+    const context = await sqlManager.getBusinessContext(businessId);
+    if (!context) {
+      return res.status(404).json({ message: "Business context not found" });
+    }
+
+    appLogger.info("business.context.fetch.succeeded", {
+      userId: authReq.auth.userId,
+      businessId
+    });
+
+    return res.status(200).json(context);
+  } catch (error) {
+    appLogger.error("business.context.fetch.failed", { error });
+    return res.status(500).json({ message: "Failed to fetch business context" });
+  }
+});
+
 app.get("/businesses/:businessId/clients", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthenticatedRequest;

@@ -26,17 +26,13 @@ export  class ConversationStateMachine
                 cache.state = ConversationState.collecting;
                 break;
             case ConversationState.collecting:
-                if(output.conversationEvent === ConversationEvent.concern)
+                if(output.conversationEvent === ConversationEvent.failure)
                 {
-                    if(this.hasValidParams(output.params))
-                    {
-                        this.addAction(Action.applyParams, Actions);
-                    }
-                    this.addAction(Action.tryPacing, Actions);
-                    cache.state = ConversationState.pacing;
+                    this.addAction(Action.escalateToHuman, Actions);
+                    cache.state = ConversationState.failure;
                     break;
                 }
-                
+
                 if(this.hasValidParams(output.params))
                 {
                     this.addAction(Action.applyParams, Actions);
@@ -55,59 +51,23 @@ export  class ConversationStateMachine
                 break;
 
             case ConversationState.closing:
-                if(output.conversationEvent === ConversationEvent.concern)
+                if(output.conversationEvent === ConversationEvent.tryEnding || output.conversationEvent === ConversationEvent.ended)
                 {
-                    if(this.hasValidParams(output.params))
-                    {
-                        this.addAction(Action.applyParams, Actions);
-                    }
-                    this.addAction(Action.tryPacing, Actions);
-                    cache.state = ConversationState.pacing;
-
+                    this.addAction(Action.endConversation, Actions);
+                    cache.state = ConversationState.ended;
                     break;
                 }
-                if(output.conversationEvent === ConversationEvent.updateParams)
-                {
-                    if(this.hasValidParams(output.params))
-                    {
-                        this.addAction(Action.applyParams, Actions);
-                    }
-                    cache.state = ConversationState.collecting;
-                    break;
-                }
-                this.addAction(Action.endConversation, Actions);
-                cache.state = ConversationState.ended;
-                break;
-            case ConversationState.pacing:
-                if(output.conversationEvent === ConversationEvent.concern)
-                {
-                    if(this.hasValidParams(output.params))
-                    {
-                        this.addAction(Action.applyParams, Actions);
-                    }
-                    this.addAction(Action.tryPacing, Actions);
-                    cache.state = ConversationState.pacing;
 
+                if(output.conversationEvent === ConversationEvent.failure)
+                {
+                    this.addAction(Action.escalateToHuman, Actions);
+                    cache.state = ConversationState.failure;
                     break;
                 }
 
                 if(this.hasValidParams(output.params))
                 {
                     this.addAction(Action.applyParams, Actions);
-                }
-                
-                if(output.conversationEvent === ConversationEvent.finishedPacing)
-                {
-                    if(this.checkAllParamsCollected(cache.collectedParams, output.params))
-                    {
-                        this.addAction(Action.tryClosing, Actions);
-                        cache.state = ConversationState.closing;
-
-                        break;
-                    }
-                    this.addAction(Action.askForParams, Actions);
-                    cache.state = ConversationState.collecting;
-                    break;
                 }
 
                 if(this.checkAllParamsCollected(cache.collectedParams, output.params))

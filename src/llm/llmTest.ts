@@ -115,7 +115,7 @@ async function run() {
   // 🔹 call LLM
   const result: LLMOutput = {
     response: await llm.generateResponse(input, {
-      conversationEvent: ConversationEvent.finishedPacing,
+      conversationEvent: ConversationEvent.updateParams,
       newConclusion: "User provided budget",
       params: { budget: 5000 }
     }),

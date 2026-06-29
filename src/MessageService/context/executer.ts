@@ -24,6 +24,8 @@ export class Executer{
         this.logger.info("llm.event.extracted", {
             currentState: input.currentState,
             conversationEvent: output.conversationEvent,
+            conversationMode: output.conversationMode,
+            responseIntent: output.responseIntent,
             newConclusion: output.newConclusion,
             params: output.params
         });
@@ -53,10 +55,6 @@ export class Executer{
                 case Action.askForParams:
                     // Call method to ask for missing parameters
                     answer = await this.askForMissingParams(input, output);
-                    break;
-                case Action.tryPacing:
-                    // Call method to initiate pacing
-                    answer = await this.handlePacing(output,input);
                     break;
                 case Action.tryClosing:
                     // Call method to attempt closing the conversation
@@ -93,20 +91,6 @@ export class Executer{
 
         };
     }
-
-    async handlePacing(output: StateMachineOutput,input: StateMachineInput): Promise<string>
-    {
-        
-        const pacingMessage = await this.llmProvider.getPacingMessage(output,input);
-        this.logger.info("llm.pacing.generated", {
-            responseLength: pacingMessage.length,
-            conversationEvent: output.conversationEvent
-        });
-        // Implement logic to send pacing message to the user, such as through an API call or messaging service
-        return pacingMessage;
-        
-    }
-
 
     applyParams(params: Record<string, string | number | null>,cacheState: ConversationCacheState): void
     {
