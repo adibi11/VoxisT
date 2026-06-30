@@ -1,6 +1,6 @@
 import { Message } from "../dataClients/Types/apiTypes";
 
-import { ActionType } from "../dataClients/Types/apiTypes";
+import { ApiActionType } from "../dataClients/Types/apiTypes";
 
 import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 
@@ -52,19 +52,19 @@ export class MessageService {
             bodyLength: message.data?.Body?.length
         });
         switch (message.type) {
-            case ActionType.Create:
+            case ApiActionType.Create:
                 // Handle create logic
                 this.logger.info("message.create.received", { contentLength: message.content?.length });
                 break;
-            case ActionType.Update:
+            case ApiActionType.Update:
                 // Handle update logic
                 this.logger.info("message.update.received", { contentLength: message.content?.length });
                 break;
-            case ActionType.Delete:
+            case ApiActionType.Delete:
                 // Handle delete logic
                 this.logger.info("message.delete.received", { contentLength: message.content?.length });
                 break;
-            case ActionType.HandleMessage:
+            case ApiActionType.HandleMessage:
                 // Handle message logic
                 this.logger.info("message.handle.started", { contentLength: message.content?.length });
                 await this.handleMessage(message);

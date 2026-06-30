@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { QueueManager } from "../QueueClient/queue";
 import { verifyRedisConnection } from "../dataClients/CacheClient/redis";
-import { CommunicationChannel, JobData,ActionType, MessageProvider } from "../dataClients/Types/apiTypes";
+import { CommunicationChannel, JobData,ApiActionType, MessageProvider } from "../dataClients/Types/apiTypes";
 import { twillioMessage } from "../dataClients/Types/apiTypes";
 import { BusinessDto } from "../dataClients/Types/apiTypes";
 import { SqlManager } from "../dataClients/SqlClient/SqlManager";
@@ -312,7 +312,7 @@ app.post("/webhook", async (req, res) => {
 
   const jobData: JobData = {
     event: {
-      type: ActionType.HandleMessage,
+      type: ApiActionType.HandleMessage,
       content: event.Body,
       status: "received",
       channel: getTwilioChannel(event),

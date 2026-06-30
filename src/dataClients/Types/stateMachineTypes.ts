@@ -67,7 +67,7 @@ export enum ResponseIntent
     ignore = "ignore"
 }
 
-export enum Action
+export enum BotMsg
 {
     sendWelcomeMessage = "sendWelcomeMessage",
     askForParams = "askForParams",

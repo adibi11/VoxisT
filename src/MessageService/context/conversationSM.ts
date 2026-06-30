@@ -1,6 +1,6 @@
 
 import { ConversationCacheState } from "../../dataClients/Types/messageTypes";
-import { Action, ConversationEvent } from "../../dataClients/Types/stateMachineTypes";
+import { BotMsg, ConversationEvent } from "../../dataClients/Types/stateMachineTypes";
 import { StateMachineOutput ,ConversationState} from "../../dataClients/Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 export  class ConversationStateMachine
@@ -14,38 +14,38 @@ export  class ConversationStateMachine
     
     
     
-    recognizeNewState(output: StateMachineOutput, cache: ConversationCacheState): Action[]
+    recognizeNewState(output: StateMachineOutput, cache: ConversationCacheState): BotMsg[]
     {
         // Implement rule based event recognition based on the input parameters and message content
-        const Actions: Action[] = [];
+        const NextMessage: BotMsg[] = [];
         
         switch(cache.state)
         {
             case ConversationState.start:
-                this.addAction(Action.sendWelcomeMessage, Actions);
+                this.nextMsg(BotMsg.sendWelcomeMessage, NextMessage);
                 cache.state = ConversationState.collecting;
                 break;
             case ConversationState.collecting:
                 if(output.conversationEvent === ConversationEvent.failure)
                 {
-                    this.addAction(Action.escalateToHuman, Actions);
+                    this.nextMsg(BotMsg.escalateToHuman, NextMessage);
                     cache.state = ConversationState.failure;
                     break;
                 }
 
                 if(this.hasValidParams(output.params))
                 {
-                    this.addAction(Action.applyParams, Actions);
+                    this.applyParamsToCache(cache, output.params);
                 }
 
                 if(this.checkAllParamsCollected(cache.collectedParams, output.params))
                 {
-                    this.addAction(Action.tryClosing, Actions);
+                    this.nextMsg(BotMsg.tryClosing, NextMessage);
                     cache.state = ConversationState.closing;
                     
                 }
                 else{
-                    this.addAction(Action.askForParams, Actions);
+                    this.nextMsg(BotMsg.askForParams, NextMessage);
                     cache.state = ConversationState.collecting;
                 }
                 break;
@@ -53,44 +53,45 @@ export  class ConversationStateMachine
             case ConversationState.closing:
                 if(output.conversationEvent === ConversationEvent.tryEnding || output.conversationEvent === ConversationEvent.ended)
                 {
-                    this.addAction(Action.endConversation, Actions);
+                    this.nextMsg(BotMsg.endConversation, NextMessage);
                     cache.state = ConversationState.ended;
                     break;
                 }
 
                 if(output.conversationEvent === ConversationEvent.failure)
                 {
-                    this.addAction(Action.escalateToHuman, Actions);
+                    this.nextMsg(BotMsg.escalateToHuman, NextMessage);
                     cache.state = ConversationState.failure;
                     break;
                 }
 
                 if(this.hasValidParams(output.params))
                 {
-                    this.addAction(Action.applyParams, Actions);
+                    
+                    this.applyParamsToCache(cache, output.params);
                 }
 
                 if(this.checkAllParamsCollected(cache.collectedParams, output.params))
                 {
-                    this.addAction(Action.tryClosing, Actions);
+                    this.nextMsg(BotMsg.tryClosing, NextMessage);
                     cache.state = ConversationState.closing;
                     break;
                 }
 
-                this.addAction(Action.askForParams, Actions);
+                this.nextMsg(BotMsg.askForParams, NextMessage);
                 cache.state = ConversationState.collecting;
                 break;
             case ConversationState.ended:
-                this.addAction(Action.ignore, Actions);
+                this.nextMsg(BotMsg.ignore, NextMessage);
                 cache.state = ConversationState.ended;
                 break;
             
             default:
                 this.logger.warn("state.unrecognized", { state: cache.state });
                 cache.state = ConversationState.failure;
-                this.addAction(Action.escalateToHuman, Actions);
+                this.nextMsg(BotMsg.escalateToHuman, NextMessage);
         }
-        return Actions;
+        return NextMessage;
     }
 
     checkAllParamsCollected(collectedParams: Record<string, string | number | null>, newParams?: Record<string, string | number | null>): boolean
@@ -121,11 +122,25 @@ export  class ConversationStateMachine
         );
     }
 
-    addAction(action: Action, Actions: Action[])
+
+    applyParamsToCache(cache: ConversationCacheState, params?: Record<string, string | number | null>): void
     {
-        if(!Actions.includes(action))
+        if(!params) return;
+
+        for(const [key, value] of Object.entries(params))
         {
-            Actions.push(action);
+            if(value !== null && value !== undefined && value !== "")
+            {
+                cache.collectedParams[key] = value;
+            }
+        }
+    }
+
+    nextMsg(action: BotMsg, NextMessage: BotMsg[])
+    {
+        if(!NextMessage.includes(action))
+        {
+            NextMessage.push(action);
         }
     }
 }

@@ -1,5 +1,5 @@
 import { ILlmProvider } from "../../llm/llmInterface";
-import { Action, StateMachineInput, StateMachineOutput } from "../../dataClients/Types/stateMachineTypes";
+import { BotMsg, StateMachineInput, StateMachineOutput } from "../../dataClients/Types/stateMachineTypes";
 import { ConversationCacheState } from "../../dataClients/Types/messageTypes";
 import { ConversationStateMachine } from "./conversationSM";
 import { LlmOutput } from "../../dataClients/Types/llmTypes";
@@ -30,17 +30,17 @@ export class Executer{
             params: output.params
         });
         const stateBefore = cacheState.state;
-        const actions = this.StateMachine.recognizeNewState(output, cacheState);
+        const NextMessage = this.StateMachine.recognizeNewState(output, cacheState);
         this.logger.info("state.transition.recognized", {
             fromState: stateBefore,
             toState: cacheState.state,
-            actions
+            actions: NextMessage   
         });
-        return this.execute(input, output, cacheState, actions);
+        return this.execute(input, output, cacheState, NextMessage);
         
     }
 
-    async execute(input: StateMachineInput,output: StateMachineOutput,cacheState: ConversationCacheState,actions: Action[]): Promise<LlmOutput>
+    async execute(input: StateMachineInput,output: StateMachineOutput,cacheState: ConversationCacheState,actions: BotMsg[]): Promise<LlmOutput>
     {
         let answer: string = "";
         for(const action of actions)
@@ -48,35 +48,27 @@ export class Executer{
             
             switch(action)
             {
-                case Action.sendWelcomeMessage:
+                case BotMsg.sendWelcomeMessage:
                     // Call method to send welcome message
                     answer = "starter";
                     break;
-                case Action.askForParams:
+                case BotMsg.askForParams:
                     // Call method to ask for missing parameters
                     answer = await this.askForMissingParams(input, output);
                     break;
-                case Action.tryClosing:
+                case BotMsg.tryClosing:
                     // Call method to attempt closing the conversation
                     answer = await this.tryClosingConversation(input, output);
                     break;
-                case Action.endConversation:
+                case BotMsg.endConversation:
                     // Call method to end the conversation
                     answer = "ender";
                     break;
-                case Action.applyParams:
-                    // Call method to apply new parameters to the conversation context
-                    if(output.params === undefined)
-                    {
-                        this.logger.warn("params.apply.skipped", { reason: "missing_params" });
-                        break;
-                    }
-                    this.applyParams(output.params, cacheState);
-                    break;
-                case Action.escalateToHuman:
+                
+                case BotMsg.escalateToHuman:
                     answer = "escalate";
                     break;
-                case Action.clarify:
+                case BotMsg.clarify:
                     // Call method to ask user for clarification
                     answer = await this.clarify(input, cacheState);
                     break;
@@ -92,21 +84,7 @@ export class Executer{
         };
     }
 
-    applyParams(params: Record<string, string | number | null>,cacheState: ConversationCacheState): void
-    {
-        // Implement logic to apply new parameters to the conversation context, such as updating the cacheState object with new values
-        for (const [key, value] of Object.entries(params)) {
-            if(value === null || value === undefined || value === "")
-            {
-                continue;
-            }
-            cacheState.collectedParams[key] = value;
-        }
-        this.logger.info("params.applied", {
-            collectedParams: cacheState.collectedParams
-        });
-    }
-
+    
 
     async askForMissingParams(input: StateMachineInput,output: StateMachineOutput): Promise<string>
     {

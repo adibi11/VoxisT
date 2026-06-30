@@ -1,4 +1,6 @@
 
+import { ActionType } from "../../generated/prisma/client";
+
 export enum CommunicationChannel {
     Whatsapp = "whatsapp",
     Sms = "sms",
@@ -13,7 +15,7 @@ export enum MessageProvider {
 
 
 export type Message = {
-   type: ActionType;
+   type: ApiActionType;
    content: string;
    status: string;
    channel: CommunicationChannel;
@@ -34,7 +36,7 @@ export enum MessageType {
     Unknown = "unknown"
 }
 
-export enum ActionType {
+export enum ApiActionType {
     Create = "create",
     Update = "update",
     Delete = "delete",
@@ -63,3 +65,13 @@ export type BusinessParamDto = {
     paramName: string;
     paramValue?: string;
 }
+
+
+export type BusinessActionDto = {
+    action: ActionType;
+    provider?: string;
+    config?: any;
+    businessId: number;
+
+}
+

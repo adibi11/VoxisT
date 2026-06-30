@@ -1,5 +1,5 @@
 import { ConversationCacheState, ConversationEntity, BusinessContext } from "../Types/messageTypes";
-import { BusinessDto } from "../Types/apiTypes";
+import { BusinessDto ,BusinessActionDto} from "../Types/apiTypes";
 import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { AuthUserDto, BusinessSummaryDto, PlatformRoleDto } from "../../contracts";
@@ -23,4 +23,7 @@ export interface ISqlInterface {
     getUserWithPasswordByEmail(email: string): Promise<(AuthUserDto & { passwordHash: string }) | null>;
     getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]>;
     getAllBusinesses(): Promise<BusinessSummaryDto[]>;
+    upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto>;
+    upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void>;
+    getBusinessAction(businessId: number): Promise<BusinessActionDto>;
 }

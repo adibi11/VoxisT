@@ -2,7 +2,7 @@ import { Prisma, PrismaClient } from "../../generated/prisma/client";
 import { BusinessContext, Client, ConversationEntity } from "../Types/messageTypes";
 import { mapToConversationEntity } from "../Types/mappers";
 import { BusinessParam } from "../Types/messageTypes";
-import { BusinessDto, MessageType } from "../Types/apiTypes";
+import { BusinessActionDto, BusinessDto, MessageType } from "../Types/apiTypes";
 import { CommunicationChannel, MessageProvider } from "../Types/apiTypes";
 import { ConversationCacheState } from "../Types/messageTypes";
 import { ISqlInterface } from "./sqlInterface";
@@ -636,8 +636,84 @@ export class SqlManager implements ISqlInterface {
             }
         });
     }
-}
 
+    async upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto> {
+        const business = await this.prisma.business.upsert({
+            where: {
+                id: businessId
+            },
+            create: {
+                businessName: businessDto.name,
+                businessPhone: businessDto.phone,
+                businessEmail: businessDto.email,
+                starterMessage: businessDto.starterMessage,
+                enderMessage: businessDto.endMessage,
+                escalationMessage: businessDto.escalationMessage,
+                language: businessDto.language || "en"
+            },
+            update: {
+                businessName: businessDto.name,
+                businessPhone: businessDto.phone,
+                businessEmail: businessDto.email,
+                starterMessage: businessDto.starterMessage,
+                enderMessage: businessDto.endMessage,
+                escalationMessage: businessDto.escalationMessage,
+                language: businessDto.language || "en"
+            }
+        });
+        return {
+            name: business.businessName,
+            phone: business.businessPhone,
+            email: business.businessEmail,
+            parameters: [], // You can implement fetching parameters if needed
+            starterMessage: business.starterMessage,
+            endMessage: business.enderMessage,
+            escalationMessage: business.escalationMessage,
+            language: business.language
+        };
+    }
+
+   async upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void> {
+        await this.prisma.businessAction.upsert({
+            where: {
+                businessId: businessId
+            },
+            create: {
+                businessId: businessId,
+                action: actionDto.action,
+                provider: actionDto.provider,
+                config: actionDto.config
+            },
+            update: {
+                action: actionDto.action,
+                provider: actionDto.provider,
+                config: actionDto.config
+            }
+        });
+    }
+
+    async getBusinessAction(businessId: number): Promise<BusinessActionDto> {
+        const action = await this.prisma.businessAction.findUnique({
+            where: {
+                businessId: businessId
+            }
+        });
+
+        if (!action) {
+            throw new Error(`No action found for business ID ${businessId}`);
+        }
+
+        return {
+            action: action.action,
+            provider: action.provider || undefined,
+            config: action.config || undefined,
+            businessId: action.businessId
+        };
+    }
+
+   
+       
+}
 function mapConversationStatusToState(status: string): ConversationState {
     if (Object.values(ConversationState).includes(status as ConversationState)) {
         return status as ConversationState;
@@ -687,3 +763,6 @@ function mapPrismaBusinessContext(context: {
 function toPrismaJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
 }
+
+
+

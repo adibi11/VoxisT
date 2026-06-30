@@ -49,6 +49,7 @@ model Business {
   users             BusinessUser[]
   conversations     Conversation[]
   context           BusinessContext?
+  BusinessAction    BusinessAction?
 }
 
 model BusinessContext {
@@ -119,6 +120,27 @@ model ParameterAnswer {
   businessParameter BusinessParameter @relation(fields: [paramId], references: [id])
 
   @@index([conversationId, paramId])
+}
+
+
+
+model BusinessAction {
+  id                Int               @id @default(autoincrement())
+  provider    String?
+  config      Json?
+  action ActionType
+  businessId  Int
+  business    Business @relation(fields: [businessId], references: [id])
+  @@unique([businessId])
+}
+
+enum ActionType {
+  BOOK_APPOINTMENT
+  SEND_PAYMENT_LINK
+  SEND_VIDEO
+  HUMAN_HANDOFF
+  SEND_EMAIL
+  NONE
 }
 
 enum MessageStatus {
