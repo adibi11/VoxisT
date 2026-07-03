@@ -3,11 +3,14 @@ import { BusinessDto ,BusinessActionDto} from "../Types/apiTypes";
 import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessagesResponseDto, ConversationSummaryDto, PlatformRoleDto } from "../../contracts";
+import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 
 
 export interface IDatabaseClient {
 
     //Statiing implementing by repositories as the interface becomes larger
+
+    readonly leadRepository: ILeadRepository;
 
 
     getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;

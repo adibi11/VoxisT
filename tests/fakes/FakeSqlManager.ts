@@ -5,12 +5,18 @@ import {
   ClientSummaryDto,
   ConversationMessagesResponseDto,
   ConversationSummaryDto,
+  CreateManualLeadRequestDto,
+  LeadDto,
+  LeadSourceDto,
+  LeadStatusDto,
+  LeadSummaryDto,
   PlatformRoleDto
 } from "../../src/contracts";
 import { BusinessActionDto, BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { ensureClientNameParam } from "../../src/dataClients/Types/clientNameParam";
 import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
+import { ILeadRepository } from "../../src/dataClients/SqlClient/Repositories/LeadRepo/ILeadRepository";
 
 type SavedMessage = {
   conversationId: number;
@@ -26,7 +32,28 @@ type SavedParamAnswer = {
   paramValue: string;
 };
 
+type SavedLead = {
+  id: number;
+  businessId: number;
+  clientId?: number | null;
+  memberId?: number | null;
+  status: LeadStatusDto;
+  source: LeadSourceDto;
+  score?: number | null;
+  summary?: string | null;
+  notes?: string | null;
+  name?: string | null;
+  phoneNumber?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  assignedAt?: Date | null;
+  followUpAt?: Date | null;
+  closedAt?: Date | null;
+};
+
 export class FakeSqlManager implements IDatabaseClient {
+  readonly leadRepository: ILeadRepository = this;
+
   public clientsByPhone = new Map<string, Client>();
   public conversations = new Map<number, { clientId: number; businessId: number; state: ConversationCacheState }>();
   public businesses = new Map<number, BusinessDto>();
@@ -34,10 +61,12 @@ export class FakeSqlManager implements IDatabaseClient {
   public businessActions = new Map<number, BusinessActionDto>();
   public messages: SavedMessage[] = [];
   public paramAnswers: SavedParamAnswer[] = [];
+  public leads = new Map<number, SavedLead>();
   public createdConversations: { clientId: number; businessId: number; content: string }[] = [];
 
   private nextClientId = 1;
   private nextConversationId = 1;
+  private nextLeadId = 1;
 
   async getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
     return this.getLatestConversationCacheState(clientId, businessId);
@@ -267,6 +296,86 @@ export class FakeSqlManager implements IDatabaseClient {
       .filter((client) => client.conversationCount > 0);
   }
 
+  async getLeadsByBusiness(businessId: number): Promise<LeadSummaryDto[]> {
+    return [...this.leads.values()]
+      .filter((lead) => lead.businessId === businessId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .map(this.toLeadSummary);
+  }
+
+  async getLeadById(businessId: number, leadId: number): Promise<LeadDto | null> {
+    const lead = this.leads.get(leadId);
+    return lead && lead.businessId === businessId ? this.toLeadDto(lead) : null;
+  }
+
+  async createManualLead(businessId: number, leadDto: CreateManualLeadRequestDto): Promise<LeadDto> {
+    const name = this.normalizeOptionalString(leadDto.name);
+    const phoneNumber = this.normalizeOptionalString(leadDto.phoneNumber);
+    if (!leadDto.clientId && !name && !phoneNumber) {
+      throw new Error("Manual lead requires clientId, name, or phoneNumber");
+    }
+
+    const client = this.resolveLeadClient(leadDto.clientId, phoneNumber, name);
+    const now = new Date();
+    const lead: SavedLead = {
+      id: this.nextLeadId++,
+      businessId,
+      clientId: client?.id || null,
+      memberId: leadDto.memberId || null,
+      status: leadDto.status || "NEW",
+      source: leadDto.source || "MANUAL",
+      score: leadDto.score ?? null,
+      summary: this.normalizeOptionalString(leadDto.summary) || null,
+      notes: this.normalizeOptionalString(leadDto.notes) || null,
+      name: name || client?.name || null,
+      phoneNumber: phoneNumber || client?.phone || null,
+      createdAt: now,
+      updatedAt: now,
+      assignedAt: leadDto.memberId ? now : null,
+      followUpAt: this.parseOptionalDate(leadDto.followUpAt) || null,
+      closedAt: null
+    };
+
+    this.leads.set(lead.id, lead);
+    return this.toLeadDto(lead);
+  }
+
+  async updateLead(businessId: number, leadId: number, leadDto: UpdateLeadRequestDto): Promise<LeadDto> {
+    const lead = this.leads.get(leadId);
+    if (!lead || lead.businessId !== businessId) {
+      throw new Error(`Lead ${leadId} not found for business ${businessId}`);
+    }
+
+    if (leadDto.memberId !== undefined) {
+      lead.memberId = leadDto.memberId;
+      lead.assignedAt = leadDto.memberId ? new Date() : null;
+    }
+    if (leadDto.status !== undefined) {
+      lead.status = leadDto.status;
+      if (this.isClosedLeadStatus(leadDto.status)) {
+        lead.closedAt = new Date();
+      }
+    }
+    if (leadDto.score !== undefined) lead.score = leadDto.score;
+    if (leadDto.summary !== undefined) lead.summary = this.normalizeNullableString(leadDto.summary);
+    if (leadDto.notes !== undefined) lead.notes = this.normalizeNullableString(leadDto.notes);
+    if (leadDto.name !== undefined) lead.name = this.normalizeNullableString(leadDto.name);
+    if (leadDto.phoneNumber !== undefined) lead.phoneNumber = this.normalizeNullableString(leadDto.phoneNumber);
+    if (leadDto.followUpAt !== undefined) lead.followUpAt = this.parseOptionalDate(leadDto.followUpAt) || null;
+    lead.updatedAt = new Date();
+
+    return this.toLeadDto(lead);
+  }
+
+  async deleteLead(businessId: number, leadId: number): Promise<void> {
+    const lead = this.leads.get(leadId);
+    if (!lead || lead.businessId !== businessId) {
+      throw new Error(`Lead ${leadId} not found for business ${businessId}`);
+    }
+
+    this.leads.delete(leadId);
+  }
+
   seedBusiness(businessId: number, business: BusinessDto): void {
     this.businesses.set(businessId, business);
   }
@@ -297,6 +406,94 @@ export class FakeSqlManager implements IDatabaseClient {
       messageCount: conversationMessages.length,
       lastMessageAt: conversationMessages.length > 0 ? state.updatedAt.toISOString() : undefined
     };
+  }
+
+  private toLeadSummary(lead: SavedLead): LeadSummaryDto {
+    return {
+      id: lead.id,
+      businessId: lead.businessId,
+      clientId: lead.clientId,
+      memberId: lead.memberId,
+      status: lead.status,
+      source: lead.source,
+      score: lead.score,
+      summary: lead.summary,
+      name: lead.name,
+      phoneNumber: lead.phoneNumber,
+      createdAt: lead.createdAt.toISOString(),
+      updatedAt: lead.updatedAt.toISOString(),
+      assignedAt: lead.assignedAt?.toISOString() || null,
+      followUpAt: lead.followUpAt?.toISOString() || null,
+      closedAt: lead.closedAt?.toISOString() || null
+    };
+  }
+
+  private toLeadDto(lead: SavedLead): LeadDto {
+    return {
+      ...this.toLeadSummary(lead),
+      notes: lead.notes
+    };
+  }
+
+  private resolveLeadClient(clientId?: number, phoneNumber?: string, name?: string): Client | null {
+    if (clientId) {
+      const client = [...this.clientsByPhone.values()].find((candidate) => candidate.id === clientId);
+      if (!client) {
+        throw new Error(`Client ${clientId} not found`);
+      }
+      if (name) {
+        client.name = name;
+      }
+      return client;
+    }
+
+    if (!phoneNumber) {
+      return null;
+    }
+
+    let client = this.clientsByPhone.get(phoneNumber);
+    if (!client) {
+      client = {
+        id: this.nextClientId++,
+        name: name || "Fake Client",
+        phone: phoneNumber,
+        email: ""
+      };
+      this.clientsByPhone.set(phoneNumber, client);
+      return client;
+    }
+
+    if (name) {
+      client.name = name;
+    }
+
+    return client;
+  }
+
+  private normalizeOptionalString(value?: string | null): string | undefined {
+    const normalizedValue = value?.trim();
+    return normalizedValue ? normalizedValue : undefined;
+  }
+
+  private normalizeNullableString(value?: string | null): string | null {
+    const normalizedValue = value?.trim();
+    return normalizedValue ? normalizedValue : null;
+  }
+
+  private parseOptionalDate(value?: string | null): Date | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || value.trim() === "") return null;
+
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) {
+      throw new Error(`Invalid date: ${value}`);
+    }
+
+    return date;
+  }
+
+  private isClosedLeadStatus(status: LeadStatusDto): boolean {
+    return status === "WON" || status === "LOST" || status === "CLOSED";
   }
 
   private emptyParamsForBusiness(businessId: number): Record<string, string | number | null> {

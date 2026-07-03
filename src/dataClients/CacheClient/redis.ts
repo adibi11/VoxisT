@@ -109,7 +109,7 @@ export class RedisCacheManager implements ICacheManager {
   async acquireLock(clientId: number, businessId: number): Promise<boolean> {
     const lockKey = `lock:${clientId}:${businessId}`;
 
-    const result = await redisClient.set(lockKey, "1", "EX", 5, "NX");
+    const result = await redisClient.set(lockKey, "1", "EX", 10, "NX");
 
     return result === "OK";
   }

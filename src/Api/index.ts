@@ -19,7 +19,9 @@ import version from "../../versions/api.json";
 import { getBusinessContextRoutes } from "./routes/businesContextRoutes";
 import { getAuthRoutes } from "./routes/authRoutes";
 import { getBusinessRoutes } from "./routes/businessRoutes";
-import { getConversationRoutes } from "./routes/clientRoutes";
+import { getClientRoutes } from "./routes/clientRoutes";
+import { getConversationRoutes } from "./routes/conversationRoutes";
+import { getLeadRoutes } from "./routes/leadRoutes";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
@@ -50,8 +52,9 @@ app.use(express.urlencoded({ extended: false }));
 getBusinessContextRoutes(app, sqlManager, appLogger);
 getAuthRoutes(app, sqlManager, appLogger);
 getBusinessRoutes(app, sqlManager, appLogger);
+getClientRoutes(app, sqlManager, appLogger);
 getConversationRoutes(app, sqlManager, appLogger);
-
+getLeadRoutes(app, sqlManager, appLogger);
 
 
 app.post("/webhook", async (req, res) => {

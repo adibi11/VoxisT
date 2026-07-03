@@ -11,9 +11,18 @@ import {
     isClientNameParam
 } from "../Types/clientNameParam";
 import { IDatabaseClient } from "./sqlInterface";
+import { LeadRepository } from "./Repositories/LeadRepo/LeadRepository";
+import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
-import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessagesResponseDto, ConversationSummaryDto, PlatformRoleDto } from "../../contracts";
+import {
+    AuthUserDto,
+    BusinessSummaryDto,
+    ClientSummaryDto,
+    ConversationMessagesResponseDto,
+    ConversationSummaryDto,
+    PlatformRoleDto,
+} from "../../contracts";
 
 
 export const prisma = new PrismaClient();
@@ -21,10 +30,12 @@ export const prisma = new PrismaClient();
 export class SqlManager implements IDatabaseClient {
     private prisma: PrismaClient;
     private logger: ILogger;
+    readonly leadRepository: ILeadRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
         this.logger = loggerInstance;
+        this.leadRepository = new LeadRepository(this.prisma);
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {
