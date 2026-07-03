@@ -103,6 +103,7 @@ Rules:
 - Use event "tryEnding" or "ended" only when the user clearly wants to finish or the conversation should end.
 - Use event "failure" only for true extraction failure, not for uncertainty.
 - Extract only params clearly stated by user.
+- "Name" is a system default parameter. Extract it when the user states their name, but do not force the conversation toward it.
 - Collecting parameters should happen only when it feels natural for the response. Represent that with intent "askForParam"; do not put it in event.
 - Do not explain.
 

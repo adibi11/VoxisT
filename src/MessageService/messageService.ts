@@ -4,8 +4,13 @@ import { ApiActionType } from "../dataClients/Types/apiTypes";
 
 import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 
-import { ISqlInterface } from "../dataClients/SqlClient/sqlInterface";
+import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
 import { ConversationCacheState, LastMessages as LastMessage } from "../dataClients/Types/messageTypes";
+import {
+    ensureClientNameParam,
+    fillMissingClientNameParam,
+    getClientNameParamValue
+} from "../dataClients/Types/clientNameParam";
 import { ILlmProvider } from "../llm/llmInterface";
 import { LlmPipeline } from "./messageApply";
 import { ILogger, logger } from "../logging/logger";
@@ -21,14 +26,14 @@ const CLOSED_CONVERSATION_STATES = new Set([
 
 export class MessageService {
     private cacheManager: ICacheManager;
-    private sqlInterface: ISqlInterface;
+    private sqlInterface: IDatabaseClient;
     private llmPiplne: LlmPipeline;
     private logger: ILogger;
     private outboundQueue?: IOutboundMessageQueue;
 
     constructor(
         cacheManager: ICacheManager,
-        sqlInterface: ISqlInterface,
+        sqlInterface: IDatabaseClient,
         llm: ILlmProvider,
         loggerInstance: ILogger = logger.child({ component: "MessageService" }),
         outboundQueue?: IOutboundMessageQueue
@@ -102,6 +107,7 @@ export class MessageService {
                 content: message.data.Body
             });
             const conversationState = await this.getConversationState(client.id, businessId, message.data.Body);
+            ensureClientNameParam(conversationState.collectedParams);
            
             flowLogger.info("conversation.initialized", {
                 conversationId: conversationState.conversationId,
@@ -172,6 +178,15 @@ export class MessageService {
 
     async syncCacheToDb(clientId: number, businessId: number, conversationState: ConversationCacheState,messages:LastMessage[]) {
         // Sync cache state to DB
+        if (conversationState.state === "ended") {
+            fillMissingClientNameParam(conversationState.collectedParams);
+        }
+
+        const clientName = getClientNameParamValue(conversationState.collectedParams);
+        if (clientName) {
+            await this.sqlInterface.updateClientName(clientId, clientName);
+        }
+
         for (const message of messages) {
             await this.sqlInterface.createMessage(
                 conversationState.conversationId,

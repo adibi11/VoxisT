@@ -11,9 +11,15 @@ import { MESSAGE_QUEUE_NAME } from "../QueueClient/queueNames";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { signJwt } from "../auth/jwt";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requirePlatformAdmin } from "./authMiddleware";
-import { LoginRequestDto, RegisterBusinessUserRequestDto, UpsertBusinessContextRequestDto } from "../contracts";
+import { RegisterBusinessUserRequestDto, LoginRequestDto} from "../contracts";
 import cors from "cors";
 import version from "../../versions/api.json";
+
+//IMPORT ROUTES
+import { getBusinessContextRoutes } from "./routes/businesContextRoutes";
+import { getAuthRoutes } from "./routes/authRoutes";
+import { getBusinessRoutes } from "./routes/businessRoutes";
+import { getConversationRoutes } from "./routes/clientRoutes";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
@@ -41,258 +47,12 @@ app.use(corsMiddleware);
 app.options(/.*/, corsMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+getBusinessContextRoutes(app, sqlManager, appLogger);
+getAuthRoutes(app, sqlManager, appLogger);
+getBusinessRoutes(app, sqlManager, appLogger);
+getConversationRoutes(app, sqlManager, appLogger);
 
-app.post("/auth/register", async (req, res) => {
-  try {
-    const request = req.body as RegisterBusinessUserRequestDto;
-    if (!request.email || !request.password || !request.business?.name || !request.business?.phone || !request.business?.email) {
-      return res.status(400).json({ message: "email, password and business details are required" });
-    }
 
-    const user = await sqlManager.registerBusinessOwner(
-      request.email,
-      hashPassword(request.password),
-      request.displayName,
-      request.business,
-      isValidPlatformRole(request.platformRole) ? request.platformRole : "user"
-    );
-    const token = signJwt({
-      userId: user.id,
-      email: user.email,
-      platformRole: user.platformRole,
-      businessIds: user.businessIds,
-      businessMemberships: user.businessMemberships
-    });
-
-    appLogger.info("auth.register.succeeded", {
-      userId: user.id,
-      email: user.email,
-      platformRole: user.platformRole,
-      businessIds: user.businessIds
-    });
-
-    return res.status(201).json({ token, user });
-  } catch (error) {
-    appLogger.error("auth.register.failed", { error });
-    return res.status(500).json({ message: "Failed to register user" });
-  }
-});
-
-app.post("/auth/login", async (req, res) => {
-  try {
-    const request = req.body as LoginRequestDto;
-    if (!request.email || !request.password) {
-      return res.status(400).json({ message: "email and password are required" });
-    }
-
-    const user = await sqlManager.getUserWithPasswordByEmail(request.email);
-    if (!user || !verifyPassword(request.password, user.passwordHash)) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    const token = signJwt({
-      userId: user.id,
-      email: user.email,
-      platformRole: user.platformRole,
-      businessIds: user.businessIds,
-      businessMemberships: user.businessMemberships
-    });
-    const { passwordHash: _passwordHash, ...safeUser } = user;
-
-    appLogger.info("auth.login.succeeded", {
-      userId: user.id,
-      email: user.email,
-      platformRole: user.platformRole,
-      businessIds: user.businessIds
-    });
-
-    return res.status(200).json({ token, user: safeUser });
-  } catch (error) {
-    appLogger.error("auth.login.failed", { error });
-    return res.status(500).json({ message: "Failed to login" });
-  }
-});
-
-app.get("/me/businesses", requireAuth, async (req, res) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businesses = await sqlManager.getBusinessesForUser(authReq.auth.userId);
-    appLogger.info("businesses.list.succeeded", {
-      userId: authReq.auth.userId,
-      count: businesses.length
-    });
-    return res.status(200).json(businesses);
-  } catch (error) {
-    appLogger.error("businesses.list.failed", { error });
-    return res.status(500).json({ message: "Failed to fetch businesses" });
-  }
-});
-
-app.get("/admin/businesses", requireAuth, async (req, res) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    if (!requirePlatformAdmin(authReq, res)) {
-      return;
-    }
-
-    const businesses = await sqlManager.getAllBusinesses();
-    appLogger.info("admin.businesses.list.succeeded", {
-      userId: authReq.auth.userId,
-      count: businesses.length
-    });
-    return res.status(200).json(businesses);
-  } catch (error) {
-    appLogger.error("admin.businesses.list.failed", { error });
-    return res.status(500).json({ message: "Failed to fetch businesses" });
-  }
-});
-
-app.put("/businesses/:businessId/context", requireAuth, async (req, res) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = Number(req.params.businessId);
-    if (!Number.isFinite(businessId)) {
-      return res.status(400).json({ message: "Invalid businessId" });
-    }
-    if (!requireBusinessAccess(authReq, res, businessId)) {
-      return;
-    }
-
-    const request = req.body as UpsertBusinessContextRequestDto;
-    if (!isValidBusinessContextRequest(request)) {
-      return res.status(400).json({ message: "Invalid business context" });
-    }
-
-    const context = await sqlManager.upsertBusinessContext({
-      businessId,
-      businessProfile: request.businessProfile,
-      description: request.description,
-      serviceCatalog: request.serviceCatalog,
-      conversationPolicy: request.conversationPolicy,
-      knownClientContext: request.knownClientContext
-    });
-
-    appLogger.info("business.context.upsert.succeeded", {
-      userId: authReq.auth.userId,
-      businessId
-    });
-
-    return res.status(200).json(context);
-  } catch (error) {
-    appLogger.error("business.context.upsert.failed", { error });
-    return res.status(500).json({ message: "Failed to save business context" });
-  }
-});
-
-app.get("/businesses/:businessId/context", requireAuth, async (req, res) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = Number(req.params.businessId);
-    if (!Number.isFinite(businessId)) {
-      return res.status(400).json({ message: "Invalid businessId" });
-    }
-    if (!requireBusinessAccess(authReq, res, businessId)) {
-      return;
-    }
-
-    const context = await sqlManager.getBusinessContext(businessId);
-    if (!context) {
-      return res.status(404).json({ message: "Business context not found" });
-    }
-
-    appLogger.info("business.context.fetch.succeeded", {
-      userId: authReq.auth.userId,
-      businessId
-    });
-
-    return res.status(200).json(context);
-  } catch (error) {
-    appLogger.error("business.context.fetch.failed", { error });
-    return res.status(500).json({ message: "Failed to fetch business context" });
-  }
-});
-
-app.get("/businesses/:businessId/clients", requireAuth, async (req, res) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = Number(req.params.businessId);
-    if (!Number.isFinite(businessId)) {
-      return res.status(400).json({ message: "Invalid businessId" });
-    }
-    if (!requireBusinessAccess(authReq, res, businessId)) {
-      return;
-    }
-
-    const clients = await sqlManager.getClientsByBusiness(businessId);
-    appLogger.info("clients.list.succeeded", {
-      userId: authReq.auth.userId,
-      businessId,
-      count: clients.length
-    });
-    return res.status(200).json(clients);
-  } catch (error) {
-    appLogger.error("clients.list.failed", { error });
-    return res.status(500).json({ message: "Failed to fetch clients" });
-  }
-});
-
-app.get("/businesses/:businessId/conversations", requireAuth, async (req, res) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = Number(req.params.businessId);
-    const clientId = req.query.clientId ? Number(req.query.clientId) : undefined;
-    if (!Number.isFinite(businessId) || (clientId !== undefined && !Number.isFinite(clientId))) {
-      return res.status(400).json({ message: "Invalid businessId or clientId" });
-    }
-    if (!requireBusinessAccess(authReq, res, businessId)) {
-      return;
-    }
-
-    const conversations = await sqlManager.getConversationsByBusinessAndClient(businessId, clientId);
-    appLogger.info("conversations.list.succeeded", {
-      userId: authReq.auth.userId,
-      businessId,
-      clientId,
-      count: conversations.length
-    });
-    return res.status(200).json(conversations);
-  } catch (error) {
-    appLogger.error("conversations.list.failed", { error });
-    return res.status(500).json({ message: "Failed to fetch conversations" });
-  }
-});
-
-app.get("/businesses/:businessId/conversations/:conversationId/messages", requireAuth, async (req, res) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = Number(req.params.businessId);
-    const conversationId = Number(req.params.conversationId);
-    if (!Number.isFinite(businessId) || !Number.isFinite(conversationId)) {
-      return res.status(400).json({ message: "Invalid businessId or conversationId" });
-    }
-    if (!requireBusinessAccess(authReq, res, businessId)) {
-      return;
-    }
-
-    const result = await sqlManager.getMessagesByConversation(businessId, conversationId);
-    if (!result) {
-      return res.status(404).json({ message: "Conversation not found" });
-    }
-
-    appLogger.info("conversation.messages.succeeded", {
-      userId: authReq.auth.userId,
-      businessId,
-      conversationId,
-      messageCount: result.messages.length,
-      paramsCount: result.params.length
-    });
-
-    return res.status(200).json(result);
-  } catch (error) {
-    appLogger.error("conversation.messages.failed", { error });
-    return res.status(500).json({ message: "Failed to fetch messages" });
-  }
-});
 
 app.post("/webhook", async (req, res) => {
   const event = req.body as twillioMessage;
@@ -386,19 +146,8 @@ function isValidTwilioMessage(event: Partial<twillioMessage> | undefined): event
   return Boolean(event?.From && event?.To && event?.Body);
 }
 
-function isValidBusinessContextRequest(request: Partial<UpsertBusinessContextRequestDto> | undefined): request is UpsertBusinessContextRequestDto {
-  return Boolean(
-    request?.businessProfile?.name &&
-    request.businessProfile.language &&
-    request.businessProfile.tone &&
-    request.serviceCatalog !== undefined &&
-    request.conversationPolicy !== undefined
-  );
-}
 
-function isValidPlatformRole(role: unknown): role is "admin" | "user" {
-  return role === "admin" || role === "user";
-}
+
 
 function getAllowedOrigins(): string[] {
   return (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001,http://localhost:5173")

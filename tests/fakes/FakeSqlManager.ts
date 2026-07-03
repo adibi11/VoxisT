@@ -1,6 +1,14 @@
-import { ISqlInterface } from "../../src/dataClients/SqlClient/sqlInterface";
-import { AuthUserDto, BusinessSummaryDto, PlatformRoleDto } from "../../src/contracts";
-import { BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
+import { IDatabaseClient } from "../../src/dataClients/SqlClient/sqlInterface";
+import {
+  AuthUserDto,
+  BusinessSummaryDto,
+  ClientSummaryDto,
+  ConversationMessagesResponseDto,
+  ConversationSummaryDto,
+  PlatformRoleDto
+} from "../../src/contracts";
+import { BusinessActionDto, BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
+import { ensureClientNameParam } from "../../src/dataClients/Types/clientNameParam";
 import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 
@@ -18,11 +26,12 @@ type SavedParamAnswer = {
   paramValue: string;
 };
 
-export class FakeSqlManager implements ISqlInterface {
+export class FakeSqlManager implements IDatabaseClient {
   public clientsByPhone = new Map<string, Client>();
   public conversations = new Map<number, { clientId: number; businessId: number; state: ConversationCacheState }>();
   public businesses = new Map<number, BusinessDto>();
   public businessContexts = new Map<number, BusinessContext>();
+  public businessActions = new Map<number, BusinessActionDto>();
   public messages: SavedMessage[] = [];
   public paramAnswers: SavedParamAnswer[] = [];
   public createdConversations: { clientId: number; businessId: number; content: string }[] = [];
@@ -117,6 +126,15 @@ export class FakeSqlManager implements ISqlInterface {
     }));
   }
 
+  async upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto> {
+    this.businesses.set(businessId, businessDto);
+    return businessDto;
+  }
+
+  async upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void> {
+    this.businessActions.set(businessId, { ...actionDto, businessId });
+  }
+
   async getOrCreateClientByPhone(phoneNumber: string): Promise<Client> {
     const existing = this.clientsByPhone.get(phoneNumber);
     if (existing) {
@@ -131,6 +149,13 @@ export class FakeSqlManager implements ISqlInterface {
     };
     this.clientsByPhone.set(phoneNumber, client);
     return client;
+  }
+
+  async updateClientName(clientId: number, name: string): Promise<void> {
+    const client = [...this.clientsByPhone.values()].find((candidate) => candidate.id === clientId);
+    if (client) {
+      client.name = name;
+    }
   }
 
   async upsertParamAnswer(
@@ -176,6 +201,72 @@ export class FakeSqlManager implements ISqlInterface {
     }
   }
 
+  async getBusinessAction(businessId: number): Promise<BusinessActionDto> {
+    const action = this.businessActions.get(businessId);
+    if (!action) {
+      throw new Error(`No action found for business ID ${businessId}`);
+    }
+
+    return action;
+  }
+
+  async getMessagesByConversation(businessId: number, conversationId: number): Promise<ConversationMessagesResponseDto | null> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation || conversation.businessId !== businessId) {
+      return null;
+    }
+
+    return {
+      conversation: this.toConversationSummary(conversation.clientId, conversation.businessId, conversation.state),
+      messages: this.messages
+        .filter((message) => message.conversationId === conversationId)
+        .map((message, index) => ({
+          id: index + 1,
+          conversationId,
+          type: message.type,
+          content: message.content,
+          status: "received",
+          createdAt: conversation.state.updatedAt.toISOString()
+        })),
+      params: this.paramAnswers
+        .filter((answer) => answer.conversationId === conversationId && answer.businessId === businessId)
+        .map((answer, index) => ({
+          id: index + 1,
+          paramName: answer.paramName,
+          paramValue: answer.paramValue,
+          createdAt: conversation.state.updatedAt.toISOString()
+        }))
+    };
+  }
+
+  async getConversationsByBusinessAndClient(businessId: number, clientId?: number): Promise<ConversationSummaryDto[]> {
+    return [...this.conversations.values()]
+      .filter((conversation) =>
+        conversation.businessId === businessId &&
+        (clientId === undefined || conversation.clientId === clientId)
+      )
+      .map((conversation) => this.toConversationSummary(conversation.clientId, conversation.businessId, conversation.state))
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  }
+
+  async getClientsByBusiness(businessId: number): Promise<ClientSummaryDto[]> {
+    return [...this.clientsByPhone.values()]
+      .map((client) => {
+        const clientConversations = [...this.conversations.values()]
+          .filter((conversation) => conversation.clientId === client.id && conversation.businessId === businessId);
+
+        return {
+          id: client.id,
+          phoneNumber: client.phone,
+          conversationCount: clientConversations.length,
+          lastConversationAt: clientConversations
+            .map((conversation) => conversation.state.updatedAt)
+            .sort((left, right) => right.getTime() - left.getTime())[0]?.toISOString()
+        };
+      })
+      .filter((client) => client.conversationCount > 0);
+  }
+
   seedBusiness(businessId: number, business: BusinessDto): void {
     this.businesses.set(businessId, business);
   }
@@ -189,16 +280,37 @@ export class FakeSqlManager implements ISqlInterface {
     return this.conversations.has(conversationId);
   }
 
+  private toConversationSummary(
+    clientId: number,
+    businessId: number,
+    state: ConversationCacheState
+  ): ConversationSummaryDto {
+    const conversationMessages = this.messages.filter((message) => message.conversationId === state.conversationId);
+
+    return {
+      id: state.conversationId,
+      businessId,
+      clientId,
+      status: state.state,
+      conclusion: state.conclusion,
+      createdAt: state.updatedAt.toISOString(),
+      messageCount: conversationMessages.length,
+      lastMessageAt: conversationMessages.length > 0 ? state.updatedAt.toISOString() : undefined
+    };
+  }
+
   private emptyParamsForBusiness(businessId: number): Record<string, string | number | null> {
     const business = this.businesses.get(businessId);
     if (!business) {
       return {};
     }
 
-    return business.parameters.reduce<Record<string, string | number | null>>((params, param) => {
+    const params = business.parameters.reduce<Record<string, string | number | null>>((params, param) => {
       params[param.paramName] = param.paramValue || null;
       return params;
     }, {});
+    ensureClientNameParam(params);
+    return params;
   }
 
   private findClientPhone(clientId: number): string {

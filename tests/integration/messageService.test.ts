@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MessageService } from "../../src/MessageService/messageService";
-import { ActionType, BusinessDto, CommunicationChannel, Message, MessageProvider } from "../../src/dataClients/Types/apiTypes";
+import { ApiActionType, BusinessDto, CommunicationChannel, Message, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { BusinessContext, ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
 import { ConversationEvent, ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { NullLogger } from "../../src/logging/logger";
@@ -31,7 +31,7 @@ function createBusiness(): BusinessDto {
 
 function createMessage(body: string): Message {
   return {
-    type: ActionType.HandleMessage,
+    type: ApiActionType.HandleMessage,
     content: body,
     status: "received",
     channel: CommunicationChannel.Whatsapp,
@@ -323,12 +323,50 @@ describe("MessageService integration flow with fakes", () => {
       service: "consulting",
       preferredDate: "Monday"
     });
+    expect(sql.clientsByPhone.get(clientPhone)?.name).toBe("David");
     expect(savedCache?.lastMessages).toEqual([
       { role: "user", content: "I need consulting on Monday" },
       { role: "bot", content: "Great, I have everything I need." }
     ]);
     expect(outboundQueue.jobs).toHaveLength(1);
     expect(outboundQueue.jobs[0].message.body).toBe("Great, I have everything I need.");
+  });
+
+  it("saves not provided as the client name when ending without a name", async () => {
+    const initialState = createConversationState(ConversationState.closing, {
+      name: null,
+      service: "consulting",
+      preferredDate: "Monday"
+    });
+    const cache = new FakeCacheManager([
+      { clientId: 1, businessId, state: initialState }
+    ]);
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    sql.seedConversation(1, businessId, initialState);
+    const llm = new FakeLlmProvider({
+      events: [
+        {
+          conversationEvent: ConversationEvent.tryEnding,
+          newConclusion: "User confirmed closing"
+        }
+      ]
+    });
+    const service = new MessageService(cache, sql, llm, testLogger);
+
+    await service.processMessage(createMessage("Yes, thanks"));
+
+    const savedCache = await cache.getCacheState(1, businessId);
+    expect(savedCache?.state).toBe(ConversationState.ended);
+    expect(savedCache?.collectedParams.name).toBe("not provided");
+    expect(sql.clientsByPhone.get(clientPhone)?.name).toBe("not provided");
+    expect(sql.paramAnswers).toContainEqual({
+      clientId: 1,
+      conversationId: 1,
+      businessId,
+      paramName: "name",
+      paramValue: "not provided"
+    });
   });
 
   it("does not call the LLM or persist anything when the conversation lock is unavailable", async () => {

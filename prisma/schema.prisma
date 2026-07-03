@@ -10,11 +10,11 @@ datasource db {
 }
 
 model Message {
-  id             Int      @id @default(autoincrement())
-  externalId     String   @unique
-  messageIndex   Int      @default(0)
+  id             Int           @id @default(autoincrement())
+  externalId     String        @unique
+  messageIndex   Int           @default(0)
   content        String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime      @default(now())
   conversationId Int
   status         MessageStatus
   type           MessageType
@@ -23,6 +23,7 @@ model Message {
 
   @@index([conversationId, messageIndex])
 }
+
 model Conversation {
   id                 Int                @id @default(autoincrement())
   conclusion         String?
@@ -50,6 +51,7 @@ model Business {
   conversations     Conversation[]
   context           BusinessContext?
   BusinessAction    BusinessAction?
+  leads             Lead[]
 }
 
 model BusinessContext {
@@ -68,14 +70,15 @@ model BusinessContext {
 }
 
 model AppUser {
-  id           Int             @id @default(autoincrement())
-  email        String          @unique
+  id           Int            @id @default(autoincrement())
+  email        String         @unique
   passwordHash String
   displayName  String?
-  platformRole PlatformRole    @default(user)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  platformRole PlatformRole   @default(user)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
   businesses   BusinessUser[]
+  leads        Lead[]
 }
 
 model BusinessUser {
@@ -94,8 +97,10 @@ model BusinessUser {
 model Client {
   id            Int               @id @default(autoincrement())
   phoneNumber   String            @unique
+  name          String?
   conversations Conversation[]
   answers       ParameterAnswer[]
+  leads         Lead[]
 }
 
 model BusinessParameter {
@@ -122,16 +127,65 @@ model ParameterAnswer {
   @@index([conversationId, paramId])
 }
 
-
-
 model BusinessAction {
-  id                Int               @id @default(autoincrement())
-  provider    String?
-  config      Json?
-  action ActionType
-  businessId  Int
-  business    Business @relation(fields: [businessId], references: [id])
+  id         Int        @id @default(autoincrement())
+  provider   String?
+  config     Json?
+  action     ActionType
+  businessId Int
+  business   Business   @relation(fields: [businessId], references: [id])
+
   @@unique([businessId])
+}
+
+model Lead {
+  id Int @id @default(autoincrement())
+
+  businessId Int
+  business   Business @relation(fields: [businessId], references: [id])
+
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  memberId Int?
+  member   AppUser? @relation(fields: [memberId], references: [id])
+
+  status LeadStatus @default(NEW)
+
+  source LeadSource @default(WHATSAPP)
+
+  score   Int?
+  summary String?
+  notes   String?
+
+  name    String?
+  phoneNumber String?
+
+  createdAt  DateTime  @default(now())
+  asignTime  DateTime?
+  updatedAt  DateTime  @updatedAt
+  followUpAt DateTime?
+  closedAt   DateTime?
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFYING
+  QUALIFIED
+  ASSIGNED
+  FOLLOW_UP
+  WON
+  LOST
+  CLOSED
+}
+
+enum LeadSource {
+  WHATSAPP
+  MANUAL
+  FACEBOOK
+  GOOGLE_ADS
+  WEBSITE
+  OTHER
 }
 
 enum ActionType {
@@ -177,4 +231,5 @@ enum BusinessUserRole {
 enum PlatformRole {
   admin
   user
+  owner
 }

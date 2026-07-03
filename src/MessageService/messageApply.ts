@@ -4,16 +4,16 @@ import { ILlmProvider } from "../llm/llmInterface";
 import { BusinessContextForPrompt, StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
 import { ConversationStateMachine } from "./context/conversationSM";
 import { Executer } from "./context/executer";
-import { ISqlInterface } from "../dataClients/SqlClient/sqlInterface";
+import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
 import { ILogger, logger } from "../logging/logger";
 
 export class LlmPipeline{
 
     private llmProvider : ILlmProvider
-    private sqlInterface: ISqlInterface;
+    private sqlInterface: IDatabaseClient;
     private logger: ILogger;
 
-    constructor(llm:ILlmProvider,sqlInterface: ISqlInterface, loggerInstance: ILogger = logger.child({ component: "LlmPipeline" }))
+    constructor(llm:ILlmProvider,sqlInterface: IDatabaseClient, loggerInstance: ILogger = logger.child({ component: "LlmPipeline" }))
     {
         this.llmProvider = llm;
         this.sqlInterface = sqlInterface;

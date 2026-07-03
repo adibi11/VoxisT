@@ -1,5 +1,6 @@
 
 import { ConversationCacheState } from "../../dataClients/Types/messageTypes";
+import { isClientNameParam } from "../../dataClients/Types/clientNameParam";
 import { BotMsg, ConversationEvent } from "../../dataClients/Types/stateMachineTypes";
 import { StateMachineOutput ,ConversationState} from "../../dataClients/Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
@@ -101,7 +102,8 @@ export  class ConversationStateMachine
             ...(newParams || {})
         };
 
-        const requiredParamNames = Object.keys(collectedParams);
+        const requiredParamNames = Object.keys(collectedParams)
+            .filter((paramName) => !isClientNameParam(paramName));
         if(requiredParamNames.length === 0) return true;
 
         for(const key of requiredParamNames)

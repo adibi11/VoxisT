@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ConversationStateMachine } from "../../src/MessageService/context/conversationSM";
 import { CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
-import { Action, ConversationEvent, ConversationState, StateMachineOutput } from "../../src/dataClients/Types/stateMachineTypes";
+import { BotMsg as Action, ConversationEvent, ConversationState, StateMachineOutput } from "../../src/dataClients/Types/stateMachineTypes";
 
 function createCache(
   state: ConversationState,
@@ -74,8 +74,9 @@ describe("ConversationStateMachine", () => {
       cache
     );
 
-    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
+    expect(actions).toEqual([Action.askForParams]);
     expect(cache.state).toBe(ConversationState.collecting);
+    expect(cache.collectedParams.name).toBe("David");
   });
 
   it("applies the final missing params and moves to closing", () => {
@@ -95,8 +96,31 @@ describe("ConversationStateMachine", () => {
       cache
     );
 
-    expect(actions).toEqual([Action.applyParams, Action.tryClosing]);
+    expect(actions).toEqual([Action.tryClosing]);
     expect(cache.state).toBe(ConversationState.closing);
+    expect(cache.collectedParams.service).toBe("window cleaning");
+    expect(cache.collectedParams.preferredDate).toBe("Monday");
+  });
+
+  it("does not block closing when only the system name param is missing", () => {
+    const machine = new ConversationStateMachine();
+    const cache = createCache(ConversationState.collecting, {
+      Name: null,
+      service: "consulting",
+      preferredDate: null
+    });
+
+    const actions = machine.recognizeNewState(
+      llmOutput(ConversationEvent.updateParams, {
+        preferredDate: "Monday"
+      }),
+      cache
+    );
+
+    expect(actions).toEqual([Action.tryClosing]);
+    expect(cache.state).toBe(ConversationState.closing);
+    expect(cache.collectedParams.Name).toBeNull();
+    expect(cache.collectedParams.preferredDate).toBe("Monday");
   });
 
   it("applies params from a concern without changing to a pacing state", () => {
@@ -109,8 +133,9 @@ describe("ConversationStateMachine", () => {
       cache
     );
 
-    expect(actions).toEqual([Action.applyParams, Action.askForParams]);
+    expect(actions).toEqual([Action.askForParams]);
     expect(cache.state).toBe(ConversationState.collecting);
+    expect(cache.collectedParams.service).toBe("pricing help");
   });
 
   it("moves to closing from a concern when all params are present", () => {
@@ -130,8 +155,10 @@ describe("ConversationStateMachine", () => {
       cache
     );
 
-    expect(actions).toEqual([Action.applyParams, Action.tryClosing]);
+    expect(actions).toEqual([Action.tryClosing]);
     expect(cache.state).toBe(ConversationState.closing);
+    expect(cache.collectedParams.service).toBe("consulting");
+    expect(cache.collectedParams.preferredDate).toBe("Tuesday");
   });
 
   it("keeps closing open unless the LLM extraction explicitly ends it", () => {

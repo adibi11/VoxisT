@@ -5,7 +5,12 @@ import { BusinessParam } from "../Types/messageTypes";
 import { BusinessActionDto, BusinessDto, MessageType } from "../Types/apiTypes";
 import { CommunicationChannel, MessageProvider } from "../Types/apiTypes";
 import { ConversationCacheState } from "../Types/messageTypes";
-import { ISqlInterface } from "./sqlInterface";
+import {
+    CLIENT_NAME_PARAM,
+    CLIENT_NAME_NOT_PROVIDED,
+    isClientNameParam
+} from "../Types/clientNameParam";
+import { IDatabaseClient } from "./sqlInterface";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessagesResponseDto, ConversationSummaryDto, PlatformRoleDto } from "../../contracts";
@@ -13,7 +18,7 @@ import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessages
 
 export const prisma = new PrismaClient();
 
-export class SqlManager implements ISqlInterface {
+export class SqlManager implements IDatabaseClient {
     private prisma: PrismaClient;
     private logger: ILogger;
 
@@ -167,6 +172,11 @@ export class SqlManager implements ISqlInterface {
                 businessId: businessId
             }
         });
+        const client = await this.prisma.client.findUnique({
+            where: {
+                id: clientId
+            }
+        });
         const paramAnswers = await this.prisma.parameterAnswer.findMany({
             where: {
                 clientId: clientId,
@@ -188,6 +198,20 @@ export class SqlManager implements ISqlInterface {
                 };
             }
         );
+        const savedClientName = client?.name && client.name !== CLIENT_NAME_NOT_PROVIDED ? client.name : undefined;
+        const nameParam = paramList.find((param) => isClientNameParam(param.paramName));
+        if (nameParam && !nameParam.paramValue && savedClientName) {
+            nameParam.paramValue = savedClientName;
+        }
+
+        if (!nameParam) {
+            paramList.push({
+                paramName: CLIENT_NAME_PARAM,
+                paramValue: savedClientName,
+                businessId
+            });
+        }
+
         return paramList;
     }
 
@@ -271,12 +295,24 @@ export class SqlManager implements ISqlInterface {
         }
         const mappedClient: Client = {
             id: client.id,
-            name: "Unknown",
+            name: client.name || "Unknown",
             phone: client.phoneNumber,
             email: ""
         };
         return mappedClient;
     }
+
+    async updateClientName(clientId: number, name: string): Promise<void> {
+        await this.prisma.client.update({
+            where: {
+                id: clientId
+            },
+            data: {
+                name
+            }
+        });
+    }
+
     async upsertParamAnswer(
         clientId: number,
         conversationId: number,
@@ -285,12 +321,26 @@ export class SqlManager implements ISqlInterface {
         paramValue: string
         ): Promise<void> {
 
-        const param = await this.prisma.businessParameter.findFirst({
+        let param = await this.prisma.businessParameter.findFirst({
             where: {
             businessId,
             paramName
             }
         });
+
+        if (!param && isClientNameParam(paramName)) {
+            const businessParams = await this.prisma.businessParameter.findMany({
+                where: {
+                    businessId
+                }
+            });
+            param = businessParams.find((businessParam) => isClientNameParam(businessParam.paramName)) || await this.prisma.businessParameter.create({
+                data: {
+                    businessId,
+                    paramName: CLIENT_NAME_PARAM
+                }
+            });
+        }
 
         if (!param) {
             // Log a warning if the parameter is not found for the given business
@@ -763,6 +813,3 @@ function mapPrismaBusinessContext(context: {
 function toPrismaJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
 }
-
-
-
