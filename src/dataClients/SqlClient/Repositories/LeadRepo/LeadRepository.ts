@@ -39,15 +39,15 @@ export class LeadRepository implements ILeadRepository {
     async createManualLead(businessId: number, leadDto: CreateManualLeadRequestDto): Promise<LeadDto> {
         const normalizedName = normalizeOptionalString(leadDto.name);
         const normalizedPhoneNumber = normalizeOptionalString(leadDto.phoneNumber);
-        if (!leadDto.clientId && !normalizedName && !normalizedPhoneNumber) {
-            throw new Error("Manual lead requires clientId, name, or phoneNumber");
+        if (!leadDto.clientId && !normalizedPhoneNumber) {
+            throw new Error("Manual lead requires clientId or phoneNumber");
         }
 
         const client = await this.resolveLeadClient(leadDto.clientId, normalizedPhoneNumber, normalizedName);
         const lead = await this.prisma.lead.create({
             data: {
                 businessId,
-                clientId: client?.id,
+                clientId: client.id,
                 memberId: leadDto.memberId,
                 status: (leadDto.status || "NEW") as any,
                 source: (leadDto.source || "MANUAL") as any,
@@ -113,7 +113,7 @@ export class LeadRepository implements ILeadRepository {
         }
     }
 
-    private async resolveLeadClient(clientId?: number, phoneNumber?: string, name?: string): Promise<{ id: number; name: string | null; phoneNumber: string } | null> {
+    private async resolveLeadClient(clientId?: number, phoneNumber?: string, name?: string): Promise<{ id: number; name: string | null; phoneNumber: string }> {
         if (clientId) {
             const client = await this.prisma.client.findUnique({
                 where: {
@@ -140,7 +140,7 @@ export class LeadRepository implements ILeadRepository {
         }
 
         if (!phoneNumber) {
-            return null;
+            throw new Error("Manual lead requires clientId or phoneNumber");
         }
 
         const existingClient = await this.prisma.client.findUnique({

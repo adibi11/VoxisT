@@ -311,8 +311,8 @@ export class FakeSqlManager implements IDatabaseClient {
   async createManualLead(businessId: number, leadDto: CreateManualLeadRequestDto): Promise<LeadDto> {
     const name = this.normalizeOptionalString(leadDto.name);
     const phoneNumber = this.normalizeOptionalString(leadDto.phoneNumber);
-    if (!leadDto.clientId && !name && !phoneNumber) {
-      throw new Error("Manual lead requires clientId, name, or phoneNumber");
+    if (!leadDto.clientId && !phoneNumber) {
+      throw new Error("Manual lead requires clientId or phoneNumber");
     }
 
     const client = this.resolveLeadClient(leadDto.clientId, phoneNumber, name);
@@ -320,7 +320,7 @@ export class FakeSqlManager implements IDatabaseClient {
     const lead: SavedLead = {
       id: this.nextLeadId++,
       businessId,
-      clientId: client?.id || null,
+      clientId: client.id,
       memberId: leadDto.memberId || null,
       status: leadDto.status || "NEW",
       source: leadDto.source || "MANUAL",
@@ -435,7 +435,7 @@ export class FakeSqlManager implements IDatabaseClient {
     };
   }
 
-  private resolveLeadClient(clientId?: number, phoneNumber?: string, name?: string): Client | null {
+  private resolveLeadClient(clientId?: number, phoneNumber?: string, name?: string): Client {
     if (clientId) {
       const client = [...this.clientsByPhone.values()].find((candidate) => candidate.id === clientId);
       if (!client) {
@@ -448,7 +448,7 @@ export class FakeSqlManager implements IDatabaseClient {
     }
 
     if (!phoneNumber) {
-      return null;
+      throw new Error("Manual lead requires clientId or phoneNumber");
     }
 
     let client = this.clientsByPhone.get(phoneNumber);

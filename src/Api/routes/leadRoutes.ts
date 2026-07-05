@@ -192,7 +192,7 @@ function isValidCreateManualLeadRequest(request: Partial<CreateManualLeadRequest
     return false;
   }
 
-  if (!request.clientId && !hasText(request.name) && !hasText(request.phoneNumber)) {
+  if (!request.clientId && !hasText(request.phoneNumber)) {
     return false;
   }
 
