@@ -131,8 +131,15 @@ export class MessageService {
                     botResponseLength: botResponse.length
                 });
             }
-            catch{
-                throw new Error("LLM Failed interpreting");
+            catch (error){
+                flowLogger.error("llm.pipeline.failed", {
+                    conversationId: conversationState.conversationId,
+                    state: conversationState.state,
+                    error
+                });
+                const wrappedError = new Error("LLM Failed interpreting") as Error & { cause?: unknown };
+                wrappedError.cause = error;
+                throw wrappedError;
                 //Implement fall back in the future for unsuccessfull response.
             }try{
                 // Persist the messages to the DB and update the cache state
@@ -147,15 +154,15 @@ export class MessageService {
                     lastMessagesCount: conversationState.lastMessages.length
                 });
             }
-            catch{
-                throw new Error("Failed to create messages in DB");
+            catch (error) {
+                throw new Error(`Failed to create messages in DB: ${error}`);
             }   
             try{
                 // Enqueue the outbound message for delivery
                 await this.enqueueOutboundMessage(client.id, businessId, message, conversationState!, messages);
             }
-            catch{
-                throw new Error("Failed to enqueue outbound message");
+            catch (error) {
+                throw new Error(`Failed to enqueue outbound message: ${error}`);
             }
 
         }

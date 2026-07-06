@@ -20,6 +20,11 @@ export class Executer{
 
     async prepareAndExecute(input: StateMachineInput,cacheState: ConversationCacheState) :Promise<LlmOutput>
     {        
+        this.logger.info("llm.event.extract.started", {
+            currentState: input.currentState,
+            lastMessagesCount: input.lastMessages.length,
+            collectedParamNames: Object.keys(input.collectedParams)
+        });
         const output = await this.llmProvider.extractEvents(input);
         this.logger.info("llm.event.extracted", {
             currentState: input.currentState,
@@ -88,17 +93,36 @@ export class Executer{
 
     async askForMissingParams(input: StateMachineInput,output: StateMachineOutput): Promise<string>
     {
-        
-        return await this.llmProvider.generateResponse(input,output);
+        this.logger.info("llm.response.generate.started", {
+            currentState: input.currentState,
+            conversationEvent: output.conversationEvent,
+            conversationMode: output.conversationMode,
+            responseIntent: output.responseIntent
+        });
+        const response = await this.llmProvider.generateResponse(input,output);
+        this.logger.info("llm.response.generate.finished", {
+            responseLength: response.length
+        });
+        return response;
     }
 
     async tryClosingConversation(input: StateMachineInput,output: StateMachineOutput): Promise<string>
     {
         // Implement logic to attempt closing the conversation, such as sending a closing message and updating the conversation context
-        return await this.llmProvider.getClosingMessage(
+        this.logger.info("llm.closing.generate.started", {
+            currentState: input.currentState,
+            conversationEvent: output.conversationEvent,
+            conversationMode: output.conversationMode,
+            responseIntent: output.responseIntent
+        });
+        const response = await this.llmProvider.getClosingMessage(
             output,
             input
         );
+        this.logger.info("llm.closing.generate.finished", {
+            responseLength: response.length
+        });
+        return response;
     }
     async clarify(input: StateMachineInput,cacheState: ConversationCacheState): Promise<string >
     {

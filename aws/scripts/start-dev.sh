@@ -16,19 +16,7 @@ SERVICES=(
   "VoxisOutboundService"
 )
 
-echo "Starting RDS..."
 
-aws rds start-db-instance \
-    --db-instance-identifier $DB_INSTANCE \
-    --region $AWS_REGION
-
-echo "Waiting for RDS..."
-
-aws rds wait db-instance-available \
-    --db-instance-identifier $DB_INSTANCE \
-    --region $AWS_REGION
-
-echo "RDS is ready."
 
 for SERVICE in "${SERVICES[@]}"
 do

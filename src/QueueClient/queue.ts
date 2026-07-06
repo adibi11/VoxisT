@@ -3,6 +3,7 @@ import { connection } from "../dataClients/CacheClient/redis";
 import { ILogger, logger } from "../logging/logger";
 import { JobData } from "../dataClients/Types/apiTypes";
 import { OutboundMessageJobData } from "../dataClients/Types/outboundTypes";
+import { getBullMqPrefix } from "./queueNames";
 
 export interface IOutboundMessageQueue {
     addOutboundMessage(jobData: OutboundMessageJobData): Promise<unknown>;
@@ -15,7 +16,8 @@ export class QueueManager {
     constructor(queueName: string, loggerInstance: ILogger = logger.child({ component: "QueueManager", queueName })) {
         this.logger = loggerInstance;
         this.queue = new Queue(queueName, {
-            connection
+            connection,
+            prefix: getBullMqPrefix(queueName)
         });
         this.logger.info("queue.initialized");
     }

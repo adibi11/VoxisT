@@ -7,7 +7,7 @@ import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
 import { OpenAIApi } from "../../llm/openaiApi";
 import { logger } from "../../logging/logger";
 import { QueueManager } from "../../QueueClient/queue";
-import { MESSAGE_QUEUE_NAME, OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
+import { getBullMqPrefix, MESSAGE_QUEUE_NAME, OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
 
 const workerLogger = logger.child({ component: "MessageWorker", queueName: MESSAGE_QUEUE_NAME });
 
@@ -53,6 +53,7 @@ const worker = new Worker(
   },
   {
     connection,
+    prefix: getBullMqPrefix(MESSAGE_QUEUE_NAME),
     autorun: false
   }
 );

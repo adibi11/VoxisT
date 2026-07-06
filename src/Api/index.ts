@@ -57,7 +57,7 @@ getConversationRoutes(app, sqlManager, appLogger);
 getLeadRoutes(app, sqlManager, appLogger);
 
 
-app.post("/webhook", async (req, res) => {
+app.post("/webhook/:id", async (req, res) => {
   const event = req.body as twillioMessage;
   appLogger.info("webhook.raw.received", {
     contentType: req.headers["content-type"],
@@ -80,7 +80,8 @@ app.post("/webhook", async (req, res) => {
       status: "received",
       channel: getTwilioChannel(event),
       provider: MessageProvider.Twilio,
-      data: event
+      data: event,
+      businessId: Number(req.params.id)
     }
    };
   appLogger.info("webhook.message.received", {

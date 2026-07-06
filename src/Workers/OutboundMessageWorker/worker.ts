@@ -4,7 +4,7 @@ import { connection, verifyRedisConnection } from "../../dataClients/CacheClient
 import { OutboundMessageJobData } from "../../dataClients/Types/outboundTypes";
 import { logger } from "../../logging/logger";
 import { TwilioMessageSender } from "../../MessageSender/twilioMessageSender";
-import { OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
+import { getBullMqPrefix, OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
 
 const workerLogger = logger.child({ component: "OutboundMessageWorker", queueName: OUTBOUND_MESSAGE_QUEUE_NAME });
 const twilioSender = new TwilioMessageSender({
@@ -45,6 +45,7 @@ const worker = new Worker(
   },
   {
     connection,
+    prefix: getBullMqPrefix(OUTBOUND_MESSAGE_QUEUE_NAME),
     autorun: false
   }
 );

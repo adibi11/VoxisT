@@ -31,9 +31,24 @@ export class LlmPipeline{
           phone: state.phone
         });
         const executer = new Executer(this.llmProvider, this.logger.child({ component: "Executer" }));
+        this.logger.info("business.context.load.started", { businessId });
         const businessContext = sanitizeBusinessContext(await this.sqlInterface.getBusinessContext(businessId));
+        this.logger.info("business.context.load.finished", {
+          businessId,
+          hasBusinessContext: Boolean(businessContext)
+        });
         const stateMachineInput = buildStateMachineInput(state, message, businessContext);
+        this.logger.info("llm.executer.started", {
+          conversationId: state.conversationId,
+          state: state.state,
+          messageLength: message.length
+        });
         const output = await executer.prepareAndExecute(stateMachineInput,state);
+        this.logger.info("llm.executer.finished", {
+          conversationId: state.conversationId,
+          state: state.state,
+          responseLength: output.response.length
+        });
         this.logger.info("conversation.state.after", {
           conversation: state
         });
@@ -210,4 +225,3 @@ function applyLLMResult(
 
   state.updatedAt = new Date();
 }
-
