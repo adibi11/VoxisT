@@ -137,3 +137,91 @@ export type UpdateLeadRequestDto = {
   phoneNumber?: string | null;
   followUpAt?: string | null;
 };
+
+export type FollowUpStatusDto =
+  | "PENDING"
+  | "SENT"
+  | "SKIPPED"
+  | "FAILED"
+  | "CANCELED";
+
+export type BusinessFollowUpPolicyDto = {
+  id: number;
+  businessId: number;
+  enabled: boolean;
+  timezone: string;
+  delayMinutes: number;
+  allowedStartHour?: number | null;
+  allowedEndHour?: number | null;
+  maxFollowUps: number;
+  messageTemplate?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UpsertBusinessFollowUpPolicyRequestDto = {
+  enabled?: boolean;
+  timezone?: string;
+  delayMinutes?: number;
+  allowedStartHour?: number | null;
+  allowedEndHour?: number | null;
+  maxFollowUps?: number;
+  messageTemplate?: string | null;
+};
+
+export type ConversationFollowUpStateDto = {
+  conversationId: number;
+  businessId: number;
+  clientId: number;
+  status: string;
+  createdAt: string;
+  lastUserMessageAt?: string | null;
+  lastBotMessageAt?: string | null;
+  lastFollowUpAt?: string | null;
+  followUpCount: number;
+  nextFollowUpAt?: string | null;
+};
+
+export type UpdateConversationFollowUpStateRequestDto = {
+  lastUserMessageAt?: string | null;
+  lastBotMessageAt?: string | null;
+  lastFollowUpAt?: string | null;
+  followUpCount?: number;
+  nextFollowUpAt?: string | null;
+};
+
+export type ConversationFollowUpDto = {
+  id: number;
+  businessId: number;
+  conversationId: number;
+  leadId?: number | null;
+  status: FollowUpStatusDto;
+  scheduledFor: string;
+  sentAt?: string | null;
+  skippedReason?: string | null;
+  messageBody?: string | null;
+  metadata?: unknown;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateConversationFollowUpRequestDto = {
+  conversationId: number;
+  leadId?: number | null;
+  status?: FollowUpStatusDto;
+  scheduledFor: string;
+  sentAt?: string | null;
+  skippedReason?: string | null;
+  messageBody?: string | null;
+  metadata?: unknown;
+};
+
+export type UpdateConversationFollowUpRequestDto = {
+  leadId?: number | null;
+  status?: FollowUpStatusDto;
+  scheduledFor?: string;
+  sentAt?: string | null;
+  skippedReason?: string | null;
+  messageBody?: string | null;
+  metadata?: unknown;
+};

@@ -31,10 +31,16 @@ model Conversation {
   businessId         Int
   clientId           Int
   createdAt          DateTime           @default(now())
+  lastUserMessageAt  DateTime?
+  lastBotMessageAt   DateTime?
+  lastFollowUpAt     DateTime?
+  followUpCount      Int                @default(0)
+  nextFollowUpAt     DateTime?
   business           Business           @relation(fields: [businessId], references: [id])
   client             Client             @relation(fields: [clientId], references: [id])
   messages           Message[]
   parameterAnswers   ParameterAnswer[]
+  followUps          ConversationFollowUp[]
 }
 
 model Business {
@@ -49,6 +55,8 @@ model Business {
   parameters        BusinessParameter[]
   users             BusinessUser[]
   conversations     Conversation[]
+  followUpPolicy    BusinessFollowUpPolicy?
+  conversationFollowUps ConversationFollowUp[]
   context           BusinessContext?
   BusinessAction    BusinessAction?
   leads             Lead[]
@@ -138,6 +146,43 @@ model BusinessAction {
   @@unique([businessId])
 }
 
+model BusinessFollowUpPolicy {
+  id               Int      @id @default(autoincrement())
+  businessId       Int      @unique
+  enabled          Boolean  @default(false)
+  timezone         String   @default("UTC")
+  delayMinutes     Int      @default(1440)
+  allowedStartHour Int?
+  allowedEndHour   Int?
+  maxFollowUps     Int      @default(1)
+  messageTemplate  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  business         Business @relation(fields: [businessId], references: [id])
+}
+
+model ConversationFollowUp {
+  id             Int            @id @default(autoincrement())
+  businessId     Int
+  conversationId Int
+  leadId         Int?
+  status         FollowUpStatus @default(PENDING)
+  scheduledFor   DateTime
+  sentAt         DateTime?
+  skippedReason  String?
+  messageBody    String?
+  metadata       Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  business       Business       @relation(fields: [businessId], references: [id])
+  conversation   Conversation   @relation(fields: [conversationId], references: [id])
+  lead           Lead?          @relation(fields: [leadId], references: [id])
+
+  @@index([businessId, status, scheduledFor])
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+}
+
 model Lead {
   id Int @id @default(autoincrement())
 
@@ -166,6 +211,7 @@ model Lead {
   updatedAt  DateTime  @updatedAt
   followUpAt DateTime?
   closedAt   DateTime?
+  followUps  ConversationFollowUp[]
 }
 
 enum LeadStatus {
@@ -186,6 +232,14 @@ enum LeadSource {
   GOOGLE_ADS
   WEBSITE
   OTHER
+}
+
+enum FollowUpStatus {
+  PENDING
+  SENT
+  SKIPPED
+  FAILED
+  CANCELED
 }
 
 enum ActionType {

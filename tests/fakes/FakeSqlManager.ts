@@ -5,18 +5,28 @@ import {
   ClientSummaryDto,
   ConversationMessagesResponseDto,
   ConversationSummaryDto,
+  BusinessFollowUpPolicyDto,
+  ConversationFollowUpDto,
+  ConversationFollowUpStateDto,
+  CreateConversationFollowUpRequestDto,
+  FollowUpStatusDto,
+  UpdateConversationFollowUpRequestDto,
+  UpdateConversationFollowUpStateRequestDto,
   CreateManualLeadRequestDto,
   LeadDto,
   LeadSourceDto,
   LeadStatusDto,
   LeadSummaryDto,
-  PlatformRoleDto
+  PlatformRoleDto,
+  UpdateLeadRequestDto,
+  UpsertBusinessFollowUpPolicyRequestDto
 } from "../../src/contracts";
 import { BusinessActionDto, BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { ensureClientNameParam } from "../../src/dataClients/Types/clientNameParam";
 import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { ILeadRepository } from "../../src/dataClients/SqlClient/Repositories/LeadRepo/ILeadRepository";
+import { IFollowUpRepository } from "../../src/dataClients/SqlClient/Repositories/FollowUpRepo/IFollowUpRepository";
 
 type SavedMessage = {
   conversationId: number;
@@ -51,8 +61,24 @@ type SavedLead = {
   closedAt?: Date | null;
 };
 
+type SavedConversationFollowUp = {
+  id: number;
+  businessId: number;
+  conversationId: number;
+  leadId?: number | null;
+  status: FollowUpStatusDto;
+  scheduledFor: Date;
+  sentAt?: Date | null;
+  skippedReason?: string | null;
+  messageBody?: string | null;
+  metadata?: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export class FakeSqlManager implements IDatabaseClient {
   readonly leadRepository: ILeadRepository = this;
+  readonly followUpRepository: IFollowUpRepository = this;
 
   public clientsByPhone = new Map<string, Client>();
   public conversations = new Map<number, { clientId: number; businessId: number; state: ConversationCacheState }>();
@@ -62,11 +88,14 @@ export class FakeSqlManager implements IDatabaseClient {
   public messages: SavedMessage[] = [];
   public paramAnswers: SavedParamAnswer[] = [];
   public leads = new Map<number, SavedLead>();
+  public followUpPolicies = new Map<number, BusinessFollowUpPolicyDto>();
+  public conversationFollowUps = new Map<number, SavedConversationFollowUp>();
   public createdConversations: { clientId: number; businessId: number; content: string }[] = [];
 
   private nextClientId = 1;
   private nextConversationId = 1;
   private nextLeadId = 1;
+  private nextConversationFollowUpId = 1;
 
   async getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null> {
     return this.getLatestConversationCacheState(clientId, businessId);
@@ -139,6 +168,14 @@ export class FakeSqlManager implements IDatabaseClient {
   }
 
   async getUserWithPasswordByEmail(_email: string): Promise<(AuthUserDto & { passwordHash: string }) | null> {
+    return null;
+  }
+
+  async getAllUsers(): Promise<AuthUserDto[]> {
+    return [];
+  }
+
+  async updateUserPassword(_userId: number, _passwordHash: string): Promise<AuthUserDto | null> {
     return null;
   }
 
@@ -376,6 +413,141 @@ export class FakeSqlManager implements IDatabaseClient {
     this.leads.delete(leadId);
   }
 
+  async getBusinessFollowUpPolicy(businessId: number): Promise<BusinessFollowUpPolicyDto | null> {
+    return this.followUpPolicies.get(businessId) || null;
+  }
+
+  async upsertBusinessFollowUpPolicy(
+    businessId: number,
+    request: UpsertBusinessFollowUpPolicyRequestDto
+  ): Promise<BusinessFollowUpPolicyDto> {
+    const now = new Date().toISOString();
+    const existingPolicy = this.followUpPolicies.get(businessId);
+    const policy: BusinessFollowUpPolicyDto = {
+      id: existingPolicy?.id || businessId,
+      businessId,
+      enabled: request.enabled ?? existingPolicy?.enabled ?? false,
+      timezone: request.timezone?.trim() || existingPolicy?.timezone || "UTC",
+      delayMinutes: request.delayMinutes ?? existingPolicy?.delayMinutes ?? 1440,
+      allowedStartHour: request.allowedStartHour === undefined ? existingPolicy?.allowedStartHour ?? null : request.allowedStartHour,
+      allowedEndHour: request.allowedEndHour === undefined ? existingPolicy?.allowedEndHour ?? null : request.allowedEndHour,
+      maxFollowUps: request.maxFollowUps ?? existingPolicy?.maxFollowUps ?? 1,
+      messageTemplate: request.messageTemplate === undefined ? existingPolicy?.messageTemplate ?? null : this.normalizeNullableString(request.messageTemplate),
+      createdAt: existingPolicy?.createdAt || now,
+      updatedAt: now
+    };
+
+    this.followUpPolicies.set(businessId, policy);
+    return policy;
+  }
+
+  async getConversationFollowUpState(businessId: number, conversationId: number): Promise<ConversationFollowUpStateDto | null> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation || conversation.businessId !== businessId) {
+      return null;
+    }
+
+    return this.toConversationFollowUpState(conversation.clientId, conversation.businessId, conversation.state);
+  }
+
+  async getActiveConversationFollowUpStates(businessId?: number): Promise<ConversationFollowUpStateDto[]> {
+    return [...this.conversations.values()]
+      .filter((conversation) => businessId === undefined || conversation.businessId === businessId)
+      .filter((conversation) => !["ended", "failure", "schedulingConfirmed", "schedulingFailed"].includes(conversation.state.state))
+      .map((conversation) => this.toConversationFollowUpState(conversation.clientId, conversation.businessId, conversation.state));
+  }
+
+  async updateConversationFollowUpState(
+    conversationId: number,
+    request: UpdateConversationFollowUpStateRequestDto
+  ): Promise<ConversationFollowUpStateDto> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation ${conversationId} not found`);
+    }
+
+    const followUpState = conversation.state as ConversationCacheState & {
+      lastUserMessageAt?: Date | null;
+      lastBotMessageAt?: Date | null;
+      lastFollowUpAt?: Date | null;
+      followUpCount?: number;
+      nextFollowUpAt?: Date | null;
+    };
+
+    if (request.lastUserMessageAt !== undefined) followUpState.lastUserMessageAt = this.parseOptionalDate(request.lastUserMessageAt) || null;
+    if (request.lastBotMessageAt !== undefined) followUpState.lastBotMessageAt = this.parseOptionalDate(request.lastBotMessageAt) || null;
+    if (request.lastFollowUpAt !== undefined) followUpState.lastFollowUpAt = this.parseOptionalDate(request.lastFollowUpAt) || null;
+    if (request.followUpCount !== undefined) followUpState.followUpCount = request.followUpCount;
+    if (request.nextFollowUpAt !== undefined) followUpState.nextFollowUpAt = this.parseOptionalDate(request.nextFollowUpAt) || null;
+
+    return this.toConversationFollowUpState(conversation.clientId, conversation.businessId, conversation.state);
+  }
+
+  async getConversationFollowUps(businessId: number, conversationId: number): Promise<ConversationFollowUpDto[]> {
+    return [...this.conversationFollowUps.values()]
+      .filter((followUp) => followUp.businessId === businessId && followUp.conversationId === conversationId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .map((followUp) => this.toConversationFollowUpDto(followUp));
+  }
+
+  async createConversationFollowUp(
+    businessId: number,
+    request: CreateConversationFollowUpRequestDto
+  ): Promise<ConversationFollowUpDto> {
+    const now = new Date();
+    const followUp: SavedConversationFollowUp = {
+      id: this.nextConversationFollowUpId++,
+      businessId,
+      conversationId: request.conversationId,
+      leadId: request.leadId ?? null,
+      status: request.status || "PENDING",
+      scheduledFor: this.parseRequiredDate(request.scheduledFor),
+      sentAt: this.parseOptionalDate(request.sentAt) || null,
+      skippedReason: this.normalizeNullableString(request.skippedReason),
+      messageBody: this.normalizeNullableString(request.messageBody),
+      metadata: request.metadata,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    this.conversationFollowUps.set(followUp.id, followUp);
+    return this.toConversationFollowUpDto(followUp);
+  }
+
+  async updateConversationFollowUp(
+    businessId: number,
+    followUpId: number,
+    request: UpdateConversationFollowUpRequestDto
+  ): Promise<ConversationFollowUpDto> {
+    const followUp = this.conversationFollowUps.get(followUpId);
+    if (!followUp || followUp.businessId !== businessId) {
+      throw new Error(`Conversation follow-up ${followUpId} not found for business ${businessId}`);
+    }
+
+    if (request.leadId !== undefined) followUp.leadId = request.leadId;
+    if (request.status !== undefined) followUp.status = request.status;
+    if (request.scheduledFor !== undefined) followUp.scheduledFor = this.parseRequiredDate(request.scheduledFor);
+    if (request.sentAt !== undefined) followUp.sentAt = this.parseOptionalDate(request.sentAt) || null;
+    if (request.skippedReason !== undefined) followUp.skippedReason = this.normalizeNullableString(request.skippedReason);
+    if (request.messageBody !== undefined) followUp.messageBody = this.normalizeNullableString(request.messageBody);
+    if (request.metadata !== undefined) followUp.metadata = request.metadata;
+    followUp.updatedAt = new Date();
+
+    return this.toConversationFollowUpDto(followUp);
+  }
+
+  async deleteConversationFollowUpsCreatedBefore(createdBefore: Date): Promise<number> {
+    let deletedCount = 0;
+    for (const [followUpId, followUp] of this.conversationFollowUps.entries()) {
+      if (followUp.createdAt < createdBefore) {
+        this.conversationFollowUps.delete(followUpId);
+        deletedCount++;
+      }
+    }
+
+    return deletedCount;
+  }
+
   seedBusiness(businessId: number, business: BusinessDto): void {
     this.businesses.set(businessId, business);
   }
@@ -435,6 +607,50 @@ export class FakeSqlManager implements IDatabaseClient {
     };
   }
 
+  private toConversationFollowUpState(
+    clientId: number,
+    businessId: number,
+    state: ConversationCacheState
+  ): ConversationFollowUpStateDto {
+    const followUpState = state as ConversationCacheState & {
+      lastUserMessageAt?: Date | null;
+      lastBotMessageAt?: Date | null;
+      lastFollowUpAt?: Date | null;
+      followUpCount?: number;
+      nextFollowUpAt?: Date | null;
+    };
+
+    return {
+      conversationId: state.conversationId,
+      businessId,
+      clientId,
+      status: state.state,
+      createdAt: state.updatedAt.toISOString(),
+      lastUserMessageAt: followUpState.lastUserMessageAt?.toISOString() || null,
+      lastBotMessageAt: followUpState.lastBotMessageAt?.toISOString() || null,
+      lastFollowUpAt: followUpState.lastFollowUpAt?.toISOString() || null,
+      followUpCount: followUpState.followUpCount || 0,
+      nextFollowUpAt: followUpState.nextFollowUpAt?.toISOString() || null
+    };
+  }
+
+  private toConversationFollowUpDto(followUp: SavedConversationFollowUp): ConversationFollowUpDto {
+    return {
+      id: followUp.id,
+      businessId: followUp.businessId,
+      conversationId: followUp.conversationId,
+      leadId: followUp.leadId ?? null,
+      status: followUp.status,
+      scheduledFor: followUp.scheduledFor.toISOString(),
+      sentAt: followUp.sentAt?.toISOString() || null,
+      skippedReason: followUp.skippedReason ?? null,
+      messageBody: followUp.messageBody ?? null,
+      metadata: followUp.metadata,
+      createdAt: followUp.createdAt.toISOString(),
+      updatedAt: followUp.updatedAt.toISOString()
+    };
+  }
+
   private resolveLeadClient(clientId?: number, phoneNumber?: string, name?: string): Client {
     if (clientId) {
       const client = [...this.clientsByPhone.values()].find((candidate) => candidate.id === clientId);
@@ -484,6 +700,10 @@ export class FakeSqlManager implements IDatabaseClient {
     if (value === undefined) return undefined;
     if (value === null || value.trim() === "") return null;
 
+    return this.parseRequiredDate(value);
+  }
+
+  private parseRequiredDate(value: string): Date {
     const date = new Date(value);
     if (!Number.isFinite(date.getTime())) {
       throw new Error(`Invalid date: ${value}`);

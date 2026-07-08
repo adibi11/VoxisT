@@ -1,9 +1,10 @@
 import express from 'express';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
 import { ILogger } from '../../logging/logger';
-import { RegisterBusinessUserRequestDto ,LoginRequestDto} from '../../contracts';
+import { AdminResetUserPasswordRequestDto, RegisterBusinessUserRequestDto ,LoginRequestDto} from '../../contracts';
 import { hashPassword, verifyPassword } from "../../auth/password";
 import { signJwt } from '../../auth/jwt';
+import { AuthenticatedRequest, requireAuth, requirePlatformAdmin } from '../authMiddleware';
 
 export function getAuthRoutes(app: express.Application, sql: IDatabaseClient, logger: ILogger) {
     app.post("/auth/register", async (req, res) => {
@@ -74,6 +75,56 @@ export function getAuthRoutes(app: express.Application, sql: IDatabaseClient, lo
       } catch (error) {
         logger.error("auth.login.failed", { error });
         return res.status(500).json({ message: "Failed to login" });
+      }
+    });
+
+    app.get("/admin/users", requireAuth, async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        if (!requirePlatformAdmin(authReq, res)) {
+          return;
+        }
+
+        const users = await sql.getAllUsers();
+        logger.info("admin.users.list.succeeded", {
+          userId: authReq.auth.userId,
+          count: users.length
+        });
+
+        return res.status(200).json(users);
+      } catch (error) {
+        logger.error("admin.users.list.failed", { error });
+        return res.status(500).json({ message: "Failed to fetch users" });
+      }
+    });
+
+    app.patch("/admin/users/:userId/password", requireAuth, async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        if (!requirePlatformAdmin(authReq, res)) {
+          return;
+        }
+
+        const userId = Number(req.params.userId);
+        const request = req.body as AdminResetUserPasswordRequestDto;
+        if (!Number.isFinite(userId) || !request.password) {
+          return res.status(400).json({ message: "userId and password are required" });
+        }
+
+        const user = await sql.updateUserPassword(userId, hashPassword(request.password));
+        if (!user) {
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        logger.info("admin.user.password.updated", {
+          adminUserId: authReq.auth.userId,
+          targetUserId: user.id
+        });
+
+        return res.status(200).json(user);
+      } catch (error) {
+        logger.error("admin.user.password.update.failed", { error });
+        return res.status(500).json({ message: "Failed to update user password" });
       }
     });
 }

@@ -52,6 +52,10 @@ export type AuthResponseDto = {
   user: AuthUserDto;
 };
 
+export type AdminResetUserPasswordRequestDto = {
+  password: string;
+};
+
 export type JwtClaimsDto = {
   userId: number;
   email: string;

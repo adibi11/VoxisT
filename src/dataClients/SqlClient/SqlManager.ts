@@ -13,6 +13,8 @@ import {
 import { IDatabaseClient } from "./sqlInterface";
 import { LeadRepository } from "./Repositories/LeadRepo/LeadRepository";
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
+import { FollowUpRepository } from "./Repositories/FollowUpRepo/FollowUpRepository";
+import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
@@ -31,11 +33,13 @@ export class SqlManager implements IDatabaseClient {
     private prisma: PrismaClient;
     private logger: ILogger;
     readonly leadRepository: ILeadRepository;
+    readonly followUpRepository: IFollowUpRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
         this.logger = loggerInstance;
         this.leadRepository = new LeadRepository(this.prisma);
+        this.followUpRepository = new FollowUpRepository(this.prisma);
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {
@@ -467,6 +471,65 @@ export class SqlManager implements IDatabaseClient {
             email: user.email,
             displayName: user.displayName,
             passwordHash: user.passwordHash,
+            platformRole: (user as any).platformRole === "admin" ? "admin" : "user",
+            businessIds: user.businesses.map((businessUser) => businessUser.businessId),
+            businessMemberships: user.businesses.map((businessUser) => ({
+                businessId: businessUser.businessId,
+                role: businessUser.role
+            }))
+        };
+    }
+
+    async getAllUsers(): Promise<AuthUserDto[]> {
+        const users = await this.prisma.appUser.findMany({
+            include: {
+                businesses: true
+            },
+            orderBy: {
+                id: "asc"
+            }
+        });
+
+        return users.map((user) => ({
+            id: user.id,
+            email: user.email,
+            displayName: user.displayName,
+            platformRole: (user as any).platformRole === "admin" ? "admin" : "user",
+            businessIds: user.businesses.map((businessUser) => businessUser.businessId),
+            businessMemberships: user.businesses.map((businessUser) => ({
+                businessId: businessUser.businessId,
+                role: businessUser.role
+            }))
+        }));
+    }
+
+    async updateUserPassword(userId: number, passwordHash: string): Promise<AuthUserDto | null> {
+        const existingUser = await this.prisma.appUser.findUnique({
+            where: {
+                id: userId
+            }
+        });
+
+        if (!existingUser) {
+            return null;
+        }
+
+        const user = await this.prisma.appUser.update({
+            where: {
+                id: userId
+            },
+            data: {
+                passwordHash
+            },
+            include: {
+                businesses: true
+            }
+        });
+
+        return {
+            id: user.id,
+            email: user.email,
+            displayName: user.displayName,
             platformRole: (user as any).platformRole === "admin" ? "admin" : "user",
             businessIds: user.businesses.map((businessUser) => businessUser.businessId),
             businessMemberships: user.businesses.map((businessUser) => ({
