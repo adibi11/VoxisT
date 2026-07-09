@@ -127,8 +127,8 @@ export class SqlManager implements IDatabaseClient {
         return {
             conversationId:  conversation.id ,
             state: mapConversationStatusToState(conversation.conversationStatus),
-            channel: CommunicationChannel.Whatsapp,
-            provider: MessageProvider.Twilio,
+            channel: mapCommunicationChannel(conversation.channel),
+            provider: mapMessageProvider(conversation.provider),
             lastMessages: messages.map(msg => ({
                 role: msg.type as "user" | "bot",
                 content: msg.content
@@ -241,7 +241,7 @@ export class SqlManager implements IDatabaseClient {
                 }
             });
 
-            await tx.message.create({
+            const createdMessage = await tx.message.create({
                 data: {
                     conversationId,
                     messageIndex: (currentMax._max.messageIndex || 0) + 1,
@@ -251,18 +251,35 @@ export class SqlManager implements IDatabaseClient {
                     externalId: crypto.randomUUID()
                 }
             });
+
+            await tx.conversation.update({
+                where: {
+                    id: conversationId
+                },
+                data: type === "user"
+                    ? { lastUserMessageAt: createdMessage.createdAt }
+                    : { lastBotMessageAt: createdMessage.createdAt }
+            });
         });
         
        
     }
 
-    async createDbConversation(clientId: number, businessId: number,content: string): Promise<ConversationCacheState> {
+    async createDbConversation(
+        clientId: number,
+        businessId: number,
+        content: string,
+        channel: CommunicationChannel = CommunicationChannel.Whatsapp,
+        provider: MessageProvider = MessageProvider.Twilio
+    ): Promise<ConversationCacheState> {
         const conversation = await this.prisma.conversation.create({
             data: {
                 clientId: clientId,
                 businessId: businessId,
                 conclusion:  content,
                 conversationStatus: "start",
+                channel,
+                provider,
             },
         });
         const state = await this.getCacheStateByConversationId(conversation.id);
@@ -852,6 +869,22 @@ function mapConversationStatusToState(status: string): ConversationState {
 
 function mapConversationStateToStatus(state: ConversationState): any {
     return state;
+}
+
+function mapCommunicationChannel(channel: string): CommunicationChannel {
+    if (Object.values(CommunicationChannel).includes(channel as CommunicationChannel)) {
+        return channel as CommunicationChannel;
+    }
+
+    return CommunicationChannel.Whatsapp;
+}
+
+function mapMessageProvider(provider: string | null | undefined): MessageProvider {
+    if (provider && Object.values(MessageProvider).includes(provider as MessageProvider)) {
+        return provider as MessageProvider;
+    }
+
+    return MessageProvider.Twilio;
 }
 
 function getConversationActivityTime(conversation: { createdAt: Date; messages: { createdAt: Date }[] }): Date {

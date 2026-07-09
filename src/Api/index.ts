@@ -22,6 +22,7 @@ import { getBusinessRoutes } from "./routes/businessRoutes";
 import { getClientRoutes } from "./routes/clientRoutes";
 import { getConversationRoutes } from "./routes/conversationRoutes";
 import { getLeadRoutes } from "./routes/leadRoutes";
+import { getFollowUpRoutes } from "./routes/followUpRoutes";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
@@ -55,6 +56,7 @@ getBusinessRoutes(app, sqlManager, appLogger);
 getClientRoutes(app, sqlManager, appLogger);
 getConversationRoutes(app, sqlManager, appLogger);
 getLeadRoutes(app, sqlManager, appLogger);
+getFollowUpRoutes(app, sqlManager, appLogger);
 
 
 app.post("/webhook/:id", async (req, res) => {

@@ -140,6 +140,7 @@ export type UpdateLeadRequestDto = {
 
 export type FollowUpStatusDto =
   | "PENDING"
+  | "PROCESSING"
   | "SENT"
   | "SKIPPED"
   | "FAILED"
@@ -174,6 +175,8 @@ export type ConversationFollowUpStateDto = {
   businessId: number;
   clientId: number;
   status: string;
+  channel: string;
+  provider: string;
   createdAt: string;
   lastUserMessageAt?: string | null;
   lastBotMessageAt?: string | null;

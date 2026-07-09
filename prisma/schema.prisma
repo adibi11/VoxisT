@@ -30,6 +30,8 @@ model Conversation {
   conversationStatus ConversationStatus
   businessId         Int
   clientId           Int
+  channel            String             @default("whatsapp")
+  provider           String             @default("twilio")
   createdAt          DateTime           @default(now())
   lastUserMessageAt  DateTime?
   lastBotMessageAt   DateTime?
@@ -236,6 +238,7 @@ enum LeadSource {
 
 enum FollowUpStatus {
   PENDING
+  PROCESSING
   SENT
   SKIPPED
   FAILED

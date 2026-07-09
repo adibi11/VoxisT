@@ -121,6 +121,11 @@ describe("MessageService integration flow with fakes", () => {
       { conversationId: 1, type: "user", content: "Hi" },
       { conversationId: 1, type: "bot", content: "Welcome to Test Business. How can I help?" }
     ]);
+    const followUpState = await sql.followUpRepository.getConversationFollowUpState(businessId, 1);
+    expect(followUpState?.channel).toBe(CommunicationChannel.Whatsapp);
+    expect(followUpState?.provider).toBe(MessageProvider.Twilio);
+    expect(followUpState?.lastUserMessageAt).toEqual(expect.any(String));
+    expect(followUpState?.lastBotMessageAt).toEqual(expect.any(String));
 
     const savedCache = await cache.getCacheState(1, businessId);
     expect(savedCache?.state).toBe(ConversationState.collecting);
@@ -569,5 +574,177 @@ describe("MessageService integration flow with fakes", () => {
     expect(sql.messages).toHaveLength(0);
     expect(outboundQueue.jobs).toHaveLength(0);
     expect(cache.releasedLocks).toEqual([{ clientId: 1, businessId }]);
+  });
+
+  it("queries due pending follow-ups with hydrated scheduler data", async () => {
+    const now = new Date("2026-07-09T09:00:00.000Z");
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    const client = await sql.getOrCreateClientByPhone(clientPhone);
+
+    const dueState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 1,
+      updatedAt: new Date("2026-07-09T08:30:00.000Z")
+    });
+    sql.seedConversation(client.id, businessId, dueState);
+
+    const maxedState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 2,
+      updatedAt: new Date("2026-07-09T08:35:00.000Z")
+    }) as ConversationCacheState & { followUpCount?: number };
+    maxedState.followUpCount = 2;
+    sql.seedConversation(client.id, businessId, maxedState);
+
+    await sql.followUpRepository.upsertBusinessFollowUpPolicy(businessId, {
+      enabled: true,
+      timezone: "Asia/Jerusalem",
+      maxFollowUps: 2,
+      messageTemplate: "Checking in"
+    });
+    await sql.followUpRepository.createConversationFollowUp(businessId, {
+      conversationId: 1,
+      scheduledFor: "2026-07-09T08:59:00.000Z",
+      messageBody: "Still interested?"
+    });
+    await sql.followUpRepository.createConversationFollowUp(businessId, {
+      conversationId: 2,
+      scheduledFor: "2026-07-09T08:58:00.000Z",
+      messageBody: "This should be filtered by max follow-up count"
+    });
+    await sql.followUpRepository.createConversationFollowUp(businessId, {
+      conversationId: 1,
+      scheduledFor: "2026-07-09T09:01:00.000Z",
+      messageBody: "This is not due yet"
+    });
+
+    const candidates = await sql.followUpRepository.getDuePendingFollowUps(now, 10);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      followUp: {
+        conversationId: 1,
+        status: "PENDING",
+        messageBody: "Still interested?"
+      },
+      policy: {
+        timezone: "Asia/Jerusalem",
+        maxFollowUps: 2,
+        messageTemplate: "Checking in"
+      },
+      conversation: {
+        id: 1,
+        businessId,
+        clientId: client.id,
+        status: ConversationState.collecting,
+        channel: CommunicationChannel.Whatsapp,
+        provider: MessageProvider.Twilio
+      },
+      business: {
+        id: businessId,
+        name: "Test Business",
+        phone: "+15559999999"
+      },
+      client: {
+        id: client.id,
+        phone: clientPhone
+      }
+    });
+  });
+
+  it("queries open conversations with enabled follow-up policies for runtime policy evaluation", async () => {
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    sql.seedBusiness(2, {
+      ...createBusiness(),
+      name: "Other Business",
+      phone: "+15559999998"
+    });
+    const client = await sql.getOrCreateClientByPhone(clientPhone);
+
+    const eligibleState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 1,
+      updatedAt: new Date("2026-07-09T08:30:00.000Z")
+    }) as ConversationCacheState & { lastUserMessageAt?: Date | null; lastBotMessageAt?: Date | null };
+    eligibleState.lastUserMessageAt = new Date("2026-07-09T08:00:00.000Z");
+    eligibleState.lastBotMessageAt = new Date("2026-07-09T08:10:00.000Z");
+    sql.seedConversation(client.id, businessId, eligibleState);
+
+    const userRepliedState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 2,
+      updatedAt: new Date("2026-07-09T08:40:00.000Z")
+    }) as ConversationCacheState & { lastUserMessageAt?: Date | null; lastBotMessageAt?: Date | null };
+    userRepliedState.lastBotMessageAt = new Date("2026-07-09T08:10:00.000Z");
+    userRepliedState.lastUserMessageAt = new Date("2026-07-09T08:20:00.000Z");
+    sql.seedConversation(client.id, businessId, userRepliedState);
+
+    const noPolicyState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 3,
+      updatedAt: new Date("2026-07-09T08:45:00.000Z")
+    }) as ConversationCacheState & { lastBotMessageAt?: Date | null };
+    noPolicyState.lastBotMessageAt = new Date("2026-07-09T08:10:00.000Z");
+    sql.seedConversation(client.id, 2, noPolicyState);
+
+    const alreadyOpenState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 4,
+      updatedAt: new Date("2026-07-09T08:50:00.000Z")
+    }) as ConversationCacheState & { lastBotMessageAt?: Date | null };
+    alreadyOpenState.lastBotMessageAt = new Date("2026-07-09T08:10:00.000Z");
+    sql.seedConversation(client.id, businessId, alreadyOpenState);
+
+    await sql.followUpRepository.upsertBusinessFollowUpPolicy(businessId, {
+      enabled: true,
+      timezone: "Asia/Jerusalem",
+      delayMinutes: 90,
+      maxFollowUps: 2,
+      messageTemplate: "Checking in"
+    });
+    await sql.followUpRepository.createConversationFollowUp(businessId, {
+      conversationId: 4,
+      scheduledFor: "2026-07-09T09:30:00.000Z"
+    });
+
+    const candidates = await sql.followUpRepository.getOpenConversationPolicyCandidates(10);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      policy: {
+        timezone: "Asia/Jerusalem",
+        delayMinutes: 90,
+        maxFollowUps: 2
+      },
+      conversation: {
+        id: 1,
+        businessId,
+        clientId: client.id,
+        lastUserMessageAt: "2026-07-09T08:00:00.000Z",
+        lastBotMessageAt: "2026-07-09T08:10:00.000Z"
+      },
+      business: {
+        id: businessId,
+        name: "Test Business"
+      },
+      client: {
+        id: client.id,
+        phone: clientPhone
+      }
+    });
+  });
+
+  it("claims a pending follow-up only once", async () => {
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    const client = await sql.getOrCreateClientByPhone(clientPhone);
+    sql.seedConversation(client.id, businessId, createConversationState(ConversationState.collecting));
+
+    const created = await sql.followUpRepository.createConversationFollowUp(businessId, {
+      conversationId: 1,
+      scheduledFor: "2026-07-09T08:59:00.000Z"
+    });
+
+    const firstClaim = await sql.followUpRepository.claimPendingFollowUp(created.id);
+    const secondClaim = await sql.followUpRepository.claimPendingFollowUp(created.id);
+
+    expect(firstClaim?.status).toBe("PROCESSING");
+    expect(secondClaim).toBeNull();
   });
 });

@@ -26,7 +26,7 @@ import { ensureClientNameParam } from "../../src/dataClients/Types/clientNamePar
 import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { ILeadRepository } from "../../src/dataClients/SqlClient/Repositories/LeadRepo/ILeadRepository";
-import { IFollowUpRepository } from "../../src/dataClients/SqlClient/Repositories/FollowUpRepo/IFollowUpRepository";
+import { DueConversationFollowUpCandidate, IFollowUpRepository, OpenConversationPolicyCandidate } from "../../src/dataClients/SqlClient/Repositories/FollowUpRepo/IFollowUpRepository";
 
 type SavedMessage = {
   conversationId: number;
@@ -124,16 +124,32 @@ export class FakeSqlManager implements IDatabaseClient {
       throw new Error(`Conversation ${conversationId} does not exist`);
     }
     this.messages.push({ conversationId, type, content });
-    conversation.state.updatedAt = new Date();
+    const messageCreatedAt = new Date();
+    conversation.state.updatedAt = messageCreatedAt;
+    const followUpState = conversation.state as ConversationCacheState & {
+      lastUserMessageAt?: Date | null;
+      lastBotMessageAt?: Date | null;
+    };
+    if (type === "user") {
+      followUpState.lastUserMessageAt = messageCreatedAt;
+    } else {
+      followUpState.lastBotMessageAt = messageCreatedAt;
+    }
   }
 
-  async createDbConversation(clientId: number, businessId: number, content: string): Promise<ConversationCacheState> {
+  async createDbConversation(
+    clientId: number,
+    businessId: number,
+    content: string,
+    channel: CommunicationChannel = CommunicationChannel.Whatsapp,
+    provider: MessageProvider = MessageProvider.Twilio
+  ): Promise<ConversationCacheState> {
     this.createdConversations.push({ clientId, businessId, content });
     const state = {
       conversationId: this.nextConversationId++,
       state: ConversationState.start,
-      channel: CommunicationChannel.Whatsapp,
-      provider: MessageProvider.Twilio,
+      channel,
+      provider,
       collectedParams: this.emptyParamsForBusiness(businessId),
       lastMessages: [],
       updatedAt: new Date(),
@@ -417,6 +433,99 @@ export class FakeSqlManager implements IDatabaseClient {
     return this.followUpPolicies.get(businessId) || null;
   }
 
+  async getOpenConversationPolicyCandidates(limit: number): Promise<OpenConversationPolicyCandidate[]> {
+    const take = Math.max(1, Math.min(limit, 100));
+    return [...this.conversations.values()]
+      .map((conversation) => {
+        const policy = this.followUpPolicies.get(conversation.businessId);
+        const business = this.businesses.get(conversation.businessId);
+        const client = this.findClientById(conversation.clientId);
+        const lead = this.findLatestLeadForConversation(conversation.businessId, conversation.clientId);
+        return { conversation, policy, business, client, lead };
+      })
+      .filter((item) =>
+        item.policy?.enabled &&
+        item.business &&
+        item.client &&
+        !["ended", "failure", "schedulingConfirmed", "schedulingFailed"].includes(item.conversation.state.state)
+      )
+      .filter((item) => {
+        const followUpState = item.conversation.state as ConversationCacheState & {
+          lastUserMessageAt?: Date | null;
+          lastBotMessageAt?: Date | null;
+          followUpCount?: number;
+        };
+        return Boolean(followUpState.lastBotMessageAt) &&
+          (!followUpState.lastUserMessageAt || followUpState.lastUserMessageAt < followUpState.lastBotMessageAt!) &&
+          (followUpState.followUpCount || 0) < item.policy!.maxFollowUps;
+      })
+      .filter((item) => ![...this.conversationFollowUps.values()].some((followUp) =>
+        followUp.businessId === item.conversation.businessId &&
+        followUp.conversationId === item.conversation.state.conversationId &&
+        (followUp.status === "PENDING" || followUp.status === "PROCESSING")
+      ))
+      .sort((left, right) => {
+        const leftState = left.conversation.state as ConversationCacheState & { lastBotMessageAt?: Date | null };
+        const rightState = right.conversation.state as ConversationCacheState & { lastBotMessageAt?: Date | null };
+        return (leftState.lastBotMessageAt?.getTime() || 0) - (rightState.lastBotMessageAt?.getTime() || 0) ||
+          left.conversation.state.conversationId - right.conversation.state.conversationId;
+      })
+      .slice(0, take)
+      .map((item) => this.toOpenConversationPolicyCandidate(
+        item.conversation,
+        item.policy!,
+        item.business!,
+        item.client!,
+        item.lead
+      ));
+  }
+
+  async getDuePendingFollowUps(now: Date, limit: number): Promise<DueConversationFollowUpCandidate[]> {
+    const take = Math.max(1, Math.min(limit, 100));
+    return [...this.conversationFollowUps.values()]
+      .filter((followUp) => followUp.status === "PENDING" && followUp.scheduledFor <= now)
+      .map((followUp) => {
+        const conversation = this.conversations.get(followUp.conversationId);
+        const policy = this.followUpPolicies.get(followUp.businessId);
+        const business = this.businesses.get(followUp.businessId);
+        const client = conversation ? this.findClientById(conversation.clientId) : null;
+        const lead = followUp.leadId ? this.leads.get(followUp.leadId) || null : null;
+        return { followUp, conversation, policy, business, client, lead };
+      })
+      .filter((item) =>
+        item.conversation &&
+        item.policy?.enabled &&
+        item.business &&
+        item.client &&
+        !["ended", "failure", "schedulingConfirmed", "schedulingFailed"].includes(item.conversation.state.state)
+      )
+      .filter((item) => {
+        const followUpState = item.conversation!.state as ConversationCacheState & { followUpCount?: number };
+        return (followUpState.followUpCount || 0) < item.policy!.maxFollowUps;
+      })
+      .sort((left, right) => left.followUp.scheduledFor.getTime() - right.followUp.scheduledFor.getTime() || left.followUp.id - right.followUp.id)
+      .slice(0, take)
+      .map((item) => this.toDueConversationFollowUpCandidate(
+        item.followUp,
+        item.conversation!,
+        item.policy!,
+        item.business!,
+        item.client!,
+        item.lead
+      ));
+  }
+
+  async claimPendingFollowUp(followUpId: number): Promise<ConversationFollowUpDto | null> {
+    const followUp = this.conversationFollowUps.get(followUpId);
+    if (!followUp || followUp.status !== "PENDING") {
+      return null;
+    }
+
+    followUp.status = "PROCESSING";
+    followUp.updatedAt = new Date();
+    return this.toConversationFollowUpDto(followUp);
+  }
+
   async upsertBusinessFollowUpPolicy(
     businessId: number,
     request: UpsertBusinessFollowUpPolicyRequestDto
@@ -536,10 +645,10 @@ export class FakeSqlManager implements IDatabaseClient {
     return this.toConversationFollowUpDto(followUp);
   }
 
-  async deleteConversationFollowUpsCreatedBefore(createdBefore: Date): Promise<number> {
+  async deleteConversationFollowUpsCreatedBefore(businessId: number, createdBefore: Date): Promise<number> {
     let deletedCount = 0;
     for (const [followUpId, followUp] of this.conversationFollowUps.entries()) {
-      if (followUp.createdAt < createdBefore) {
+      if (followUp.businessId === businessId && followUp.createdAt < createdBefore) {
         this.conversationFollowUps.delete(followUpId);
         deletedCount++;
       }
@@ -625,6 +734,8 @@ export class FakeSqlManager implements IDatabaseClient {
       businessId,
       clientId,
       status: state.state,
+      channel: state.channel,
+      provider: state.provider || MessageProvider.Twilio,
       createdAt: state.updatedAt.toISOString(),
       lastUserMessageAt: followUpState.lastUserMessageAt?.toISOString() || null,
       lastBotMessageAt: followUpState.lastBotMessageAt?.toISOString() || null,
@@ -648,6 +759,139 @@ export class FakeSqlManager implements IDatabaseClient {
       metadata: followUp.metadata,
       createdAt: followUp.createdAt.toISOString(),
       updatedAt: followUp.updatedAt.toISOString()
+    };
+  }
+
+  private toDueConversationFollowUpCandidate(
+    followUp: SavedConversationFollowUp,
+    conversation: { clientId: number; businessId: number; state: ConversationCacheState },
+    policy: BusinessFollowUpPolicyDto,
+    business: BusinessDto,
+    client: Client,
+    lead?: SavedLead | null
+  ): DueConversationFollowUpCandidate {
+    const followUpState = conversation.state as ConversationCacheState & {
+      lastUserMessageAt?: Date | null;
+      lastBotMessageAt?: Date | null;
+      lastFollowUpAt?: Date | null;
+      followUpCount?: number;
+      nextFollowUpAt?: Date | null;
+    };
+
+    return {
+      followUp: {
+        id: followUp.id,
+        businessId: followUp.businessId,
+        conversationId: followUp.conversationId,
+        leadId: followUp.leadId ?? null,
+        status: "PENDING",
+        scheduledFor: followUp.scheduledFor.toISOString(),
+        messageBody: followUp.messageBody ?? null,
+        metadata: followUp.metadata
+      },
+      policy: {
+        timezone: policy.timezone,
+        delayMinutes: policy.delayMinutes,
+        allowedStartHour: policy.allowedStartHour ?? null,
+        allowedEndHour: policy.allowedEndHour ?? null,
+        maxFollowUps: policy.maxFollowUps,
+        messageTemplate: policy.messageTemplate ?? null
+      },
+      conversation: {
+        id: conversation.state.conversationId,
+        businessId: conversation.businessId,
+        clientId: conversation.clientId,
+        status: conversation.state.state,
+        channel: conversation.state.channel,
+        provider: conversation.state.provider || MessageProvider.Twilio,
+        createdAt: conversation.state.updatedAt.toISOString(),
+        lastUserMessageAt: followUpState.lastUserMessageAt?.toISOString() || null,
+        lastBotMessageAt: followUpState.lastBotMessageAt?.toISOString() || null,
+        lastFollowUpAt: followUpState.lastFollowUpAt?.toISOString() || null,
+        followUpCount: followUpState.followUpCount || 0,
+        nextFollowUpAt: followUpState.nextFollowUpAt?.toISOString() || null
+      },
+      business: {
+        id: followUp.businessId,
+        name: business.name,
+        phone: business.phone,
+        language: business.language || "en"
+      },
+      client: {
+        id: client.id,
+        name: client.name,
+        phone: client.phone
+      },
+      lead: lead
+        ? {
+          id: lead.id,
+          source: lead.source,
+          status: lead.status,
+          name: lead.name,
+          phoneNumber: lead.phoneNumber
+        }
+        : null
+    };
+  }
+
+  private toOpenConversationPolicyCandidate(
+    conversation: { clientId: number; businessId: number; state: ConversationCacheState },
+    policy: BusinessFollowUpPolicyDto,
+    business: BusinessDto,
+    client: Client,
+    lead?: SavedLead | null
+  ): OpenConversationPolicyCandidate {
+    const followUpState = conversation.state as ConversationCacheState & {
+      lastUserMessageAt?: Date | null;
+      lastBotMessageAt?: Date | null;
+      lastFollowUpAt?: Date | null;
+      followUpCount?: number;
+      nextFollowUpAt?: Date | null;
+    };
+
+    return {
+      policy: {
+        timezone: policy.timezone,
+        delayMinutes: policy.delayMinutes,
+        allowedStartHour: policy.allowedStartHour ?? null,
+        allowedEndHour: policy.allowedEndHour ?? null,
+        maxFollowUps: policy.maxFollowUps,
+        messageTemplate: policy.messageTemplate ?? null
+      },
+      conversation: {
+        id: conversation.state.conversationId,
+        businessId: conversation.businessId,
+        clientId: conversation.clientId,
+        status: conversation.state.state,
+        channel: conversation.state.channel,
+        provider: conversation.state.provider || MessageProvider.Twilio,
+        createdAt: conversation.state.updatedAt.toISOString(),
+        lastUserMessageAt: followUpState.lastUserMessageAt?.toISOString() || null,
+        lastBotMessageAt: followUpState.lastBotMessageAt?.toISOString() || null,
+        lastFollowUpAt: followUpState.lastFollowUpAt?.toISOString() || null,
+        followUpCount: followUpState.followUpCount || 0,
+        nextFollowUpAt: followUpState.nextFollowUpAt?.toISOString() || null
+      },
+      business: {
+        id: conversation.businessId,
+        name: business.name,
+        phone: business.phone,
+        language: business.language || "en"
+      },
+      client: {
+        id: client.id,
+        name: client.name,
+        phone: client.phone
+      },
+      lead: lead
+        ? {
+          id: lead.id,
+          source: lead.source,
+          status: lead.status,
+          name: lead.name,
+          phoneNumber: lead.phoneNumber
+        }
+        : null
     };
   }
 
@@ -732,6 +976,16 @@ export class FakeSqlManager implements IDatabaseClient {
 
   private findClientPhone(clientId: number): string {
     return [...this.clientsByPhone.values()].find((client) => client.id === clientId)?.phone || "";
+  }
+
+  private findClientById(clientId: number): Client | null {
+    return [...this.clientsByPhone.values()].find((client) => client.id === clientId) || null;
+  }
+
+  private findLatestLeadForConversation(businessId: number, clientId: number): SavedLead | null {
+    return [...this.leads.values()]
+      .filter((lead) => lead.businessId === businessId && lead.clientId === clientId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id - left.id)[0] || null;
   }
 
   private cloneState(state: ConversationCacheState): ConversationCacheState {

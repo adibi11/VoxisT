@@ -1,6 +1,4 @@
-import { Message } from "../dataClients/Types/apiTypes";
-
-import { ApiActionType } from "../dataClients/Types/apiTypes";
+import { ApiActionType, CommunicationChannel, Message, MessageProvider } from "../dataClients/Types/apiTypes";
 
 import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 
@@ -106,7 +104,13 @@ export class MessageService {
                 role:"user",
                 content: message.data.Body
             });
-            const conversationState = await this.getConversationState(client.id, businessId, message.data.Body);
+            const conversationState = await this.getConversationState(
+                client.id,
+                businessId,
+                message.data.Body,
+                message.channel,
+                message.provider
+            );
             ensureClientNameParam(conversationState.collectedParams);
            
             flowLogger.info("conversation.initialized", {
@@ -267,7 +271,13 @@ export class MessageService {
     //getConversationState retrieves the current conversation state for a given client and business. 
     // If no active conversation exists or if the existing conversation has expired or is closed, 
     // it creates a new conversation and caches it.
-    private async getConversationState(clientId: number, businessId: number, initialContent: string): Promise<ConversationCacheState> {
+    private async getConversationState(
+        clientId: number,
+        businessId: number,
+        initialContent: string,
+        channel: CommunicationChannel,
+        provider?: MessageProvider
+    ): Promise<ConversationCacheState> {
         const now = new Date();
         const activeConversationId = await this.cacheManager.getActiveConversationId(clientId, businessId);
         // If an active conversation ID exists, attempt to retrieve its cached state
@@ -293,7 +303,7 @@ export class MessageService {
                     state: cachedState.state,
                     updatedAt: cachedState.updatedAt
                 });
-                return this.createAndCacheConversation(clientId, businessId, initialContent);
+                return this.createAndCacheConversation(clientId, businessId, initialContent, channel, provider);
             }
         }
 
@@ -329,11 +339,23 @@ export class MessageService {
             this.logger.info("conversation.db.miss.creating", { clientId, businessId });
         }
 
-        return this.createAndCacheConversation(clientId, businessId, initialContent);
+        return this.createAndCacheConversation(clientId, businessId, initialContent, channel, provider);
     }
 
-    private async createAndCacheConversation(clientId: number, businessId: number, initialContent: string): Promise<ConversationCacheState> {
-        const conversationState = await this.sqlInterface.createDbConversation(clientId, businessId, initialContent);
+    private async createAndCacheConversation(
+        clientId: number,
+        businessId: number,
+        initialContent: string,
+        channel: CommunicationChannel,
+        provider?: MessageProvider
+    ): Promise<ConversationCacheState> {
+        const conversationState = await this.sqlInterface.createDbConversation(
+            clientId,
+            businessId,
+            initialContent,
+            channel,
+            provider
+        );
         await this.cacheManager.setCacheStateByConversationId(conversationState.conversationId, conversationState);
         await this.cacheManager.setActiveConversationId(clientId, businessId, conversationState.conversationId);
         this.logger.info("conversation.created", {
@@ -358,3 +380,4 @@ export class MessageService {
         return now.getTime() - updatedAt.getTime() <= CONVERSATION_TIMEOUT_MS;
     }
 }
+

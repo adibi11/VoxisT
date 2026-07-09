@@ -1,5 +1,5 @@
 import { ConversationCacheState, ConversationEntity, BusinessContext } from "../Types/messageTypes";
-import { BusinessDto ,BusinessActionDto} from "../Types/apiTypes";
+import { BusinessDto, BusinessActionDto, CommunicationChannel, MessageProvider } from "../Types/apiTypes";
 import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessagesResponseDto, ConversationSummaryDto, PlatformRoleDto } from "../../contracts";
@@ -20,7 +20,7 @@ export interface IDatabaseClient {
     getLatestConversationCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;
     getConversationEntity(clientId: number, businessId: number): Promise<ConversationEntity>;
     createMessage(conversationId: number,type: "user"| "bot",content: string): Promise<void> ;
-    createDbConversation(clientId: number, businessId: number,content: string): Promise<ConversationCacheState>;
+    createDbConversation(clientId: number, businessId: number,content: string, channel?: CommunicationChannel, provider?: MessageProvider): Promise<ConversationCacheState>;
     createDbBusiness(businessDto: BusinessDto): Promise<void>;
     getOrCreateClientByPhone(phoneNumber:string):Promise<Client>;
     updateClientName(clientId: number, name: string): Promise<void>;
