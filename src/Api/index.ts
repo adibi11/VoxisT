@@ -100,7 +100,7 @@ app.post("/webhook/:id", async (req, res) => {
 
   return res.status(200).json({ message: "Event received successfully"}); });
   
-app.post("/business",async (req, res) => {
+/*app.post("/business",async (req, res) => {
   try {
     const businessDto = req.body as BusinessDto;  
     await sqlManager.createDbBusiness(businessDto);
@@ -110,7 +110,7 @@ app.post("/business",async (req, res) => {
     appLogger.error("business.create.failed", { error });
     return res.status(500).json({ message: "Failed to create business" });
   }});
-    
+    */
 
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" ,
