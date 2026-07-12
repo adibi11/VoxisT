@@ -6,6 +6,59 @@ export type BusinessSummaryDto = {
   email: string;
 };
 
+export type BusinessActionTypeDto =
+  | "BOOK_APPOINTMENT"
+  | "SEND_PAYMENT_LINK"
+  | "SEND_VIDEO"
+  | "HUMAN_HANDOFF"
+  | "SEND_EMAIL"
+  | "NONE";
+
+export type BusinessSettingsParameterDto = {
+  id: number;
+  paramName: string;
+  use: boolean;
+  paramValue?: string | null;
+};
+
+export type BusinessSettingsActionDto = {
+  action: BusinessActionTypeDto;
+  provider?: string | null;
+  config?: unknown;
+};
+
+export type BusinessSettingsDto = {
+  id: number;
+  name: string;
+  phone: string;
+  email: string;
+  starterMessage: string;
+  endMessage: string;
+  escalationMessage: string;
+  language: string;
+  parameters: BusinessSettingsParameterDto[];
+  action?: BusinessSettingsActionDto | null;
+};
+
+export type UpdateBusinessSettingsParameterDto = {
+  id?: number;
+  paramName: string;
+  use?: boolean;
+  paramValue?: string | null;
+};
+
+export type UpdateBusinessSettingsRequestDto = {
+  name: string;
+  phone: string;
+  email: string;
+  starterMessage: string;
+  endMessage: string;
+  escalationMessage: string;
+  language?: string;
+  parameters: UpdateBusinessSettingsParameterDto[];
+  action?: BusinessSettingsActionDto | null;
+};
+
 export type BusinessContextProfileDto = {
   name: string;
   language: string;
@@ -125,6 +178,19 @@ export type CreateManualLeadRequestDto = {
   summary?: string;
   notes?: string;
   followUpAt?: string | null;
+};
+
+export type CreatePublicLeadRequestDto = {
+  name?: string;
+  phoneNumber: string;
+  source?: LeadSourceDto;
+  summary?: string;
+  notes?: string;
+};
+
+export type CreatePublicLeadResponseDto = {
+  message: string;
+  leadId: number;
 };
 
 export type UpdateLeadRequestDto = {

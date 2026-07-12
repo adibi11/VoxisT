@@ -5,7 +5,7 @@ import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
 import { ConversationCacheState, LastMessages as LastMessage } from "../dataClients/Types/messageTypes";
 import {
-    ensureClientNameParam,
+    findClientNameParamKey,
     fillMissingClientNameParam,
     getClientNameParamValue
 } from "../dataClients/Types/clientNameParam";
@@ -111,7 +111,7 @@ export class MessageService {
                 message.channel,
                 message.provider
             );
-            ensureClientNameParam(conversationState.collectedParams);
+            await this.reconcileConversationParamsWithActiveBusinessParams(conversationState, businessId);
            
             flowLogger.info("conversation.initialized", {
                 conversationId: conversationState.conversationId,
@@ -189,7 +189,7 @@ export class MessageService {
 
     async syncCacheToDb(clientId: number, businessId: number, conversationState: ConversationCacheState,messages:LastMessage[]) {
         // Sync cache state to DB
-        if (conversationState.state === "ended") {
+        if (conversationState.state === "ended" && findClientNameParamKey(conversationState.collectedParams)) {
             fillMissingClientNameParam(conversationState.collectedParams);
         }
 
@@ -379,5 +379,24 @@ export class MessageService {
 
         return now.getTime() - updatedAt.getTime() <= CONVERSATION_TIMEOUT_MS;
     }
-}
 
+    private async reconcileConversationParamsWithActiveBusinessParams(
+        conversationState: ConversationCacheState,
+        businessId: number
+    ): Promise<void> {
+        const activeParamNames = await this.sqlInterface.getActiveBusinessParameterNames(businessId);
+        const activeParamNameSet = new Set(activeParamNames);
+
+        for (const paramName of Object.keys(conversationState.collectedParams)) {
+            if (!activeParamNameSet.has(paramName)) {
+                delete conversationState.collectedParams[paramName];
+            }
+        }
+
+        for (const paramName of activeParamNames) {
+            if (!(paramName in conversationState.collectedParams)) {
+                conversationState.collectedParams[paramName] = null;
+            }
+        }
+    }
+}

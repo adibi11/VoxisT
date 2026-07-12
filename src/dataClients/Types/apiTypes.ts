@@ -10,6 +10,7 @@ export enum CommunicationChannel {
 
 export enum MessageProvider {
     Twilio = "twilio",
+    MetaWhatsapp = "meta_whatsapp",
     Internal = "internal"
 }
 
@@ -64,6 +65,7 @@ export type BusinessDto = {
 export type BusinessParamDto = {
     paramName: string;
     paramValue?: string;
+    use?: boolean;
 }
 
 

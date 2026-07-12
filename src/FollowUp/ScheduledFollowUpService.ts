@@ -202,9 +202,10 @@ function buildFollowUpMessage(candidate: DueConversationFollowUpCandidate): stri
     if (configuredMessage?.trim()) {
         return configuredMessage.trim();
     }
-
+    //Need to create more logic here
     return "Hi, just following up on our conversation. Would you like to continue?";
 }
+
 
 function toCommunicationChannel(channel: string): CommunicationChannel {
     if (Object.values(CommunicationChannel).includes(channel as CommunicationChannel)) {

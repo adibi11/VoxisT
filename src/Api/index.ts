@@ -41,7 +41,7 @@ const corsMiddleware = cors({
     callback(new Error(`CORS origin denied: ${origin}`));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-lead-capture-key"],
   credentials: false,
   optionsSuccessStatus: 204
 });

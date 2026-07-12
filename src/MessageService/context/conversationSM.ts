@@ -131,7 +131,7 @@ export  class ConversationStateMachine
 
         for(const [key, value] of Object.entries(params))
         {
-            if(value !== null && value !== undefined && value !== "")
+            if(key in cache.collectedParams && value !== null && value !== undefined && value !== "")
             {
                 cache.collectedParams[key] = value;
             }

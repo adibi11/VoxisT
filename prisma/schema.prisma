@@ -118,6 +118,7 @@ model BusinessParameter {
   paramName  String
   businessId Int
   business   Business          @relation(fields: [businessId], references: [id])
+  use        Boolean          @default(true)
   answers    ParameterAnswer[]
 
   @@unique([businessId, paramName])

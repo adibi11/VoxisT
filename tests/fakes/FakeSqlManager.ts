@@ -1,6 +1,7 @@
 import { IDatabaseClient } from "../../src/dataClients/SqlClient/sqlInterface";
 import {
   AuthUserDto,
+  BusinessSettingsDto,
   BusinessSummaryDto,
   ClientSummaryDto,
   ConversationMessagesResponseDto,
@@ -18,11 +19,11 @@ import {
   LeadStatusDto,
   LeadSummaryDto,
   PlatformRoleDto,
+  UpdateBusinessSettingsRequestDto,
   UpdateLeadRequestDto,
   UpsertBusinessFollowUpPolicyRequestDto
 } from "../../src/contracts";
 import { BusinessActionDto, BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
-import { ensureClientNameParam } from "../../src/dataClients/Types/clientNameParam";
 import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { ILeadRepository } from "../../src/dataClients/SqlClient/Repositories/LeadRepo/ILeadRepository";
@@ -61,6 +62,13 @@ type SavedLead = {
   closedAt?: Date | null;
 };
 
+type SavedBusinessParameter = {
+  id: number;
+  businessId: number;
+  paramName: string;
+  use: boolean;
+};
+
 type SavedConversationFollowUp = {
   id: number;
   businessId: number;
@@ -83,6 +91,7 @@ export class FakeSqlManager implements IDatabaseClient {
   public clientsByPhone = new Map<string, Client>();
   public conversations = new Map<number, { clientId: number; businessId: number; state: ConversationCacheState }>();
   public businesses = new Map<number, BusinessDto>();
+  public businessParameters = new Map<number, SavedBusinessParameter>();
   public businessContexts = new Map<number, BusinessContext>();
   public businessActions = new Map<number, BusinessActionDto>();
   public messages: SavedMessage[] = [];
@@ -94,6 +103,7 @@ export class FakeSqlManager implements IDatabaseClient {
 
   private nextClientId = 1;
   private nextConversationId = 1;
+  private nextBusinessParameterId = 1;
   private nextLeadId = 1;
   private nextConversationFollowUpId = 1;
 
@@ -162,6 +172,7 @@ export class FakeSqlManager implements IDatabaseClient {
   async createDbBusiness(businessDto: BusinessDto): Promise<void> {
     const businessId = this.businesses.size + 1;
     this.businesses.set(businessId, businessDto);
+    this.seedBusinessParameters(businessId, businessDto.parameters);
   }
 
   async registerBusinessOwner(
@@ -173,6 +184,7 @@ export class FakeSqlManager implements IDatabaseClient {
   ): Promise<AuthUserDto> {
     const businessId = this.businesses.size + 1;
     this.businesses.set(businessId, businessDto);
+    this.seedBusinessParameters(businessId, businessDto.parameters);
     return {
       id: this.nextClientId++,
       email,
@@ -210,11 +222,112 @@ export class FakeSqlManager implements IDatabaseClient {
 
   async upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto> {
     this.businesses.set(businessId, businessDto);
+    this.seedBusinessParameters(businessId, businessDto.parameters);
     return businessDto;
+  }
+
+  async getBusinessSettings(businessId: number): Promise<BusinessSettingsDto | null> {
+    const business = this.businesses.get(businessId);
+    if (!business) {
+      return null;
+    }
+
+    return {
+      id: businessId,
+      name: business.name,
+      phone: business.phone,
+      email: business.email,
+      starterMessage: business.starterMessage,
+      endMessage: business.endMessage,
+      escalationMessage: business.escalationMessage,
+      language: business.language || "en",
+      parameters: [...this.businessParameters.values()]
+        .filter((param) => param.businessId === businessId)
+        .sort((left, right) => left.id - right.id)
+        .map((param) => ({
+          id: param.id,
+          paramName: param.paramName,
+          use: param.use,
+          paramValue: null
+        })),
+      action: this.businessActions.get(businessId)
+        ? {
+            action: this.businessActions.get(businessId)!.action,
+            provider: this.businessActions.get(businessId)!.provider ?? null,
+            config: this.businessActions.get(businessId)!.config
+          }
+        : null
+    };
+  }
+
+  async updateBusinessSettings(businessId: number, request: UpdateBusinessSettingsRequestDto): Promise<BusinessSettingsDto> {
+    const existingBusiness = this.businesses.get(businessId);
+    if (!existingBusiness) {
+      throw new Error(`Business ${businessId} not found`);
+    }
+
+    const parameters = request.parameters.map((parameter) => ({
+      id: parameter.id,
+      paramName: parameter.paramName.trim(),
+      use: parameter.use ?? true
+    }));
+    for (const parameter of parameters) {
+      if (parameter.id !== undefined) {
+        const existingParameter = this.businessParameters.get(parameter.id);
+        if (!existingParameter || existingParameter.businessId !== businessId) {
+          throw new Error(`Business parameter ${parameter.id} does not belong to business ${businessId}`);
+        }
+        existingParameter.paramName = parameter.paramName;
+        existingParameter.use = parameter.use;
+      } else {
+        const id = this.nextBusinessParameterId++;
+        this.businessParameters.set(id, {
+          id,
+          businessId,
+          paramName: parameter.paramName,
+          use: parameter.use
+        });
+      }
+    }
+
+    this.businesses.set(businessId, {
+      ...existingBusiness,
+      name: request.name,
+      phone: request.phone,
+      email: request.email,
+      starterMessage: request.starterMessage,
+      endMessage: request.endMessage,
+      escalationMessage: request.escalationMessage,
+      language: request.language || "en",
+      parameters: parameters.map((param) => ({
+        paramName: param.paramName,
+        use: param.use
+      }))
+    });
+
+    if (request.action) {
+      this.businessActions.set(businessId, {
+        businessId,
+        action: request.action.action as BusinessActionDto["action"],
+        provider: request.action.provider || undefined,
+        config: request.action.config
+      });
+    } else {
+      this.businessActions.delete(businessId);
+    }
+
+    return this.getBusinessSettings(businessId) as Promise<BusinessSettingsDto>;
   }
 
   async upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void> {
     this.businessActions.set(businessId, { ...actionDto, businessId });
+  }
+
+  async getActiveBusinessParameterNames(businessId: number): Promise<string[]> {
+    return [...this.businessParameters.values()]
+      .filter((parameter) => parameter.businessId === businessId && parameter.use)
+      .sort((left, right) => left.id - right.id)
+      .map((parameter) => parameter.paramName);
   }
 
   async getOrCreateClientByPhone(phoneNumber: string): Promise<Client> {
@@ -659,6 +772,7 @@ export class FakeSqlManager implements IDatabaseClient {
 
   seedBusiness(businessId: number, business: BusinessDto): void {
     this.businesses.set(businessId, business);
+    this.seedBusinessParameters(businessId, business.parameters);
   }
 
   seedConversation(clientId: number, businessId: number, state: ConversationCacheState): void {
@@ -668,6 +782,24 @@ export class FakeSqlManager implements IDatabaseClient {
 
   private hasConversation(conversationId: number): boolean {
     return this.conversations.has(conversationId);
+  }
+
+  private seedBusinessParameters(businessId: number, parameters: Array<{ paramName: string; use?: boolean }>): void {
+    for (const [parameterId, parameter] of this.businessParameters.entries()) {
+      if (parameter.businessId === businessId) {
+        this.businessParameters.delete(parameterId);
+      }
+    }
+
+    for (const parameter of parameters) {
+      const id = this.nextBusinessParameterId++;
+      this.businessParameters.set(id, {
+        id,
+        businessId,
+        paramName: parameter.paramName,
+        use: parameter.use ?? true
+      });
+    }
   }
 
   private toConversationSummary(
@@ -961,16 +1093,17 @@ export class FakeSqlManager implements IDatabaseClient {
   }
 
   private emptyParamsForBusiness(businessId: number): Record<string, string | number | null> {
-    const business = this.businesses.get(businessId);
-    if (!business) {
+    if (!this.businesses.has(businessId)) {
       return {};
     }
 
-    const params = business.parameters.reduce<Record<string, string | number | null>>((params, param) => {
-      params[param.paramName] = param.paramValue || null;
+    const params = [...this.businessParameters.values()]
+      .filter((parameter) => parameter.businessId === businessId && parameter.use)
+      .sort((left, right) => left.id - right.id)
+      .reduce<Record<string, string | number | null>>((params, param) => {
+      params[param.paramName] = null;
       return params;
     }, {});
-    ensureClientNameParam(params);
     return params;
   }
 

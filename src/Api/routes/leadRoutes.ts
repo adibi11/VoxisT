@@ -1,6 +1,8 @@
 import express from "express";
 import {
   CreateManualLeadRequestDto,
+  CreatePublicLeadRequestDto,
+  CreatePublicLeadResponseDto,
   LeadSourceDto,
   LeadStatusDto,
   UpdateLeadRequestDto
@@ -29,7 +31,99 @@ const LEAD_SOURCES = new Set<LeadSourceDto>([
   "OTHER"
 ]);
 
+type BookDemoLeadRequestDto = {
+  name: string;
+  email: string;
+  phone: string;
+};
+
 export function getLeadRoutes(app: express.Application, sql: IDatabaseClient, logger: ILogger) {
+  app.post("/public/leads", async (req, res) => {
+    try {
+      if (!hasValidPublicLeadCaptureKey(req)) {
+        logger.warn("publicLead.create.unauthorized");
+        return res.status(401).json({ message: "Invalid lead capture key" });
+      }
+
+      const businessId = getDefaultBusinessId();
+      const request = req.body as Partial<CreatePublicLeadRequestDto>;
+      if (!isValidCreatePublicLeadRequest(request)) {
+        return res.status(400).json({ message: "Invalid lead request" });
+      }
+
+      const lead = await sql.leadRepository.createManualLead(businessId, {
+        name: request.name,
+        phoneNumber: request.phoneNumber,
+        status: "NEW",
+        source: request.source || "WEBSITE",
+        summary: request.summary,
+        notes: request.notes
+      });
+
+      logger.info("publicLead.create.succeeded", {
+        businessId,
+        leadId: lead.id,
+        source: lead.source
+      });
+
+      const response: CreatePublicLeadResponseDto = {
+        message: "Lead received successfully",
+        leadId: lead.id
+      };
+
+      return res.status(201).json(response);
+    } catch (error) {
+      logger.error("publicLead.create.failed", { error });
+      return res.status(500).json({ message: "Failed to create lead" });
+    }
+  });
+
+  app.post("/book-demo/leads", async (req, res) => {
+    try {
+      const businessId = getBookDemoBusinessId();
+      if (businessId === null) {
+        logger.error("bookDemoLead.create.missingBusinessId", {
+          envVar: "BOOK_DEMO_BUSINESS_ID"
+        });
+        return res.status(500).json({ message: "Book demo business is not configured" });
+      }
+
+      const request = req.body as Partial<BookDemoLeadRequestDto>;
+      if (!isValidBookDemoLeadRequest(request)) {
+        return res.status(400).json({ message: "Invalid book demo lead request" });
+      }
+
+      const name = request.name.trim();
+      const email = request.email.trim();
+      const phone = request.phone.trim();
+      const notes = [
+        "Book demo request",
+        `Name: ${name}`,
+        `Email: ${email}`,
+        `Phone: ${phone}`
+      ].join("\n");
+
+      const lead = await sql.leadRepository.createManualLead(businessId, {
+        name,
+        phoneNumber: phone,
+        status: "NEW",
+        source: "WEBSITE",
+        summary: `Book demo request from ${name}. Email: ${email}.`,
+        notes
+      });
+
+      logger.info("bookDemoLead.create.succeeded", {
+        businessId,
+        leadId: lead.id
+      });
+
+      return res.status(201).json(lead);
+    } catch (error) {
+      logger.error("bookDemoLead.create.failed", { error });
+      return res.status(500).json({ message: "Failed to create book demo lead" });
+    }
+  });
+
   app.get("/businesses/:businessId/leads", requireAuth, async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
@@ -203,6 +297,69 @@ function isValidCreateManualLeadRequest(request: Partial<CreateManualLeadRequest
     isValidOptionalNumber(request.score);
 }
 
+function isValidCreatePublicLeadRequest(request: Partial<CreatePublicLeadRequestDto> | undefined): request is CreatePublicLeadRequestDto {
+  if (!request || typeof request !== "object") {
+    return false;
+  }
+
+  return hasText(request.phoneNumber) &&
+    isValidLeadSource(request.source) &&
+    isValidOptionalText(request.name) &&
+    isValidOptionalText(request.summary) &&
+    isValidOptionalText(request.notes);
+}
+
+function isValidBookDemoLeadRequest(request: Partial<BookDemoLeadRequestDto> | undefined): request is BookDemoLeadRequestDto {
+  if (!request || typeof request !== "object") {
+    return false;
+  }
+
+  return hasText(request.name) &&
+    hasText(request.phone) &&
+    typeof request.email === "string" &&
+    hasText(request.email) &&
+    request.email.includes("@");
+}
+
+function getBookDemoBusinessId(): number | null {
+  const configuredBusinessId = Number(process.env.BOOK_DEMO_BUSINESS_ID);
+
+  if (!Number.isInteger(configuredBusinessId) || configuredBusinessId <= 0) {
+    return null;
+  }
+
+  return configuredBusinessId;
+}
+
+function getDefaultBusinessId(): number {
+  const configuredBusinessId = Number(process.env.DEFAULT_BUSINESS_ID || 1);
+
+  if (!Number.isInteger(configuredBusinessId) || configuredBusinessId <= 0) {
+    throw new Error("DEFAULT_BUSINESS_ID must be a positive number");
+  }
+
+  return configuredBusinessId;
+}
+
+function hasValidPublicLeadCaptureKey(req: express.Request): boolean {
+  const configuredKey = process.env.PUBLIC_LEAD_CAPTURE_KEY?.trim();
+  if (!configuredKey) {
+    return true;
+  }
+
+  const providedKey = getHeaderValue(req, "x-lead-capture-key") || req.query.key;
+  return typeof providedKey === "string" && providedKey === configuredKey;
+}
+
+function getHeaderValue(req: express.Request, name: string): string | null {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) {
+    return value[0] || null;
+  }
+
+  return typeof value === "string" ? value : null;
+}
+
 function isValidUpdateLeadRequest(request: Partial<UpdateLeadRequestDto> | undefined): request is UpdateLeadRequestDto {
   if (!request || typeof request !== "object" || Object.keys(request).length === 0) {
     return false;
@@ -223,6 +380,10 @@ function isValidLeadSource(source?: LeadSourceDto): boolean {
 
 function isValidOptionalNumber(value?: number | null): boolean {
   return value === undefined || value === null || Number.isFinite(value);
+}
+
+function isValidOptionalText(value?: string | null): boolean {
+  return value === undefined || value === null || typeof value === "string";
 }
 
 function hasText(value?: string | null): boolean {

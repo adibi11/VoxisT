@@ -19,11 +19,16 @@ import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
     AuthUserDto,
+    BusinessActionTypeDto,
+    BusinessSettingsActionDto,
+    BusinessSettingsDto,
     BusinessSummaryDto,
     ClientSummaryDto,
     ConversationMessagesResponseDto,
     ConversationSummaryDto,
     PlatformRoleDto,
+    UpdateBusinessSettingsParameterDto,
+    UpdateBusinessSettingsRequestDto,
 } from "../../contracts";
 
 
@@ -184,7 +189,8 @@ export class SqlManager implements IDatabaseClient {
     async getBusinessParams(businessId: number, clientId: number, conversationId: number | undefined): Promise<BusinessParam[]> {
         const businessParams = await this.prisma.businessParameter.findMany({
             where: {
-                businessId: businessId
+                businessId: businessId,
+                use: true
             }
         });
         const client = await this.prisma.client.findUnique({
@@ -217,14 +223,6 @@ export class SqlManager implements IDatabaseClient {
         const nameParam = paramList.find((param) => isClientNameParam(param.paramName));
         if (nameParam && !nameParam.paramValue && savedClientName) {
             nameParam.paramValue = savedClientName;
-        }
-
-        if (!nameParam) {
-            paramList.push({
-                paramName: CLIENT_NAME_PARAM,
-                paramValue: savedClientName,
-                businessId
-            });
         }
 
         return paramList;
@@ -305,7 +303,8 @@ export class SqlManager implements IDatabaseClient {
         });
         const businessParamsData = businessDto.parameters.map(param => ({
             paramName: param.paramName,
-            businessId: business.id
+            businessId: business.id,
+            use: param.use ?? true
         }));
         await this.prisma.businessParameter.createMany({
             data: businessParamsData
@@ -428,7 +427,8 @@ export class SqlManager implements IDatabaseClient {
                     parameters: {
                         createMany: {
                             data: businessDto.parameters.map((param) => ({
-                                paramName: param.paramName
+                                paramName: param.paramName,
+                                use: param.use ?? true
                             }))
                         }
                     }
@@ -569,6 +569,156 @@ export class SqlManager implements IDatabaseClient {
             phone: business.businessPhone,
             email: business.businessEmail
         }));
+    }
+
+    async getBusinessSettings(businessId: number): Promise<BusinessSettingsDto | null> {
+        const business = await this.prisma.business.findUnique({
+            where: {
+                id: businessId
+            },
+            include: {
+                parameters: {
+                    orderBy: {
+                        id: "asc"
+                    }
+                },
+                BusinessAction: true
+            }
+        });
+
+        return business ? mapBusinessSettings(business) : null;
+    }
+
+    async updateBusinessSettings(businessId: number, request: UpdateBusinessSettingsRequestDto): Promise<BusinessSettingsDto> {
+        const business = await this.prisma.$transaction(async (tx) => {
+            const existingBusiness = await tx.business.findUnique({
+                where: {
+                    id: businessId
+                },
+                include: {
+                    parameters: true
+                }
+            });
+
+            if (!existingBusiness) {
+                throw new Error(`Business ${businessId} not found`);
+            }
+
+            const normalizedParameters = normalizeBusinessSettingsParameters(request.parameters);
+            const submittedParameterIds = new Set(
+                normalizedParameters
+                    .map((param) => param.id)
+                    .filter((id): id is number => id !== undefined)
+            );
+            const existingParameterIds = new Set(existingBusiness.parameters.map((param) => param.id));
+            const invalidParameterId = [...submittedParameterIds].find((id) => !existingParameterIds.has(id));
+            if (invalidParameterId !== undefined) {
+                throw new Error(`Business parameter ${invalidParameterId} does not belong to business ${businessId}`);
+            }
+
+            await tx.business.update({
+                where: {
+                    id: businessId
+                },
+                data: {
+                    businessName: request.name,
+                    businessPhone: request.phone,
+                    businessEmail: request.email,
+                    starterMessage: request.starterMessage,
+                    enderMessage: request.endMessage,
+                    escalationMessage: request.escalationMessage,
+                    language: request.language || "en"
+                }
+            });
+
+            for (const parameter of normalizedParameters) {
+                if (parameter.id !== undefined) {
+                    await tx.businessParameter.update({
+                        where: {
+                            id: parameter.id
+                        },
+                        data: {
+                            paramName: parameter.paramName,
+                            use: parameter.use
+                        }
+                    });
+                    continue;
+                }
+
+                await tx.businessParameter.upsert({
+                    where: {
+                        businessId_paramName: {
+                            businessId,
+                            paramName: parameter.paramName
+                        }
+                    },
+                    create: {
+                        businessId,
+                        paramName: parameter.paramName,
+                        use: parameter.use
+                    },
+                    update: {
+                        paramName: parameter.paramName,
+                        use: parameter.use
+                    }
+                });
+            }
+
+            if (request.action) {
+                await tx.businessAction.upsert({
+                    where: {
+                        businessId
+                    },
+                    create: {
+                        businessId,
+                        action: request.action.action,
+                        provider: normalizeNullableString(request.action.provider),
+                        config: request.action.config === undefined ? undefined : toPrismaJson(request.action.config)
+                    },
+                    update: {
+                        action: request.action.action,
+                        provider: normalizeNullableString(request.action.provider),
+                        config: request.action.config === undefined ? undefined : toPrismaJson(request.action.config)
+                    }
+                });
+            } else {
+                await tx.businessAction.deleteMany({
+                    where: {
+                        businessId
+                    }
+                });
+            }
+
+            return tx.business.findUniqueOrThrow({
+                where: {
+                    id: businessId
+                },
+                include: {
+                    parameters: {
+                        orderBy: {
+                            id: "asc"
+                        }
+                    },
+                    BusinessAction: true
+                }
+            });
+        });
+
+        return mapBusinessSettings(business);
+    }
+
+    async getActiveBusinessParameterNames(businessId: number): Promise<string[]> {
+        const parameters = await this.prisma.businessParameter.findMany({
+            where: {
+                businessId,
+                use: true
+            },
+            orderBy: {
+                id: "asc"
+            }
+        });
+
+        return parameters.map((parameter) => parameter.paramName);
     }
 
     async getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]> {
@@ -869,6 +1019,90 @@ function mapConversationStatusToState(status: string): ConversationState {
 
 function mapConversationStateToStatus(state: ConversationState): any {
     return state;
+}
+
+function mapBusinessSettings(business: {
+    id: number;
+    businessName: string;
+    businessPhone: string;
+    businessEmail: string;
+    starterMessage: string;
+    enderMessage: string;
+    escalationMessage: string;
+    language: string;
+    parameters: Array<{
+        id: number;
+        paramName: string;
+        use: boolean;
+    }>;
+    BusinessAction?: {
+        action: string;
+        provider: string | null;
+        config: Prisma.JsonValue | null;
+    } | null;
+}): BusinessSettingsDto {
+    return {
+        id: business.id,
+        name: business.businessName,
+        phone: business.businessPhone,
+        email: business.businessEmail,
+        starterMessage: business.starterMessage,
+        endMessage: business.enderMessage,
+        escalationMessage: business.escalationMessage,
+        language: business.language,
+        parameters: business.parameters.map((param) => ({
+            id: param.id,
+            paramName: param.paramName,
+            use: param.use,
+            paramValue: null
+        })),
+        action: business.BusinessAction
+            ? mapBusinessSettingsAction(business.BusinessAction)
+            : null
+    };
+}
+
+function mapBusinessSettingsAction(action: {
+    action: string;
+    provider: string | null;
+    config: Prisma.JsonValue | null;
+}): BusinessSettingsActionDto {
+    return {
+        action: action.action as BusinessActionTypeDto,
+        provider: action.provider,
+        config: action.config
+    };
+}
+
+function normalizeBusinessSettingsParameters(parameters: UpdateBusinessSettingsParameterDto[]): Array<{
+    id?: number;
+    paramName: string;
+    use: boolean;
+}> {
+    const seenParamNames = new Set<string>();
+    return parameters.map((parameter) => {
+        const paramName = parameter.paramName?.trim();
+        if (!paramName) {
+            throw new Error("Business parameter name is required");
+        }
+
+        const normalizedKey = paramName.toLowerCase();
+        if (seenParamNames.has(normalizedKey)) {
+            throw new Error(`Duplicate business parameter name: ${paramName}`);
+        }
+        seenParamNames.add(normalizedKey);
+
+        return {
+            id: parameter.id,
+            paramName,
+            use: parameter.use ?? true
+        };
+    });
+}
+
+function normalizeNullableString(value?: string | null): string | null {
+    const normalizedValue = value?.trim();
+    return normalizedValue ? normalizedValue : null;
 }
 
 function mapCommunicationChannel(channel: string): CommunicationChannel {

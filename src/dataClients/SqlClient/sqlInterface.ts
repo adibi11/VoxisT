@@ -2,7 +2,16 @@ import { ConversationCacheState, ConversationEntity, BusinessContext } from "../
 import { BusinessDto, BusinessActionDto, CommunicationChannel, MessageProvider } from "../Types/apiTypes";
 import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
-import { AuthUserDto, BusinessSummaryDto, ClientSummaryDto, ConversationMessagesResponseDto, ConversationSummaryDto, PlatformRoleDto } from "../../contracts";
+import {
+    AuthUserDto,
+    BusinessSettingsDto,
+    BusinessSummaryDto,
+    ClientSummaryDto,
+    ConversationMessagesResponseDto,
+    ConversationSummaryDto,
+    PlatformRoleDto,
+    UpdateBusinessSettingsRequestDto
+} from "../../contracts";
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
 
@@ -35,6 +44,9 @@ export interface IDatabaseClient {
     updateUserPassword(userId: number, passwordHash: string): Promise<AuthUserDto | null>;
     getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]>;
     getAllBusinesses(): Promise<BusinessSummaryDto[]>;
+    getBusinessSettings(businessId: number): Promise<BusinessSettingsDto | null>;
+    updateBusinessSettings(businessId: number, request: UpdateBusinessSettingsRequestDto): Promise<BusinessSettingsDto>;
+    getActiveBusinessParameterNames(businessId: number): Promise<string[]>;
     upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto>;
     upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void>;
     getBusinessAction(businessId: number): Promise<BusinessActionDto>;
