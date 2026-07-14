@@ -62,6 +62,7 @@ model Business {
   context           BusinessContext?
   BusinessAction    BusinessAction?
   leads             Lead[]
+  channels          BusinessChannel[]
 }
 
 model BusinessContext {
@@ -147,6 +148,29 @@ model BusinessAction {
   business   Business   @relation(fields: [businessId], references: [id])
 
   @@unique([businessId])
+}
+
+model BusinessChannel {
+  id                    Int      @id @default(autoincrement())
+  businessId            Int
+  channel               String
+  provider              String
+  displayName           String?
+  status                String   @default("pending")
+  onboardingType        String   @default("manual")
+  credentialsEncrypted  String?
+  config                Json?
+  externalAccountId     String?
+  externalPhoneNumberId String?
+  webhookUrl            String?
+  isDefault             Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  business              Business @relation(fields: [businessId], references: [id])
+
+  @@unique([businessId, channel, provider])
+  @@index([businessId])
+  @@index([businessId, status])
 }
 
 model BusinessFollowUpPolicy {

@@ -115,6 +115,32 @@ Examples:
 `;
 }
 
+export function buildFollowUpPrompt(input: StateMachineInput): string {
+    return `
+Analyze the latest user message for a business chat.
+
+STATE: ${input.currentState}
+PARAMS: ${JSON.stringify(input.collectedParams)}
+LANGUAGE: ${input.businessContext?.businessProfile.language || "en"}
+
+LAST MESSAGES:
+${input.lastMessages.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n")}
+
+USER: "${input.messageContent}"
+
+Return JSON only:
+{
+  "event": "startConversation|updateParams|clientConcern|tryEnding|ended|failure",
+    "mode": "neutral|leadin|validating|reflecting|pacing|clarifying",
+    "intent": "welcome|askForParam|acknowledgeConcern|clarify|close|end|escalate|ignore|followUp",
+    "params": {},
+    "summary": "max 12 words"
+    "followUpMessage": "short customer-facing follow-up message, max 2 sentences"
+}
+
+- Collecting parameters should happen only when it feels natural for the response. Represent that with intent "followUp";`
+}
+
 export function parseEventResponse(text: string, loggerInstance: ILogger = logger.child({ component: "PromptHandler" })): StateMachineOutput {
     try {
         const json = JSON.parse(cleanJson(text));

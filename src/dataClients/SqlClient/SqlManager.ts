@@ -15,11 +15,14 @@ import { LeadRepository } from "./Repositories/LeadRepo/LeadRepository";
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { FollowUpRepository } from "./Repositories/FollowUpRepo/FollowUpRepository";
 import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
+import { BusinessChannelRepository } from "./Repositories/BusinessChannelRepo/BusinessChannelRepository";
+import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/IBusinessChannelRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
     AuthUserDto,
     BusinessActionTypeDto,
+    BusinessResponseMetricsDto,
     BusinessSettingsActionDto,
     BusinessSettingsDto,
     BusinessSummaryDto,
@@ -33,18 +36,23 @@ import {
 
 
 export const prisma = new PrismaClient();
+const AUTO_LEAD_SCORE_THRESHOLD = 65;
+const LEAD_PARAM_SCORE_WEIGHT = 0.75;
+const LEAD_RESPONSE_TIME_SCORE_WEIGHT = 0.25;
 
 export class SqlManager implements IDatabaseClient {
     private prisma: PrismaClient;
     private logger: ILogger;
     readonly leadRepository: ILeadRepository;
     readonly followUpRepository: IFollowUpRepository;
+    readonly businessChannelRepository: IBusinessChannelRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
         this.logger = loggerInstance;
         this.leadRepository = new LeadRepository(this.prisma);
         this.followUpRepository = new FollowUpRepository(this.prisma);
+        this.businessChannelRepository = new BusinessChannelRepository(this.prisma);
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {
@@ -410,6 +418,181 @@ export class SqlManager implements IDatabaseClient {
             }
             });
         }
+    }
+
+    async getBusinessResponseMetrics(
+        businessId: number,
+        from: Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        to: Date = new Date()
+    ): Promise<BusinessResponseMetricsDto> {
+        const conversations = await this.prisma.conversation.findMany({
+            where: {
+                businessId,
+                createdAt: {
+                    gte: from,
+                    lte: to
+                }
+            },
+            include: {
+                messages: {
+                    orderBy: [
+                        { messageIndex: "asc" },
+                        { id: "asc" }
+                    ]
+                }
+            }
+        });
+        const responseTimes = collectResponseTimes(conversations, "user", "bot");
+        const averageResponseTimeMs = average(responseTimes);
+
+        return {
+            businessId,
+            from: from.toISOString(),
+            to: to.toISOString(),
+            averageResponseTimeMs,
+            averageResponseTimeSeconds: averageResponseTimeMs === null ? null : Math.round(averageResponseTimeMs / 1000),
+            responsePairCount: responseTimes.length,
+            conversationCount: conversations.length
+        };
+    }
+
+    async scoreAndCreateLeadForConversation(
+        clientId: number,
+        businessId: number,
+        conversationId: number
+    ): Promise<void> {
+        const score = await this.calculateLeadScore(clientId, businessId, conversationId);
+        const existingLead = await this.prisma.lead.findFirst({
+            where: {
+                businessId,
+                clientId,
+                status: {
+                    notIn: ["WON", "LOST", "CLOSED"] as any
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+
+        if (existingLead) {
+            await this.prisma.lead.update({
+                where: {
+                    id: existingLead.id
+                },
+                data: {
+                    score,
+                    status: score >= AUTO_LEAD_SCORE_THRESHOLD ? "QUALIFIED" as any : existingLead.status
+                }
+            });
+            return;
+        }
+
+        if (score < AUTO_LEAD_SCORE_THRESHOLD) {
+            return;
+        }
+
+        const client = await this.prisma.client.findUnique({
+            where: {
+                id: clientId
+            }
+        });
+
+        await this.prisma.lead.create({
+            data: {
+                businessId,
+                clientId,
+                status: "QUALIFIED" as any,
+                source: "WHATSAPP" as any,
+                score,
+                name: client?.name || undefined,
+                phoneNumber: client?.phoneNumber,
+                summary: `Auto-qualified from conversation ${conversationId} with score ${score}.`
+            }
+        });
+    }
+
+    private async calculateLeadScore(clientId: number, businessId: number, conversationId: number): Promise<number> {
+        const activeParameters = await this.prisma.businessParameter.findMany({
+            where: {
+                businessId,
+                use: true
+            }
+        });
+        if (activeParameters.length === 0) {
+            return 0;
+        }
+
+        const answers = await this.prisma.parameterAnswer.findMany({
+            where: {
+                clientId,
+                conversationId,
+                paramId: {
+                    in: activeParameters.map((parameter) => parameter.id)
+                }
+            },
+            distinct: ["paramId"]
+        });
+        const parameterCompletionScore = answers.length / activeParameters.length;
+        const responseTimeScore = await this.calculateConversationResponseTimeScore(businessId, conversationId);
+        return Math.max(0, Math.min(100, Math.round(100 * (
+            parameterCompletionScore * LEAD_PARAM_SCORE_WEIGHT +
+            responseTimeScore * LEAD_RESPONSE_TIME_SCORE_WEIGHT
+        ))));
+    }
+
+    private async calculateConversationResponseTimeScore(businessId: number, conversationId: number): Promise<number> {
+        const conversation = await this.prisma.conversation.findUnique({
+            where: {
+                id: conversationId
+            },
+            include: {
+                messages: {
+                    orderBy: [
+                        { messageIndex: "asc" },
+                        { id: "asc" }
+                    ]
+                }
+            }
+        });
+        if (!conversation) {
+            return 1;
+        }
+
+        const conversationResponseTimes = collectResponseTimes([conversation], "bot", "user");
+        const conversationAverage = average(conversationResponseTimes);
+        if (conversationAverage === null) {
+            return 1;
+        }
+
+        const businessAverage = await this.getBusinessClientResponseAverageMs(businessId);
+        if (businessAverage === null || businessAverage <= 0) {
+            return 1;
+        }
+
+        return Math.max(0, Math.min(1, businessAverage / conversationAverage));
+    }
+
+    private async getBusinessClientResponseAverageMs(businessId: number): Promise<number | null> {
+        const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const conversations = await this.prisma.conversation.findMany({
+            where: {
+                businessId,
+                createdAt: {
+                    gte: from
+                }
+            },
+            include: {
+                messages: {
+                    orderBy: [
+                        { messageIndex: "asc" },
+                        { id: "asc" }
+                    ]
+                }
+            }
+        });
+
+        return average(collectResponseTimes(conversations, "bot", "user"));
     }
     // Register a new business owner and create the associated business in a single transaction
     async registerBusinessOwner(email: string, passwordHash: string, displayName: string | undefined, businessDto: BusinessDto, platformRole: PlatformRoleDto = "user"): Promise<AuthUserDto> {
@@ -1123,6 +1306,43 @@ function mapMessageProvider(provider: string | null | undefined): MessageProvide
 
 function getConversationActivityTime(conversation: { createdAt: Date; messages: { createdAt: Date }[] }): Date {
     return conversation.messages[0]?.createdAt || conversation.createdAt;
+}
+
+function collectResponseTimes(
+    conversations: Array<{ messages: Array<{ type: string; createdAt: Date }> }>,
+    fromType: "user" | "bot",
+    toType: "user" | "bot"
+): number[] {
+    const responseTimes: number[] = [];
+    for (const conversation of conversations) {
+        const messages = conversation.messages;
+        for (let index = 0; index < messages.length; index += 1) {
+            const message = messages[index];
+            if (message.type !== fromType) {
+                continue;
+            }
+
+            const response = messages.slice(index + 1).find((candidate) => candidate.type === toType);
+            if (!response) {
+                continue;
+            }
+
+            const diffMs = response.createdAt.getTime() - message.createdAt.getTime();
+            if (diffMs >= 0) {
+                responseTimes.push(diffMs);
+            }
+        }
+    }
+
+    return responseTimes;
+}
+
+function average(values: number[]): number | null {
+    if (values.length === 0) {
+        return null;
+    }
+
+    return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
 function mapPrismaBusinessContext(context: {

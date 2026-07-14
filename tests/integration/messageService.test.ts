@@ -329,6 +329,17 @@ describe("MessageService integration flow with fakes", () => {
       preferredDate: "Monday"
     });
     expect(sql.clientsByPhone.get(clientPhone)?.name).toBe("David");
+    expect([...sql.leads.values()]).toHaveLength(1);
+    expect([...sql.leads.values()][0]).toMatchObject({
+      businessId,
+      clientId: 1,
+      status: "QUALIFIED",
+      source: "WHATSAPP",
+      score: expect.any(Number),
+      name: "David",
+      phoneNumber: clientPhone
+    });
+    expect([...sql.leads.values()][0].score).toBeGreaterThanOrEqual(65);
     expect(savedCache?.lastMessages).toEqual([
       { role: "user", content: "I need consulting on Monday" },
       { role: "bot", content: "Great, I have everything I need." }

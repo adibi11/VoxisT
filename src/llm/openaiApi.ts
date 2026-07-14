@@ -34,6 +34,45 @@ export class OpenAIApi implements ILlmProvider {
             apiKey
         });
     }
+
+    async getFollowUpMessage(input: StateMachineInput): Promise<string> {
+        const prompt = buildEventPrompt(input);
+        const model = "gpt-4o";
+
+        this.logger.info("openai.followup_message.requested", {
+            model,
+            currentState: input.currentState,
+            lastMessagesCount: input.lastMessages.length,
+            promptLength: prompt.length
+        });
+
+        try {
+            const completion = await this.llmclient.chat.completions.create({
+                model,
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ],
+            });
+
+            const text = completion.choices[0]?.message?.content || "";
+            this.logger.info("openai.followup_message.succeeded", {
+                model,
+                responseLength: text.length,
+                choiceCount: completion.choices.length
+            });
+
+            return text.trim();
+        } catch (error) {
+            this.logger.error("openai.followup_message.failed", {
+                model,
+                error: getSafeOpenAiError(error)
+            });
+            throw error;
+        }
+    }
     async generateResponse(input: StateMachineInput, output: StateMachineOutput): Promise<string> {
 
         const prompt = buildMessagePrompt(output, input);

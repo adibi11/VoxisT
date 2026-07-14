@@ -4,6 +4,7 @@ import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
 import {
     AuthUserDto,
+    BusinessResponseMetricsDto,
     BusinessSettingsDto,
     BusinessSummaryDto,
     ClientSummaryDto,
@@ -14,6 +15,7 @@ import {
 } from "../../contracts";
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
+import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/IBusinessChannelRepository";
 
 
 export interface IDatabaseClient {
@@ -22,6 +24,7 @@ export interface IDatabaseClient {
 
     readonly leadRepository: ILeadRepository;
     readonly followUpRepository: IFollowUpRepository;
+    readonly businessChannelRepository: IBusinessChannelRepository;
 
 
     getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;
@@ -46,7 +49,9 @@ export interface IDatabaseClient {
     getAllBusinesses(): Promise<BusinessSummaryDto[]>;
     getBusinessSettings(businessId: number): Promise<BusinessSettingsDto | null>;
     updateBusinessSettings(businessId: number, request: UpdateBusinessSettingsRequestDto): Promise<BusinessSettingsDto>;
+    getBusinessResponseMetrics(businessId: number, from?: Date, to?: Date): Promise<BusinessResponseMetricsDto>;
     getActiveBusinessParameterNames(businessId: number): Promise<string[]>;
+    scoreAndCreateLeadForConversation(clientId: number, businessId: number, conversationId: number): Promise<void>;
     upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto>;
     upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void>;
     getBusinessAction(businessId: number): Promise<BusinessActionDto>;

@@ -30,6 +30,18 @@ export type JobData = {
 };
 
 
+export type FollowUpJobData = {
+    
+    From: string,
+    To: string,
+    Body: string,
+    clientId: number,
+    conversationId: number,
+    messageId: number
+                    
+}
+
+
 export enum MessageType {
     HandleMessage = "handleMessage",
     HandleStartConversation = "handleStartConversation",
@@ -42,6 +54,7 @@ export enum ApiActionType {
     Update = "update",
     Delete = "delete",
     HandleMessage = "handleMessage",
+    FollowUp = "followUp",
 }
 
 export type twillioMessage = {

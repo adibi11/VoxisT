@@ -20,7 +20,27 @@ export class LlmPipeline{
         this.logger = loggerInstance;
     }
 
-    async applyPipline(state:ConversationCacheState,message:string,businessId: number): Promise<LlmOutput>{
+
+    async applyFollowUpPipline(conversationState: ConversationCacheState, businessId: number): Promise<LlmOutput>{
+        
+        
+        this.logger.info("business.context.load.started", { businessId });
+        const businessContext = sanitizeBusinessContext(await this.sqlInterface.getBusinessContext(businessId));
+        this.logger.info("business.context.load.finished", {
+          businessId,
+          hasBusinessContext: Boolean(businessContext)
+        });
+        const stateMachineInput: StateMachineInput = buildStateMachineInput(conversationState, conversationState.lastMessages[conversationState.lastMessages.length - 1].content, businessContext);
+        this.logger.info("llm.executer.started", {
+          conversationId: conversationState.conversationId,
+          state: conversationState.state,
+          messageLength: conversationState.lastMessages[conversationState.lastMessages.length - 1].content.length
+        });
+        const executer = new Executer(this.llmProvider, this.logger.child({ component: "Executer" }));
+        return executer.ExecuteFollowUp(stateMachineInput);
+    }
+
+    async applyMessagePipline(state:ConversationCacheState,message:string,businessId: number): Promise<LlmOutput>{
         this.logger.info("conversation.state.before", {
           conversationId: state.conversationId,
           state: state.state,
@@ -225,3 +245,5 @@ function applyLLMResult(
 
   state.updatedAt = new Date();
 }
+
+

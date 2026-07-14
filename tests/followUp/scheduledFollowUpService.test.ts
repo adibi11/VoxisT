@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ScheduledFollowUpService } from "../../src/FollowUp/ScheduledFollowUpService";
 import { NullLogger } from "../../src/logging/logger";
-import { BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
+import { ApiActionType, BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { FakeOutboundMessageQueue } from "../fakes/FakeOutboundMessageQueue";
@@ -86,14 +86,18 @@ describe("ScheduledFollowUpService", () => {
 
     await service.runOnce(new Date("2026-07-09T10:00:00.000Z"));
 
-    expect(outboundQueue.jobs).toHaveLength(1);
-    expect(outboundQueue.jobs[0].message).toMatchObject({
+    expect(outboundQueue.events).toHaveLength(1);
+    expect(outboundQueue.events[0].event).toMatchObject({
+      type: ApiActionType.FollowUp,
       channel: CommunicationChannel.Whatsapp,
       provider: MessageProvider.Twilio,
-      from: "whatsapp:+15559999999",
-      to: "+15550000001",
-      body: "Still interested?",
-      businessId,
+      content: "Still interested?",
+      businessId
+    });
+    expect(outboundQueue.events[0].event.data).toMatchObject({
+      From: "whatsapp:+15559999999",
+      To: "+15550000001",
+      Body: "Still interested?",
       clientId: 1,
       conversationId: 1
     });
@@ -126,8 +130,8 @@ describe("ScheduledFollowUpService", () => {
 
     await service.runOnce(new Date("2026-07-09T10:00:00.000Z"));
 
-    expect(outboundQueue.jobs).toHaveLength(1);
-    expect(outboundQueue.jobs[0].message.body).toBe("Existing follow-up");
+    expect(outboundQueue.events).toHaveLength(1);
+    expect(outboundQueue.events[0].event.data.Body).toBe("Existing follow-up");
 
     const followUps = await sql.followUpRepository.getConversationFollowUps(businessId, 1);
     expect(followUps).toHaveLength(1);

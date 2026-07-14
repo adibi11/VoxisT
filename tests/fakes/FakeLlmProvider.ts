@@ -50,4 +50,7 @@ export class FakeLlmProvider implements ILlmProvider {
     this.closingInputs.push({ input, output });
     return this.closingQueue.shift() || "fake closing message";
   }
+  async getFollowUpMessage(input: StateMachineInput): Promise<string> {
+    return "fake follow-up message";
+  }
 }

@@ -5,5 +5,6 @@ export interface ILlmProvider {
     generateResponse(input: StateMachineInput, output: StateMachineOutput): Promise<string>;
     extractEvents(input: StateMachineInput): Promise<StateMachineOutput>;
     getClosingMessage(output: StateMachineOutput, input: StateMachineInput): Promise<string>;
+    getFollowUpMessage(input: StateMachineInput): Promise<string>;
     
 }

@@ -1,5 +1,11 @@
 import express from 'express';
-import { BusinessActionTypeDto, UpdateBusinessSettingsRequestDto } from '../../contracts';
+import {
+  BusinessActionTypeDto,
+  BusinessChannelOnboardingTypeDto,
+  BusinessChannelStatusDto,
+  UpdateBusinessSettingsRequestDto,
+  UpsertBusinessChannelRequestDto
+} from '../../contracts';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
 import { ILogger } from '../../logging/logger';
 import { requireAuth, AuthenticatedRequest, requireBusinessAccess, requirePlatformAdmin } from '../authMiddleware';
@@ -14,7 +20,101 @@ const BUSINESS_ACTION_TYPES = new Set<BusinessActionTypeDto>([
   "NONE"
 ]);
 
+const BUSINESS_CHANNEL_STATUSES = new Set<BusinessChannelStatusDto>([
+  "pending",
+  "active",
+  "disabled",
+  "failed"
+]);
+
+const BUSINESS_CHANNEL_ONBOARDING_TYPES = new Set<BusinessChannelOnboardingTypeDto>([
+  "manual",
+  "embedded_signup",
+  "oauth"
+]);
+
 export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient, logger: ILogger) {
+    app.get("/businesses/:businessId/metrics/response-time", requireAuth, async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const businessId = Number(req.params.businessId);
+        if (!Number.isFinite(businessId)) {
+          return res.status(400).json({ message: "Invalid businessId" });
+        }
+        if (!requireBusinessAccess(authReq, res, businessId)) {
+          return;
+        }
+
+        const from = parseOptionalDateQuery(req.query.from) || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const to = parseOptionalDateQuery(req.query.to) || new Date();
+        const metrics = await sql.getBusinessResponseMetrics(businessId, from, to);
+        logger.info("business.metrics.response_time.fetch.succeeded", {
+          userId: authReq.auth.userId,
+          businessId,
+          responsePairCount: metrics.responsePairCount
+        });
+        return res.status(200).json(metrics);
+      } catch (error) {
+        logger.error("business.metrics.response_time.fetch.failed", { error });
+        return res.status(500).json({ message: "Failed to fetch business response metrics" });
+      }
+    });
+
+    app.get("/businesses/:businessId/channels", requireAuth, async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const businessId = Number(req.params.businessId);
+        if (!Number.isFinite(businessId)) {
+          return res.status(400).json({ message: "Invalid businessId" });
+        }
+        if (!requireBusinessAccess(authReq, res, businessId)) {
+          return;
+        }
+
+        const channels = await sql.businessChannelRepository.GetChannelsByBusinessId(businessId);
+        logger.info("business.channels.fetch.succeeded", {
+          userId: authReq.auth.userId,
+          businessId,
+          count: channels.length
+        });
+        return res.status(200).json({ channels });
+      } catch (error) {
+        logger.error("business.channels.fetch.failed", { error });
+        return res.status(500).json({ message: "Failed to fetch business channels" });
+      }
+    });
+
+    app.post("/businesses/:businessId/channels", requireAuth, async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const businessId = Number(req.params.businessId);
+        if (!Number.isFinite(businessId)) {
+          return res.status(400).json({ message: "Invalid businessId" });
+        }
+        if (!requireBusinessAccess(authReq, res, businessId)) {
+          return;
+        }
+
+        const request = req.body as Partial<UpsertBusinessChannelRequestDto>;
+        if (!isValidUpsertBusinessChannelRequest(request)) {
+          return res.status(400).json({ message: "Invalid business channel request" });
+        }
+
+        const channel = await sql.businessChannelRepository.UpsertChannelByBusinessId(businessId, request);
+        logger.info("business.channels.upsert.succeeded", {
+          userId: authReq.auth.userId,
+          businessId,
+          channelId: channel.id,
+          channel: channel.channel,
+          provider: channel.provider
+        });
+        return res.status(200).json(channel);
+      } catch (error) {
+        logger.error("business.channels.upsert.failed", { error });
+        return res.status(500).json({ message: "Failed to upsert business channel" });
+      }
+    });
+
     app.get("/businesses/:businessId/settings", requireAuth, async (req, res) => {
       try {
         const authReq = req as AuthenticatedRequest;
@@ -105,6 +205,41 @@ export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient,
       }
     });
     
+}
+
+function parseOptionalDateQuery(value: unknown): Date | null {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function isValidUpsertBusinessChannelRequest(
+  request: Partial<UpsertBusinessChannelRequestDto> | undefined
+): request is UpsertBusinessChannelRequestDto {
+  if (!request || typeof request !== "object") {
+    return false;
+  }
+
+  return hasText(request.channel) &&
+    hasText(request.provider) &&
+    isOptionalText(request.displayName) &&
+    isOptionalBusinessChannelStatus(request.status) &&
+    isOptionalBusinessChannelOnboardingType(request.onboardingType) &&
+    isOptionalText(request.externalAccountId) &&
+    isOptionalText(request.externalPhoneNumberId) &&
+    isOptionalText(request.webhookUrl) &&
+    isOptionalBoolean(request.isDefault);
+}
+
+function isOptionalBusinessChannelStatus(value?: BusinessChannelStatusDto): boolean {
+  return value === undefined || BUSINESS_CHANNEL_STATUSES.has(value);
+}
+
+function isOptionalBusinessChannelOnboardingType(value?: BusinessChannelOnboardingTypeDto): boolean {
+  return value === undefined || BUSINESS_CHANNEL_ONBOARDING_TYPES.has(value);
 }
 
 function isValidUpdateBusinessSettingsRequest(

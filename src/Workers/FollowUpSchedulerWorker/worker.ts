@@ -4,13 +4,13 @@ import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
 import { ScheduledFollowUpService } from "../../FollowUp/ScheduledFollowUpService";
 import { logger } from "../../logging/logger";
 import { QueueManager } from "../../QueueClient/queue";
-import { OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
+import { MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
 
 const workerLogger = logger.child({ component: "FollowUpSchedulerWorker" });
 const sql = new SqlManager(workerLogger.child({ component: "SqlManager" }));
 const outboundQueue = new QueueManager(
-    OUTBOUND_MESSAGE_QUEUE_NAME,
-    workerLogger.child({ component: "QueueManager", queueName: OUTBOUND_MESSAGE_QUEUE_NAME })
+    MESSAGE_QUEUE_NAME,
+    workerLogger.child({ component: "QueueManager", queueName: MESSAGE_QUEUE_NAME })
 );
 
 const intervalMs = Number(process.env.FOLLOW_UP_SCHEDULER_INTERVAL_MS || 60_000);

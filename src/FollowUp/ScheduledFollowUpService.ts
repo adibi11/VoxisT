@@ -1,9 +1,10 @@
 import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
 import { DueConversationFollowUpCandidate } from "../dataClients/SqlClient/Repositories/FollowUpRepo/IFollowUpRepository";
 import { CommunicationChannel, MessageProvider } from "../dataClients/Types/apiTypes";
-import { IOutboundMessageQueue } from "../QueueClient/queue";
+import { QueueManager } from "../QueueClient/queue";
 import { ILogger, logger } from "../logging/logger";
 import { FollowUpPolicyService, isWithinAllowedHours } from "./FollowUpPolicyService";
+import {JobData, ApiActionType} from "../dataClients/Types/apiTypes";
 
 export type ScheduledFollowUpServiceOptions = {
     intervalMs?: number;
@@ -20,7 +21,7 @@ export class ScheduledFollowUpService {
 
     constructor(
         private readonly sql: IDatabaseClient,
-        private readonly outboundQueue: IOutboundMessageQueue,
+        private readonly outboundQueue: QueueManager,
         private readonly serviceLogger: ILogger = logger.child({ component: "ScheduledFollowUpService" }),
         options: ScheduledFollowUpServiceOptions = {}
     ) {
@@ -131,16 +132,22 @@ export class ScheduledFollowUpService {
         const body = buildFollowUpMessage(candidate);
 
         try {
-            await this.outboundQueue.addOutboundMessage({
-                message: {
+            await this.outboundQueue.addEvent({
+                    event: {
+                    type: ApiActionType.FollowUp,
+                    content: body,
+                    status: "pending",
                     channel: toCommunicationChannel(candidate.conversation.channel),
                     provider: toMessageProvider(candidate.conversation.provider),
-                    from: candidate.business.phone,
-                    to: candidate.client.phone,
-                    body,
                     businessId: candidate.business.id,
-                    clientId: candidate.client.id,
-                    conversationId: candidate.conversation.id
+                    data: {
+                        From: candidate.business.phone,
+                        To: candidate.client.phone,
+                        Body: body,
+                        clientId: candidate.client.id,
+                        conversationId: candidate.conversation.id,
+                        messageId: candidate.followUp.id
+                    }
                 }
             });
 

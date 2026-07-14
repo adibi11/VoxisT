@@ -45,6 +45,18 @@ export class Executer{
         
     }
 
+    async ExecuteFollowUp(input: StateMachineInput) :Promise<LlmOutput>
+    {
+        const output = await this.llmProvider.getFollowUpMessage(input);
+
+        return {
+            response: output,
+            collectedParams: input.collectedParams
+        };
+
+        
+    }
+
     async execute(input: StateMachineInput,output: StateMachineOutput,cacheState: ConversationCacheState,actions: BotMsg[]): Promise<LlmOutput>
     {
         let answer: string = "";

@@ -1,6 +1,8 @@
 import { IDatabaseClient } from "../../src/dataClients/SqlClient/sqlInterface";
 import {
   AuthUserDto,
+  BusinessChannelDto,
+  BusinessResponseMetricsDto,
   BusinessSettingsDto,
   BusinessSummaryDto,
   ClientSummaryDto,
@@ -21,6 +23,7 @@ import {
   PlatformRoleDto,
   UpdateBusinessSettingsRequestDto,
   UpdateLeadRequestDto,
+  UpsertBusinessChannelRequestDto,
   UpsertBusinessFollowUpPolicyRequestDto
 } from "../../src/contracts";
 import { BusinessActionDto, BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
@@ -28,6 +31,7 @@ import { BusinessContext, Client, ConversationCacheState, ConversationEntity } f
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { ILeadRepository } from "../../src/dataClients/SqlClient/Repositories/LeadRepo/ILeadRepository";
 import { DueConversationFollowUpCandidate, IFollowUpRepository, OpenConversationPolicyCandidate } from "../../src/dataClients/SqlClient/Repositories/FollowUpRepo/IFollowUpRepository";
+import { IBusinessChannelRepository } from "../../src/dataClients/SqlClient/Repositories/BusinessChannelRepo/IBusinessChannelRepository";
 
 type SavedMessage = {
   conversationId: number;
@@ -69,6 +73,24 @@ type SavedBusinessParameter = {
   use: boolean;
 };
 
+type SavedBusinessChannel = {
+  id: number;
+  businessId: number;
+  channel: string;
+  provider: string;
+  displayName?: string | null;
+  status: BusinessChannelDto["status"];
+  onboardingType: BusinessChannelDto["onboardingType"];
+  config?: unknown;
+  externalAccountId?: string | null;
+  externalPhoneNumberId?: string | null;
+  webhookUrl?: string | null;
+  isDefault: boolean;
+  credentialsEncrypted?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 type SavedConversationFollowUp = {
   id: number;
   businessId: number;
@@ -87,6 +109,7 @@ type SavedConversationFollowUp = {
 export class FakeSqlManager implements IDatabaseClient {
   readonly leadRepository: ILeadRepository = this;
   readonly followUpRepository: IFollowUpRepository = this;
+  readonly businessChannelRepository: IBusinessChannelRepository = this;
 
   public clientsByPhone = new Map<string, Client>();
   public conversations = new Map<number, { clientId: number; businessId: number; state: ConversationCacheState }>();
@@ -94,6 +117,7 @@ export class FakeSqlManager implements IDatabaseClient {
   public businessParameters = new Map<number, SavedBusinessParameter>();
   public businessContexts = new Map<number, BusinessContext>();
   public businessActions = new Map<number, BusinessActionDto>();
+  public businessChannels = new Map<number, SavedBusinessChannel>();
   public messages: SavedMessage[] = [];
   public paramAnswers: SavedParamAnswer[] = [];
   public leads = new Map<number, SavedLead>();
@@ -104,6 +128,7 @@ export class FakeSqlManager implements IDatabaseClient {
   private nextClientId = 1;
   private nextConversationId = 1;
   private nextBusinessParameterId = 1;
+  private nextBusinessChannelId = 1;
   private nextLeadId = 1;
   private nextConversationFollowUpId = 1;
 
@@ -220,6 +245,61 @@ export class FakeSqlManager implements IDatabaseClient {
     }));
   }
 
+  async GetChannelsByBusinessId(businessId: number): Promise<BusinessChannelDto[]> {
+    return [...this.businessChannels.values()]
+      .filter((channel) => channel.businessId === businessId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .map((channel) => this.toBusinessChannelDto(channel));
+  }
+
+  async UpsertChannelByBusinessId(
+    businessId: number,
+    channelDto: UpsertBusinessChannelRequestDto
+  ): Promise<BusinessChannelDto> {
+    const normalizedChannel = channelDto.channel.trim();
+    const normalizedProvider = channelDto.provider.trim();
+    const existingChannel = [...this.businessChannels.values()].find((channel) =>
+      channel.businessId === businessId &&
+      channel.channel === normalizedChannel &&
+      channel.provider === normalizedProvider
+    );
+    const now = new Date();
+
+    if (existingChannel) {
+      existingChannel.displayName = channelDto.displayName === undefined ? existingChannel.displayName : this.normalizeNullableString(channelDto.displayName);
+      existingChannel.status = channelDto.status || existingChannel.status;
+      existingChannel.onboardingType = channelDto.onboardingType || existingChannel.onboardingType;
+      existingChannel.config = channelDto.config === undefined ? existingChannel.config : channelDto.config;
+      existingChannel.externalAccountId = channelDto.externalAccountId === undefined ? existingChannel.externalAccountId : this.normalizeNullableString(channelDto.externalAccountId);
+      existingChannel.externalPhoneNumberId = channelDto.externalPhoneNumberId === undefined ? existingChannel.externalPhoneNumberId : this.normalizeNullableString(channelDto.externalPhoneNumberId);
+      existingChannel.webhookUrl = channelDto.webhookUrl === undefined ? existingChannel.webhookUrl : this.normalizeNullableString(channelDto.webhookUrl);
+      existingChannel.isDefault = channelDto.isDefault === undefined ? existingChannel.isDefault : channelDto.isDefault;
+      existingChannel.updatedAt = now;
+      return this.toBusinessChannelDto(existingChannel);
+    }
+
+    const channel: SavedBusinessChannel = {
+      id: this.nextBusinessChannelId++,
+      businessId,
+      channel: normalizedChannel,
+      provider: normalizedProvider,
+      displayName: this.normalizeNullableString(channelDto.displayName),
+      status: channelDto.status || "pending",
+      onboardingType: channelDto.onboardingType || "manual",
+      config: channelDto.config,
+      externalAccountId: this.normalizeNullableString(channelDto.externalAccountId),
+      externalPhoneNumberId: this.normalizeNullableString(channelDto.externalPhoneNumberId),
+      webhookUrl: this.normalizeNullableString(channelDto.webhookUrl),
+      isDefault: channelDto.isDefault ?? false,
+      credentialsEncrypted: null,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    this.businessChannels.set(channel.id, channel);
+    return this.toBusinessChannelDto(channel);
+  }
+
   async upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto> {
     this.businesses.set(businessId, businessDto);
     this.seedBusinessParameters(businessId, businessDto.parameters);
@@ -328,6 +408,93 @@ export class FakeSqlManager implements IDatabaseClient {
       .filter((parameter) => parameter.businessId === businessId && parameter.use)
       .sort((left, right) => left.id - right.id)
       .map((parameter) => parameter.paramName);
+  }
+
+  async getBusinessResponseMetrics(
+    businessId: number,
+    from: Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    to: Date = new Date()
+  ): Promise<BusinessResponseMetricsDto> {
+    const businessConversationIds = [...this.conversations.values()]
+      .filter((conversation) => conversation.businessId === businessId)
+      .map((conversation) => conversation.state.conversationId);
+
+    return {
+      businessId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      averageResponseTimeMs: null,
+      averageResponseTimeSeconds: null,
+      responsePairCount: 0,
+      conversationCount: businessConversationIds.length
+    };
+  }
+
+  async scoreAndCreateLeadForConversation(
+    clientId: number,
+    businessId: number,
+    conversationId: number
+  ): Promise<void> {
+    const activeParamNames = await this.getActiveBusinessParameterNames(businessId);
+    if (activeParamNames.length === 0) {
+      return;
+    }
+
+    const answeredParamCount = new Set(
+      this.paramAnswers
+        .filter((answer) =>
+          answer.clientId === clientId &&
+          answer.businessId === businessId &&
+          answer.conversationId === conversationId &&
+          activeParamNames.includes(answer.paramName) &&
+          answer.paramValue
+        )
+        .map((answer) => answer.paramName)
+    ).size;
+    const parameterScore = answeredParamCount / activeParamNames.length;
+    const score = Math.round(100 * (parameterScore * 0.75 + 0.25));
+    const existingLead = [...this.leads.values()]
+      .filter((lead) =>
+        lead.businessId === businessId &&
+        lead.clientId === clientId &&
+        !["WON", "LOST", "CLOSED"].includes(lead.status)
+      )
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id - left.id)[0];
+
+    if (existingLead) {
+      existingLead.score = score;
+      if (score >= 65) {
+        existingLead.status = "QUALIFIED";
+      }
+      existingLead.updatedAt = new Date();
+      return;
+    }
+
+    if (score < 65) {
+      return;
+    }
+
+    const client = this.findClientById(clientId);
+    const now = new Date();
+    const lead: SavedLead = {
+      id: this.nextLeadId++,
+      businessId,
+      clientId,
+      memberId: null,
+      status: "QUALIFIED",
+      source: "WHATSAPP",
+      score,
+      summary: `Auto-qualified from conversation ${conversationId} with score ${score}.`,
+      notes: null,
+      name: client?.name || null,
+      phoneNumber: client?.phone || null,
+      createdAt: now,
+      updatedAt: now,
+      assignedAt: null,
+      followUpAt: null,
+      closedAt: null
+    };
+    this.leads.set(lead.id, lead);
   }
 
   async getOrCreateClientByPhone(phoneNumber: string): Promise<Client> {
@@ -800,6 +967,26 @@ export class FakeSqlManager implements IDatabaseClient {
         use: parameter.use ?? true
       });
     }
+  }
+
+  private toBusinessChannelDto(channel: SavedBusinessChannel): BusinessChannelDto {
+    return {
+      id: channel.id,
+      businessId: channel.businessId,
+      channel: channel.channel,
+      provider: channel.provider,
+      displayName: channel.displayName ?? null,
+      status: channel.status,
+      onboardingType: channel.onboardingType,
+      config: channel.config,
+      externalAccountId: channel.externalAccountId ?? null,
+      externalPhoneNumberId: channel.externalPhoneNumberId ?? null,
+      webhookUrl: channel.webhookUrl ?? null,
+      isDefault: channel.isDefault,
+      hasCredentials: Boolean(channel.credentialsEncrypted),
+      createdAt: channel.createdAt.toISOString(),
+      updatedAt: channel.updatedAt.toISOString()
+    };
   }
 
   private toConversationSummary(

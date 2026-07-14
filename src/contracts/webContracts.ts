@@ -6,6 +6,16 @@ export type BusinessSummaryDto = {
   email: string;
 };
 
+export type BusinessResponseMetricsDto = {
+  businessId: number;
+  from: string;
+  to: string;
+  averageResponseTimeMs: number | null;
+  averageResponseTimeSeconds: number | null;
+  responsePairCount: number;
+  conversationCount: number;
+};
+
 export type BusinessActionTypeDto =
   | "BOOK_APPOINTMENT"
   | "SEND_PAYMENT_LINK"
@@ -38,6 +48,41 @@ export type BusinessSettingsDto = {
   language: string;
   parameters: BusinessSettingsParameterDto[];
   action?: BusinessSettingsActionDto | null;
+};
+
+export type BusinessChannelStatusDto = "pending" | "active" | "disabled" | "failed";
+
+export type BusinessChannelOnboardingTypeDto = "manual" | "embedded_signup" | "oauth";
+
+export type BusinessChannelDto = {
+  id: number;
+  businessId: number;
+  channel: string;
+  provider: string;
+  displayName?: string | null;
+  status: BusinessChannelStatusDto;
+  onboardingType: BusinessChannelOnboardingTypeDto;
+  config?: unknown;
+  externalAccountId?: string | null;
+  externalPhoneNumberId?: string | null;
+  webhookUrl?: string | null;
+  isDefault: boolean;
+  hasCredentials: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UpsertBusinessChannelRequestDto = {
+  channel: string;
+  provider: string;
+  displayName?: string | null;
+  status?: BusinessChannelStatusDto;
+  onboardingType?: BusinessChannelOnboardingTypeDto;
+  config?: unknown;
+  externalAccountId?: string | null;
+  externalPhoneNumberId?: string | null;
+  webhookUrl?: string | null;
+  isDefault?: boolean;
 };
 
 export type UpdateBusinessSettingsParameterDto = {

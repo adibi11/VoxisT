@@ -1,4 +1,4 @@
-import { ApiActionType, CommunicationChannel, Message, MessageProvider } from "../dataClients/Types/apiTypes";
+import { ApiActionType, CommunicationChannel, FollowUpJobData, Message, MessageProvider } from "../dataClients/Types/apiTypes";
 
 import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 
@@ -55,17 +55,9 @@ export class MessageService {
             bodyLength: message.data?.Body?.length
         });
         switch (message.type) {
-            case ApiActionType.Create:
-                // Handle create logic
-                this.logger.info("message.create.received", { contentLength: message.content?.length });
-                break;
-            case ApiActionType.Update:
-                // Handle update logic
-                this.logger.info("message.update.received", { contentLength: message.content?.length });
-                break;
-            case ApiActionType.Delete:
-                // Handle delete logic
-                this.logger.info("message.delete.received", { contentLength: message.content?.length });
+            case ApiActionType.FollowUp:
+                // Handle follow-up logic
+                await this.handleFollowUp(message);
                 break;
             case ApiActionType.HandleMessage:
                 // Handle message logic
@@ -75,6 +67,42 @@ export class MessageService {
 
         }
 
+    }
+
+    async handleFollowUp(message: Message) {
+        // Implement follow-up handling logic here
+        try {
+            const followUpData : FollowUpJobData = message.data;
+            const cacheState = await this.cacheManager.getCacheStateByConversationId(followUpData.conversationId);
+            if (!cacheState) {
+                throw new Error(`Conversation cache state ${followUpData.conversationId} not found for follow-up`);
+            }
+
+            const llmOutput = await this.llmPiplne.applyFollowUpPipline(cacheState, message.businessId || 1);
+
+            const botMessage: LastMessage = {
+                role: "bot",
+                content: llmOutput.response
+            };
+            cacheState.lastMessages.push(botMessage);
+            await this.cacheManager.setCacheStateByConversationId(followUpData.conversationId, cacheState);
+            await this.sqlInterface.createMessage(followUpData.conversationId, "bot", llmOutput.response);
+
+            await this.enqueueOutboundMessage(
+                followUpData.clientId,
+                message.businessId || 1,
+                message,
+                cacheState,
+                [botMessage],
+                "direct"
+            );
+
+
+        }catch (error) {
+            this.logger.error("follow_up.handle.failed, Follow Up Data missing", { error });
+            throw error;
+        }
+        
     }
 
     async handleMessage(message: Message) {
@@ -124,7 +152,7 @@ export class MessageService {
 
             try{
                 flowLogger.info("llm.pipeline.started", { conversationId: conversationState.conversationId });
-                const botResponse:string = (await this.llmPiplne.applyPipline(conversationState,message.data.Body,businessId)).response
+                const botResponse:string = (await this.llmPiplne.applyMessagePipline(conversationState,message.data.Body,businessId)).response
                 //Push the response to the messages array to be persisted in the DB and cache state.
                 messages.push({
                     role:"bot",
@@ -211,6 +239,7 @@ export class MessageService {
                 await this.sqlInterface.upsertParamAnswer(clientId, conversationState.conversationId, businessId, paramName, paramValue.toString());
             }
         }
+        await this.sqlInterface.scoreAndCreateLeadForConversation(clientId, businessId, conversationState.conversationId);
     }
 
     applyMessagesToCacheState(conversationState: ConversationCacheState, messages: LastMessage[]) {
@@ -223,7 +252,8 @@ export class MessageService {
         businessId: number,
         inboundMessage: Message,
         conversationState: ConversationCacheState,
-        messages: LastMessage[]
+        messages: LastMessage[],
+        addressMode: "reply" | "direct" = "reply"
     ) {
         if (!this.outboundQueue) {
             this.logger.warn("outbound.enqueue.skipped", {
@@ -250,8 +280,8 @@ export class MessageService {
             message: {
                 channel: inboundMessage.channel,
                 provider: inboundMessage.provider || conversationState.provider!,
-                from: inboundMessage.data.To,
-                to: inboundMessage.data.From,
+                from: addressMode === "direct" ? inboundMessage.data.From : inboundMessage.data.To,
+                to: addressMode === "direct" ? inboundMessage.data.To : inboundMessage.data.From,
                 body: botMessage.content,
                 businessId,
                 clientId,
