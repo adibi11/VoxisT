@@ -130,15 +130,16 @@ USER: "${input.messageContent}"
 
 Return JSON only:
 {
-  "event": "startConversation|updateParams|clientConcern|tryEnding|ended|failure",
-    "mode": "neutral|leadin|validating|reflecting|pacing|clarifying",
-    "intent": "welcome|askForParam|acknowledgeConcern|clarify|close|end|escalate|ignore|followUp",
-    "params": {},
-    "summary": "max 12 words"
-    "followUpMessage": "short customer-facing follow-up message, max 2 sentences"
+  "event": "updateParams",
+  "mode": "neutral|leadin|validating|reflecting|pacing|clarifying",
+  "intent": "followUp",
+  "params": {},
+  "summary": "max 12 words",
+  "response": "short customer-facing follow-up message, max 2 sentences"
 }
 
-- Collecting parameters should happen only when it feels natural for the response. Represent that with intent "followUp";`
+- The response field is the only customer-facing text.
+- Do not include markdown, code fences, or explanations.`;
 }
 
 export function parseEventResponse(text: string, loggerInstance: ILogger = logger.child({ component: "PromptHandler" })): StateMachineOutput {
@@ -195,6 +196,21 @@ export function parseResponse(text: string): LlmOutput {
             response: text,
             collectedParams:{}
         };
+    }
+}
+
+export function parseFollowUpResponse(text: string): string {
+    try {
+        const json = JSON.parse(cleanJson(text));
+        const response = json.response || json.followUpMessage || json.message || json.body;
+
+        if (typeof response === "string" && response.trim()) {
+            return response.trim();
+        }
+
+        return text.trim();
+    } catch {
+        return text.trim();
     }
 }
 

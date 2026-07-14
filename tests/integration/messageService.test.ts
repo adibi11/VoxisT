@@ -209,6 +209,76 @@ describe("MessageService integration flow with fakes", () => {
     expect(outboundQueue.jobs[0].message.body).toBe("Thanks David, what service do you need?");
   });
 
+  it("sends only the customer-facing text from a structured follow-up response", async () => {
+    const initialState = createConversationState(ConversationState.collecting, undefined, {
+      conversationId: 1,
+      updatedAt: new Date("2026-07-14T07:20:00.000Z")
+    });
+    initialState.lastMessages = [
+      { role: "user", content: "Hi" },
+      { role: "bot", content: "What service do you need?" }
+    ];
+    const cache = new FakeCacheManager([
+      { clientId: 1, businessId, state: initialState }
+    ]);
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    sql.seedConversation(1, businessId, initialState);
+    const llm = new FakeLlmProvider({
+      followUpMessages: [
+        JSON.stringify({
+          event: "updateParams",
+          mode: "neutral",
+          intent: "followUp",
+          params: {},
+          summary: "User has not replied",
+          response: "Just checking in. Would you like to continue?"
+        })
+      ]
+    });
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
+
+    await service.processMessage({
+      type: ApiActionType.FollowUp,
+      content: "Checking in",
+      status: "pending",
+      channel: CommunicationChannel.Whatsapp,
+      provider: MessageProvider.Twilio,
+      businessId,
+      data: {
+        From: "+15559999999",
+        To: clientPhone,
+        Body: "Checking in",
+        clientId: 1,
+        conversationId: 1,
+        messageId: 7
+      }
+    });
+
+    expect(sql.messages).toEqual([
+      {
+        conversationId: 1,
+        type: "bot",
+        content: "Just checking in. Would you like to continue?"
+      }
+    ]);
+    expect(outboundQueue.jobs).toEqual([
+      {
+        message: {
+          channel: CommunicationChannel.Whatsapp,
+          provider: MessageProvider.Twilio,
+          from: "+15559999999",
+          to: clientPhone,
+          body: "Just checking in. Would you like to continue?",
+          businessId,
+          clientId: 1,
+          conversationId: 1
+        }
+      }
+    ]);
+  });
+
   it("passes sanitized business context into the LLM pipeline", async () => {
     const initialState = createConversationState(ConversationState.collecting);
     const cache = new FakeCacheManager([

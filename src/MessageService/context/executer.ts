@@ -4,6 +4,7 @@ import { ConversationCacheState } from "../../dataClients/Types/messageTypes";
 import { ConversationStateMachine } from "./conversationSM";
 import { LlmOutput } from "../../dataClients/Types/llmTypes";
 import { ILogger, logger } from "../../logging/logger";
+import { parseFollowUpResponse } from "../../llm/promptHandler";
 
 
 export class Executer{
@@ -48,9 +49,10 @@ export class Executer{
     async ExecuteFollowUp(input: StateMachineInput) :Promise<LlmOutput>
     {
         const output = await this.llmProvider.getFollowUpMessage(input);
+        const response = parseFollowUpResponse(output);
 
         return {
-            response: output,
+            response,
             collectedParams: input.collectedParams
         };
 

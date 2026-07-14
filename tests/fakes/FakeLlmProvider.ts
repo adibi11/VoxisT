@@ -9,15 +9,18 @@ export class FakeLlmProvider implements ILlmProvider {
   private eventQueue: StateMachineOutput[];
   private responseQueue: string[];
   private closingQueue: string[];
+  private followUpQueue: string[];
 
   constructor(options?: {
     events?: StateMachineOutput[];
     responses?: string[];
     closingMessages?: string[];
+    followUpMessages?: string[];
   }) {
     this.eventQueue = [...(options?.events || [])];
     this.responseQueue = [...(options?.responses || [])];
     this.closingQueue = [...(options?.closingMessages || [])];
+    this.followUpQueue = [...(options?.followUpMessages || [])];
   }
 
   enqueueEvent(output: StateMachineOutput): void {
@@ -51,6 +54,6 @@ export class FakeLlmProvider implements ILlmProvider {
     return this.closingQueue.shift() || "fake closing message";
   }
   async getFollowUpMessage(input: StateMachineInput): Promise<string> {
-    return "fake follow-up message";
+    return this.followUpQueue.shift() || "fake follow-up message";
   }
 }
