@@ -58,6 +58,7 @@ type SavedLead = {
   summary?: string | null;
   notes?: string | null;
   name?: string | null;
+  email?: string | null;
   phoneNumber?: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -643,6 +644,7 @@ export class FakeSqlManager implements IDatabaseClient {
 
   async createManualLead(businessId: number, leadDto: CreateManualLeadRequestDto): Promise<LeadDto> {
     const name = this.normalizeOptionalString(leadDto.name);
+    const email = this.normalizeOptionalEmail(leadDto.email);
     const phoneNumber = this.normalizeOptionalString(leadDto.phoneNumber);
     if (!leadDto.clientId && !phoneNumber) {
       throw new Error("Manual lead requires clientId or phoneNumber");
@@ -661,6 +663,7 @@ export class FakeSqlManager implements IDatabaseClient {
       summary: this.normalizeOptionalString(leadDto.summary) || null,
       notes: this.normalizeOptionalString(leadDto.notes) || null,
       name: name || client?.name || null,
+      email: email || null,
       phoneNumber: phoneNumber || client?.phone || null,
       createdAt: now,
       updatedAt: now,
@@ -693,6 +696,7 @@ export class FakeSqlManager implements IDatabaseClient {
     if (leadDto.summary !== undefined) lead.summary = this.normalizeNullableString(leadDto.summary);
     if (leadDto.notes !== undefined) lead.notes = this.normalizeNullableString(leadDto.notes);
     if (leadDto.name !== undefined) lead.name = this.normalizeNullableString(leadDto.name);
+    if (leadDto.email !== undefined) lead.email = this.normalizeNullableEmail(leadDto.email);
     if (leadDto.phoneNumber !== undefined) lead.phoneNumber = this.normalizeNullableString(leadDto.phoneNumber);
     if (leadDto.followUpAt !== undefined) lead.followUpAt = this.parseOptionalDate(leadDto.followUpAt) || null;
     lead.updatedAt = new Date();
@@ -1019,6 +1023,7 @@ export class FakeSqlManager implements IDatabaseClient {
       score: lead.score,
       summary: lead.summary,
       name: lead.name,
+      email: lead.email,
       phoneNumber: lead.phoneNumber,
       createdAt: lead.createdAt.toISOString(),
       updatedAt: lead.updatedAt.toISOString(),
@@ -1254,9 +1259,19 @@ export class FakeSqlManager implements IDatabaseClient {
     return normalizedValue ? normalizedValue : undefined;
   }
 
+  private normalizeOptionalEmail(value?: string | null): string | undefined {
+    const normalizedValue = value?.trim().toLowerCase();
+    return normalizedValue || undefined;
+  }
+
   private normalizeNullableString(value?: string | null): string | null {
     const normalizedValue = value?.trim();
     return normalizedValue ? normalizedValue : null;
+  }
+
+  private normalizeNullableEmail(value?: string | null): string | null {
+    const normalizedValue = value?.trim().toLowerCase();
+    return normalizedValue || null;
   }
 
   private parseOptionalDate(value?: string | null): Date | null | undefined {

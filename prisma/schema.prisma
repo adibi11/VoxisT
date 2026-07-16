@@ -248,6 +248,7 @@ model Lead {
   notes   String?
 
   name    String?
+  email   String?
   phoneNumber String?
 
   createdAt  DateTime  @default(now())

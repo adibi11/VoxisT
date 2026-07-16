@@ -38,6 +38,7 @@ export class LeadRepository implements ILeadRepository {
 
     async createManualLead(businessId: number, leadDto: CreateManualLeadRequestDto): Promise<LeadDto> {
         const normalizedName = normalizeOptionalString(leadDto.name);
+        const normalizedEmail = normalizeOptionalEmail(leadDto.email);
         const normalizedPhoneNumber = normalizeOptionalString(leadDto.phoneNumber);
         if (!leadDto.clientId && !normalizedPhoneNumber) {
             throw new Error("Manual lead requires clientId or phoneNumber");
@@ -55,6 +56,7 @@ export class LeadRepository implements ILeadRepository {
                 summary: normalizeOptionalString(leadDto.summary),
                 notes: normalizeOptionalString(leadDto.notes),
                 name: normalizedName || client?.name || undefined,
+                email: normalizedEmail,
                 phoneNumber: normalizedPhoneNumber || client?.phoneNumber || undefined,
                 followUpAt: parseOptionalDate(leadDto.followUpAt),
                 asignTime: leadDto.memberId ? new Date() : undefined
@@ -83,6 +85,7 @@ export class LeadRepository implements ILeadRepository {
             summary: leadDto.summary === undefined ? undefined : normalizeNullableString(leadDto.summary),
             notes: leadDto.notes === undefined ? undefined : normalizeNullableString(leadDto.notes),
             name: leadDto.name === undefined ? undefined : normalizeNullableString(leadDto.name),
+            email: leadDto.email === undefined ? undefined : normalizeNullableEmail(leadDto.email),
             phoneNumber: leadDto.phoneNumber === undefined ? undefined : normalizeNullableString(leadDto.phoneNumber),
             followUpAt: leadDto.followUpAt === undefined ? undefined : parseOptionalDate(leadDto.followUpAt),
             closedAt: status && isClosedLeadStatus(status) ? new Date() : undefined
@@ -199,6 +202,7 @@ type PrismaLeadForDto = {
     summary: string | null;
     notes: string | null;
     name: string | null;
+    email: string | null;
     phoneNumber: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -218,6 +222,7 @@ function mapPrismaLeadToSummary(lead: PrismaLeadForDto): LeadSummaryDto {
         score: lead.score,
         summary: lead.summary,
         name: lead.name,
+        email: lead.email,
         phoneNumber: lead.phoneNumber,
         createdAt: lead.createdAt.toISOString(),
         updatedAt: lead.updatedAt.toISOString(),
@@ -239,9 +244,19 @@ function normalizeOptionalString(value?: string | null): string | undefined {
     return normalizedValue ? normalizedValue : undefined;
 }
 
+function normalizeOptionalEmail(value?: string | null): string | undefined {
+    const normalizedValue = value?.trim().toLowerCase();
+    return normalizedValue || undefined;
+}
+
 function normalizeNullableString(value?: string | null): string | null {
     const normalizedValue = value?.trim();
     return normalizedValue ? normalizedValue : null;
+}
+
+function normalizeNullableEmail(value?: string | null): string | null {
+    const normalizedValue = value?.trim().toLowerCase();
+    return normalizedValue || null;
 }
 
 function parseOptionalDate(value?: string | null): Date | null | undefined {

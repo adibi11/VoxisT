@@ -200,6 +200,7 @@ export type LeadSummaryDto = {
   score?: number | null;
   summary?: string | null;
   name?: string | null;
+  email?: string | null;
   phoneNumber?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -215,6 +216,7 @@ export type LeadDto = LeadSummaryDto & {
 export type CreateManualLeadRequestDto = {
   clientId?: number;
   name?: string;
+  email?: string;
   phoneNumber?: string;
   memberId?: number;
   status?: LeadStatusDto;
@@ -227,6 +229,7 @@ export type CreateManualLeadRequestDto = {
 
 export type CreatePublicLeadRequestDto = {
   name?: string;
+  email?: string;
   phoneNumber: string;
   source?: LeadSourceDto;
   summary?: string;
@@ -244,6 +247,7 @@ export type UpdateLeadRequestDto = {
   summary?: string | null;
   notes?: string | null;
   name?: string | null;
+  email?: string | null;
   phoneNumber?: string | null;
   followUpAt?: string | null;
 };

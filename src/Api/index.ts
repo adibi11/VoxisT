@@ -23,6 +23,8 @@ import { getClientRoutes } from "./routes/clientRoutes";
 import { getConversationRoutes } from "./routes/conversationRoutes";
 import { getLeadRoutes } from "./routes/leadRoutes";
 import { getFollowUpRoutes } from "./routes/followUpRoutes";
+import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
+import { createPublicEntrypointRateLimiter, getPublicEntrypointRateLimitConfig } from "./rateLimitMiddleware";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
@@ -31,6 +33,13 @@ const app = express();
 const v1Router = express.Router();
 const PORT = 3000;
 const API_VERSION = version.version || "1.0.0";
+const httpSecurityConfig = getHttpSecurityConfig();
+const publicEntrypointRateLimitConfig = getPublicEntrypointRateLimitConfig();
+const publicEntrypointRateLimiter = createPublicEntrypointRateLimiter(publicEntrypointRateLimitConfig, appLogger);
+
+// Staging/production run immediately behind one ALB hop. Local development defaults to
+// direct connections; set TRUST_PROXY_HOPS=1 only while testing through ngrok.
+app.set("trust proxy", httpSecurityConfig.trustProxyHops);
 
 const corsMiddleware = cors({
   origin: (origin, callback) => {
@@ -49,14 +58,15 @@ const corsMiddleware = cors({
 
 app.use(corsMiddleware);
 app.options(/.*/, corsMiddleware);
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(createSecurityHeaders(httpSecurityConfig));
+app.use(express.json({ limit: httpSecurityConfig.jsonBodyLimit }));
+app.use(express.urlencoded({ extended: false, limit: httpSecurityConfig.formBodyLimit }));
 getBusinessContextRoutes(v1Router, sqlManager, appLogger);
-getAuthRoutes(v1Router, sqlManager, appLogger);
+getAuthRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getBusinessRoutes(v1Router, sqlManager, appLogger);
 getClientRoutes(v1Router, sqlManager, appLogger);
 getConversationRoutes(v1Router, sqlManager, appLogger);
-getLeadRoutes(v1Router, sqlManager, appLogger);
+getLeadRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getFollowUpRoutes(v1Router, sqlManager, appLogger);
 
 
@@ -128,6 +138,9 @@ app.get("/", (req, res) => {
   res.send("Server is running");
 });
 
+// Body parsers run before routes, so their failures are handled centrally after route registration.
+app.use(createBodyParserErrorHandler(appLogger));
+
 startServer().catch((error) => {
   appLogger.error("server.startup.failed", { error });
   process.exit(1);
@@ -139,7 +152,14 @@ async function startServer(): Promise<void> {
   appLogger.info("queue.connection.verify.succeeded", { queueName: MESSAGE_QUEUE_NAME });
 
   app.listen(PORT, () => {
-    appLogger.info("server.started", { port: PORT });
+    appLogger.info("server.started", {
+      port: PORT,
+      trustProxyHops: httpSecurityConfig.trustProxyHops,
+      jsonBodyLimit: httpSecurityConfig.jsonBodyLimit,
+      formBodyLimit: httpSecurityConfig.formBodyLimit,
+      publicEntrypointRateLimitMax: publicEntrypointRateLimitConfig.maxRequests,
+      publicEntrypointRateLimitWindowSeconds: publicEntrypointRateLimitConfig.windowSeconds
+    });
   });
 }
 

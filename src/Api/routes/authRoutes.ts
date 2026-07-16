@@ -1,4 +1,5 @@
 import express from 'express';
+import { RequestHandler } from 'express';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
 import { ILogger } from '../../logging/logger';
 import { AdminCreateBusinessUserRequestDto, AdminCreateUserRequestDto, AdminResetUserPasswordRequestDto, AuthResponseDto, AuthUserDto, BusinessUserRoleDto, LogoutRequestDto, RefreshTokenRequestDto, RegisterBusinessUserRequestDto, LoginRequestDto, UpsertBusinessMembershipRequestDto } from '../../contracts';
@@ -7,8 +8,8 @@ import { signJwt } from '../../auth/jwt';
 import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, createOpaqueRefreshToken, createSessionFamilyId, expiresAtFromNow, hashRefreshToken } from '../../auth/session';
 import { AuthenticatedRequest, requireAuth, requirePlatformAdmin } from '../authMiddleware';
 
-export function getAuthRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger) {
-    app.post("/auth/register", async (req, res) => {
+export function getAuthRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger, publicEntrypointRateLimiter: RequestHandler) {
+    app.post("/auth/register", publicEntrypointRateLimiter, async (req, res) => {
       try {
         const request = req.body as RegisterBusinessUserRequestDto;
         if (!request.email || !request.password || !request.business?.name || !request.business?.phone || !request.business?.email) {
@@ -38,7 +39,7 @@ export function getAuthRoutes(app: express.Router, sql: IDatabaseClient, logger:
       }
     });
     
-    app.post("/auth/login", async (req, res) => {
+    app.post("/auth/login", publicEntrypointRateLimiter, async (req, res) => {
       try {
         const request = req.body as LoginRequestDto;
         if (!request.email || !request.password) {

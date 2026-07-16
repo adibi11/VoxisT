@@ -1,4 +1,5 @@
 import express from "express";
+import { RequestHandler } from "express";
 import {
   AssignLeadRequestDto,
   CreateManualLeadRequestDto,
@@ -39,8 +40,8 @@ type BookDemoLeadRequestDto = {
   phone: string;
 };
 
-export function getLeadRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger) {
-  app.post("/public/leads", async (req, res) => {
+export function getLeadRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger, publicEntrypointRateLimiter: RequestHandler) {
+  app.post("/public/leads", publicEntrypointRateLimiter, async (req, res) => {
     try {
       if (!hasValidPublicLeadCaptureKey(req)) {
         logger.warn("publicLead.create.unauthorized");
@@ -55,6 +56,7 @@ export function getLeadRoutes(app: express.Router, sql: IDatabaseClient, logger:
 
       const lead = await sql.leadRepository.createManualLead(businessId, {
         name: request.name,
+        email: normalizeOptionalEmail(request.email),
         phoneNumber: request.phoneNumber,
         status: "NEW",
         source: request.source || "WEBSITE",
@@ -80,7 +82,7 @@ export function getLeadRoutes(app: express.Router, sql: IDatabaseClient, logger:
     }
   });
 
-  app.post("/book-demo/leads", async (req, res) => {
+  app.post("/book-demo/leads",publicEntrypointRateLimiter ,async (req, res) => {
     try {
       const businessId = getBookDemoBusinessId();
       if (businessId === null) {
@@ -107,6 +109,7 @@ export function getLeadRoutes(app: express.Router, sql: IDatabaseClient, logger:
 
       const lead = await sql.leadRepository.createManualLead(businessId, {
         name,
+        email: normalizeEmail(email),
         phoneNumber: phone,
         status: "NEW",
         source: "WEBSITE",
@@ -355,6 +358,7 @@ function isValidCreatePublicLeadRequest(request: Partial<CreatePublicLeadRequest
 
   return hasText(request.phoneNumber) &&
     isValidLeadSource(request.source) &&
+    isValidOptionalEmail(request.email) &&
     isValidOptionalText(request.name) &&
     isValidOptionalText(request.summary) &&
     isValidOptionalText(request.notes);
@@ -438,6 +442,22 @@ function isValidOptionalText(value?: string | null): boolean {
 
 function hasText(value?: string | null): boolean {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidOptionalEmail(value?: string | null): boolean {
+  return value === undefined || value === null || (typeof value === "string" && isValidEmail(value));
+}
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function normalizeOptionalEmail(value?: string | null): string | undefined {
+  return value && isValidEmail(value) ? normalizeEmail(value) : undefined;
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 async function isAssignableBusinessMember(
