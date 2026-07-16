@@ -28,6 +28,7 @@ const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
 const queueManager = new QueueManager(MESSAGE_QUEUE_NAME, logger.child({ component: "QueueManager", queueName: MESSAGE_QUEUE_NAME }));
 const app = express();
+const v1Router = express.Router();
 const PORT = 3000;
 const API_VERSION = version.version || "1.0.0";
 
@@ -50,16 +51,16 @@ app.use(corsMiddleware);
 app.options(/.*/, corsMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-getBusinessContextRoutes(app, sqlManager, appLogger);
-getAuthRoutes(app, sqlManager, appLogger);
-getBusinessRoutes(app, sqlManager, appLogger);
-getClientRoutes(app, sqlManager, appLogger);
-getConversationRoutes(app, sqlManager, appLogger);
-getLeadRoutes(app, sqlManager, appLogger);
-getFollowUpRoutes(app, sqlManager, appLogger);
+getBusinessContextRoutes(v1Router, sqlManager, appLogger);
+getAuthRoutes(v1Router, sqlManager, appLogger);
+getBusinessRoutes(v1Router, sqlManager, appLogger);
+getClientRoutes(v1Router, sqlManager, appLogger);
+getConversationRoutes(v1Router, sqlManager, appLogger);
+getLeadRoutes(v1Router, sqlManager, appLogger);
+getFollowUpRoutes(v1Router, sqlManager, appLogger);
 
 
-app.post("/webhook/:id", async (req, res) => {
+v1Router.post("/webhook/:id", async (req, res) => {
   const event = req.body as twillioMessage;
   appLogger.info("webhook.raw.received", {
     contentType: req.headers["content-type"],
@@ -112,12 +113,14 @@ app.post("/webhook/:id", async (req, res) => {
   }});
     */
 
-app.get("/health", (req, res) => {
+v1Router.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" ,
     timestamp: new Date().toISOString(),
     version: API_VERSION});
     
   });
+
+app.use("/v1", v1Router);
   
 
 
@@ -156,7 +159,7 @@ function isValidTwilioMessage(event: Partial<twillioMessage> | undefined): event
 
 
 function getAllowedOrigins(): string[] {
-  return (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001,http://localhost:5173")
+  return (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8081")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);

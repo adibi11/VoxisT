@@ -90,6 +90,23 @@ model AppUser {
   updatedAt    DateTime       @updatedAt
   businesses   BusinessUser[]
   leads        Lead[]
+  refreshSessions RefreshSession[]
+}
+
+model RefreshSession {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  tokenHash    String    @unique
+  familyId     String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedByHash String?
+  createdAt    DateTime  @default(now())
+  user         AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
 }
 
 model BusinessUser {

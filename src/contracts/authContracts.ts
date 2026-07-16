@@ -20,7 +20,7 @@ export type RegisterBusinessRequestDto = {
 
 export type PlatformRoleDto = "admin" | "user";
 
-export type BusinessUserRoleDto = "owner" | "admin" | "member";
+export type BusinessUserRoleDto = "owner" | "member";
 
 export type BusinessMembershipDto = {
   businessId: number;
@@ -32,7 +32,6 @@ export type RegisterBusinessUserRequestDto = {
   email: string;
   password: string;
   displayName?: string;
-  platformRole?: PlatformRoleDto;
   business: RegisterBusinessRequestDto;
 };
 
@@ -49,11 +48,50 @@ export type AuthUserDto = {
 // Returned after login/register so the UI can store the JWT and render the current user.
 export type AuthResponseDto = {
   token: string;
+  accessTokenExpiresAt: string;
+  refreshToken: string;
+  refreshTokenExpiresAt: string;
   user: AuthUserDto;
+};
+
+export type RefreshTokenRequestDto = {
+  refreshToken: string;
+};
+
+export type LogoutRequestDto = {
+  refreshToken: string;
 };
 
 export type AdminResetUserPasswordRequestDto = {
   password: string;
+};
+
+export type AdminCreateUserRequestDto = {
+  email: string;
+  password: string;
+  displayName?: string;
+  platformRole?: PlatformRoleDto;
+  businessMemberships?: BusinessMembershipDto[];
+};
+
+export type AdminCreateBusinessUserRequestDto = {
+  email: string;
+  password: string;
+  displayName?: string;
+  role: BusinessUserRoleDto;
+};
+
+export type UpsertBusinessMembershipRequestDto = {
+  // Assigning a business without an explicit role makes the user its owner.
+  role?: BusinessUserRoleDto;
+};
+
+export type BusinessMemberDto = {
+  userId: number;
+  email: string;
+  displayName?: string | null;
+  role: BusinessUserRoleDto;
+  createdAt: string;
 };
 
 export type JwtClaimsDto = {

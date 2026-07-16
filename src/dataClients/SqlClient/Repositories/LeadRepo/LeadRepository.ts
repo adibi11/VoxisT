@@ -7,7 +7,7 @@ import {
     LeadSummaryDto,
     UpdateLeadRequestDto
 } from "../../../../contracts";
-import { ILeadRepository } from "./ILeadRepository";
+import { ILeadRepository, LeadAssignmentResult } from "./ILeadRepository";
 
 export class LeadRepository implements ILeadRepository {
     constructor(private readonly prisma: PrismaClient) {}
@@ -78,7 +78,6 @@ export class LeadRepository implements ILeadRepository {
 
         const status = leadDto.status;
         const data: Prisma.LeadUncheckedUpdateInput = {
-            memberId: leadDto.memberId === undefined ? undefined : leadDto.memberId,
             status: status === undefined ? undefined : status as any,
             score: leadDto.score === undefined ? undefined : leadDto.score,
             summary: leadDto.summary === undefined ? undefined : normalizeNullableString(leadDto.summary),
@@ -86,7 +85,6 @@ export class LeadRepository implements ILeadRepository {
             name: leadDto.name === undefined ? undefined : normalizeNullableString(leadDto.name),
             phoneNumber: leadDto.phoneNumber === undefined ? undefined : normalizeNullableString(leadDto.phoneNumber),
             followUpAt: leadDto.followUpAt === undefined ? undefined : parseOptionalDate(leadDto.followUpAt),
-            asignTime: leadDto.memberId === undefined ? undefined : leadDto.memberId ? new Date() : null,
             closedAt: status && isClosedLeadStatus(status) ? new Date() : undefined
         };
 
@@ -98,6 +96,23 @@ export class LeadRepository implements ILeadRepository {
         });
 
         return mapPrismaLeadToDto(lead);
+    }
+
+    async compareAndSetAssignee(
+        businessId: number,
+        leadId: number,
+        expectedMemberId: number | null,
+        memberId: number | null
+    ): Promise<LeadAssignmentResult> {
+        const updated = await this.prisma.lead.updateMany({
+            where: { id: leadId, businessId, memberId: expectedMemberId },
+            data: { memberId, asignTime: memberId === null ? null : new Date() }
+        });
+
+        const lead = await this.prisma.lead.findFirst({ where: { id: leadId, businessId } });
+        if (!lead) return { outcome: "not_found" };
+        if (updated.count !== 1) return { outcome: "conflict", lead: mapPrismaLeadToDto(lead) };
+        return { outcome: "updated", lead: mapPrismaLeadToDto(lead) };
     }
 
     async deleteLead(businessId: number, leadId: number): Promise<void> {

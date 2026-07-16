@@ -4,7 +4,7 @@ import { ILogger } from '../../logging/logger';
 import { requireAuth,AuthenticatedRequest, requirePlatformAdmin, requireBusinessAccess  } from '../authMiddleware';
 
 
-export function getClientRoutes(app:express.Application, sql: IDatabaseClient, logger: ILogger) {
+export function getClientRoutes(app:express.Router, sql: IDatabaseClient, logger: ILogger) {
     app.get("/businesses/:businessId/clients", requireAuth, async (req, res) => {
       try {
         const authReq = req as AuthenticatedRequest;

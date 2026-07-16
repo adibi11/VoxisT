@@ -6,7 +6,7 @@ type JwtPayload = JwtClaimsDto & {
   iat: number;
 };
 
-const DEFAULT_TOKEN_TTL_SECONDS = 60 * 60 * 8;
+const DEFAULT_TOKEN_TTL_SECONDS = Number(process.env.ACCESS_TOKEN_TTL_SECONDS || 15 * 60);
 
 export function signJwt(claims: JwtClaimsDto, secret = getJwtSecret(), ttlSeconds = DEFAULT_TOKEN_TTL_SECONDS): string {
   const now = Math.floor(Date.now() / 1000);

@@ -1,11 +1,10 @@
 # VoxisT UI API Contract
-DATABASE_URL="postgresql://postgres:Kuw54277@voxis.cx2w4ssw0kc1.eu-central-1.rds.amazonaws.com:5432/postgres"
-DATABASE_URL=postgresql://voxis_user:voxis_password@localhost:5432/voxis_db
+
 This document is the source of truth for the React UI. Build UI API clients and screens according to these DTOs and endpoints.
 
 ## Base Rules
 
-- API base URL in local development: `http://localhost:3000` (use it as an envirnment variable)
+- API base URL in local development: `http://localhost:3000/v1` (use it as an environment variable). All endpoint paths below are relative to this versioned base URL.
 - JSON endpoints use `Content-Type: application/json`
 - Protected endpoints require:
 
@@ -50,7 +49,6 @@ type RegisterBusinessUserRequestDto = {
   email: string;
   password: string;
   displayName?: string;
-  platformRole?: "admin" | "user";
   business: RegisterBusinessRequestDto;
 };
 ```
@@ -76,6 +74,9 @@ type AuthUserDto = {
 ```ts
 type AuthResponseDto = {
   token: string;
+  accessTokenExpiresAt: string;
+  refreshToken: string;
+  refreshTokenExpiresAt: string;
   user: AuthUserDto;
 };
 ```

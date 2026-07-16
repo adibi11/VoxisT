@@ -239,7 +239,6 @@ export type CreatePublicLeadResponseDto = {
 };
 
 export type UpdateLeadRequestDto = {
-  memberId?: number | null;
   status?: LeadStatusDto;
   score?: number | null;
   summary?: string | null;
@@ -247,6 +246,15 @@ export type UpdateLeadRequestDto = {
   name?: string | null;
   phoneNumber?: string | null;
   followUpAt?: string | null;
+};
+
+export type AssignLeadRequestDto = {
+  memberId: number;
+  expectedMemberId: number | null;
+};
+
+export type UnassignLeadRequestDto = {
+  expectedMemberId: number;
 };
 
 export type FollowUpStatusDto =

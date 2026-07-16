@@ -12,7 +12,6 @@ const outboundQueue = new QueueManager(
     MESSAGE_QUEUE_NAME,
     workerLogger.child({ component: "QueueManager", queueName: MESSAGE_QUEUE_NAME })
 );
-
 const intervalMs = Number(process.env.FOLLOW_UP_SCHEDULER_INTERVAL_MS || 60_000);
 const scheduledFollowUpService = new ScheduledFollowUpService(
     sql,

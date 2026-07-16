@@ -8,7 +8,7 @@ import {
 } from '../../contracts';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
 import { ILogger } from '../../logging/logger';
-import { requireAuth, AuthenticatedRequest, requireBusinessAccess, requirePlatformAdmin } from '../authMiddleware';
+import { requireAuth, AuthenticatedRequest, requireBusinessAccess, requireBusinessOwner, requirePlatformAdmin } from '../authMiddleware';
 
     
 const BUSINESS_ACTION_TYPES = new Set<BusinessActionTypeDto>([
@@ -33,7 +33,7 @@ const BUSINESS_CHANNEL_ONBOARDING_TYPES = new Set<BusinessChannelOnboardingTypeD
   "oauth"
 ]);
 
-export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient, logger: ILogger) {
+export function getBusinessRoutes(app:express.Router, sql: IDatabaseClient, logger: ILogger) {
     app.get("/businesses/:businessId/metrics/response-time", requireAuth, async (req, res) => {
       try {
         const authReq = req as AuthenticatedRequest;
@@ -67,7 +67,7 @@ export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient,
         if (!Number.isFinite(businessId)) {
           return res.status(400).json({ message: "Invalid businessId" });
         }
-        if (!requireBusinessAccess(authReq, res, businessId)) {
+        if (!requireBusinessOwner(authReq, res, businessId)) {
           return;
         }
 
@@ -91,7 +91,7 @@ export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient,
         if (!Number.isFinite(businessId)) {
           return res.status(400).json({ message: "Invalid businessId" });
         }
-        if (!requireBusinessAccess(authReq, res, businessId)) {
+        if (!requireBusinessOwner(authReq, res, businessId)) {
           return;
         }
 
@@ -122,7 +122,7 @@ export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient,
         if (!Number.isFinite(businessId)) {
           return res.status(400).json({ message: "Invalid businessId" });
         }
-        if (!requireBusinessAccess(authReq, res, businessId)) {
+        if (!requireBusinessOwner(authReq, res, businessId)) {
           return;
         }
 
@@ -149,7 +149,7 @@ export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient,
         if (!Number.isFinite(businessId)) {
           return res.status(400).json({ message: "Invalid businessId" });
         }
-        if (!requireBusinessAccess(authReq, res, businessId)) {
+        if (!requireBusinessOwner(authReq, res, businessId)) {
           return;
         }
 
@@ -202,6 +202,19 @@ export function getBusinessRoutes(app:express.Application, sql: IDatabaseClient,
       } catch (error) {
         logger.error("businesses.list.failed", { error });
         return res.status(500).json({ message: "Failed to fetch businesses" });
+      }
+    });
+
+    app.get("/businesses/:businessId/members", requireAuth, async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        const businessId = Number(req.params.businessId);
+        if (!Number.isInteger(businessId) || businessId <= 0) return res.status(400).json({ message: "Invalid businessId" });
+        if (!requireBusinessAccess(authReq, res, businessId)) return;
+        return res.status(200).json(await sql.getBusinessMembers(businessId));
+      } catch (error) {
+        logger.error("business.members.list.failed", { error });
+        return res.status(500).json({ message: "Failed to fetch business members" });
       }
     });
     

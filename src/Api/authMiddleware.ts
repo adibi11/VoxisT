@@ -43,6 +43,19 @@ export function requirePlatformAdmin(req: AuthenticatedRequest, res: Response): 
   return true;
 }
 
+export function getBusinessRole(req: AuthenticatedRequest, businessId: number) {
+  return req.auth.businessMemberships.find((membership) => membership.businessId === businessId)?.role ?? null;
+}
+
+export function requireBusinessOwner(req: AuthenticatedRequest, res: Response, businessId: number): boolean {
+  if (req.auth.platformRole === "admin") return true;
+  if (getBusinessRole(req, businessId) !== "owner") {
+    res.status(403).json({ message: "Business owner access required" });
+    return false;
+  }
+  return true;
+}
+
 function getBearerToken(authorization?: string): string | null {
   if (!authorization?.startsWith("Bearer ")) {
     return null;

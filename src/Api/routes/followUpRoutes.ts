@@ -8,7 +8,7 @@ import {
 } from "../../contracts";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { ILogger } from "../../logging/logger";
-import { AuthenticatedRequest, requireAuth, requireBusinessAccess } from "../authMiddleware";
+import { AuthenticatedRequest, requireAuth, requireBusinessOwner } from "../authMiddleware";
 
 const FOLLOW_UP_STATUSES = new Set<FollowUpStatusDto>([
   "PENDING",
@@ -19,7 +19,7 @@ const FOLLOW_UP_STATUSES = new Set<FollowUpStatusDto>([
   "CANCELED"
 ]);
 
-export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient, logger: ILogger) {
+export function getFollowUpRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger) {
   app.get("/businesses/:businessId/follow-up/policy", requireAuth, async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
@@ -27,7 +27,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!businessId) {
         return res.status(400).json({ message: "Invalid businessId" });
       }
-      if (!requireBusinessAccess(authReq, res, businessId)) {
+      if (!requireBusinessOwner(authReq, res, businessId)) {
         return;
       }
 
@@ -52,7 +52,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!businessId) {
         return res.status(400).json({ message: "Invalid businessId" });
       }
-      if (!requireBusinessAccess(authReq, res, businessId)) {
+      if (!requireBusinessOwner(authReq, res, businessId)) {
         return;
       }
 
@@ -82,7 +82,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!businessId) {
         return res.status(400).json({ message: "Invalid businessId" });
       }
-      if (!requireBusinessAccess(authReq, res, businessId)) {
+      if (!requireBusinessOwner(authReq, res, businessId)) {
         return;
       }
 
@@ -107,7 +107,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!ids) {
         return res.status(400).json({ message: "Invalid businessId or conversationId" });
       }
-      if (!requireBusinessAccess(authReq, res, ids.businessId)) {
+      if (!requireBusinessOwner(authReq, res, ids.businessId)) {
         return;
       }
 
@@ -130,7 +130,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!ids) {
         return res.status(400).json({ message: "Invalid businessId or conversationId" });
       }
-      if (!requireBusinessAccess(authReq, res, ids.businessId)) {
+      if (!requireBusinessOwner(authReq, res, ids.businessId)) {
         return;
       }
 
@@ -165,7 +165,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!ids) {
         return res.status(400).json({ message: "Invalid businessId or conversationId" });
       }
-      if (!requireBusinessAccess(authReq, res, ids.businessId)) {
+      if (!requireBusinessOwner(authReq, res, ids.businessId)) {
         return;
       }
 
@@ -184,7 +184,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!businessId) {
         return res.status(400).json({ message: "Invalid businessId" });
       }
-      if (!requireBusinessAccess(authReq, res, businessId)) {
+      if (!requireBusinessOwner(authReq, res, businessId)) {
         return;
       }
 
@@ -220,7 +220,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!ids) {
         return res.status(400).json({ message: "Invalid businessId or followUpId" });
       }
-      if (!requireBusinessAccess(authReq, res, ids.businessId)) {
+      if (!requireBusinessOwner(authReq, res, ids.businessId)) {
         return;
       }
 
@@ -251,7 +251,7 @@ export function getFollowUpRoutes(app: express.Application, sql: IDatabaseClient
       if (!businessId || !createdBeforeValue || !isValidDateString(createdBeforeValue)) {
         return res.status(400).json({ message: "Invalid businessId or createdBefore" });
       }
-      if (!requireBusinessAccess(authReq, res, businessId)) {
+      if (!requireBusinessOwner(authReq, res, businessId)) {
         return;
       }
 

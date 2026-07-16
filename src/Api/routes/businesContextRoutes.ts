@@ -2,13 +2,13 @@
 import express from 'express';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
     
-import { AuthenticatedRequest, requireAuth, requireBusinessAccess} from '../authMiddleware';
+import { AuthenticatedRequest, requireAuth, requireBusinessOwner} from '../authMiddleware';
 import { UpsertBusinessContextRequestDto } from '../../contracts';
 import { ILogger } from '../../logging/logger';
 
 
 
-export function getBusinessContextRoutes(app:express.Application, sql: IDatabaseClient, logger: ILogger) {
+export function getBusinessContextRoutes(app:express.Router, sql: IDatabaseClient, logger: ILogger) {
 
     app.put("/businesses/:businessId/context", requireAuth, async (req, res) => {
       try {
@@ -17,7 +17,7 @@ export function getBusinessContextRoutes(app:express.Application, sql: IDatabase
         if (!Number.isFinite(businessId)) {
           return res.status(400).json({ message: "Invalid businessId" });
         }
-        if (!requireBusinessAccess(authReq, res, businessId)) {
+        if (!requireBusinessOwner(authReq, res, businessId)) {
           return;
         }
     
@@ -54,7 +54,7 @@ export function getBusinessContextRoutes(app:express.Application, sql: IDatabase
         if (!Number.isFinite(businessId)) {
           return res.status(400).json({ message: "Invalid businessId" });
         }
-        if (!requireBusinessAccess(authReq, res, businessId)) {
+        if (!requireBusinessOwner(authReq, res, businessId)) {
           return;
         }
     

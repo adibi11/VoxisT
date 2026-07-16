@@ -3,10 +3,13 @@ import { BusinessDto, BusinessActionDto, CommunicationChannel, MessageProvider }
 import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
 import {
+    AdminCreateUserRequestDto,
     AuthUserDto,
+    BusinessMemberDto,
     BusinessResponseMetricsDto,
     BusinessSettingsDto,
     BusinessSummaryDto,
+    BusinessUserRoleDto,
     ClientSummaryDto,
     ConversationMessagesResponseDto,
     ConversationSummaryDto,
@@ -43,8 +46,17 @@ export interface IDatabaseClient {
     updateConversationState(conversationId: number, state: ConversationState): Promise<void>;
     registerBusinessOwner(email: string, passwordHash: string, displayName: string | undefined, businessDto: BusinessDto, platformRole?: PlatformRoleDto): Promise<AuthUserDto>;
     getUserWithPasswordByEmail(email: string): Promise<(AuthUserDto & { passwordHash: string }) | null>;
+    getUserById(userId: number): Promise<AuthUserDto | null>;
+    createRefreshSession(userId: number, tokenHash: string, familyId: string, expiresAt: Date): Promise<void>;
+    rotateRefreshSession(tokenHash: string, replacementHash: string, replacementExpiresAt: Date): Promise<AuthUserDto | null>;
+    revokeRefreshSession(tokenHash: string): Promise<boolean>;
     getAllUsers(): Promise<AuthUserDto[]>;
     updateUserPassword(userId: number, passwordHash: string): Promise<AuthUserDto | null>;
+    createAppUser(request: Omit<AdminCreateUserRequestDto, "password"> & { passwordHash: string }): Promise<AuthUserDto>;
+    upsertBusinessMembership(userId: number, businessId: number, role: BusinessUserRoleDto): Promise<AuthUserDto | null>;
+    deleteBusinessMembership(userId: number, businessId: number): Promise<boolean>;
+    getBusinessMembers(businessId: number): Promise<BusinessMemberDto[]>;
+    isBusinessMember(userId: number, businessId: number): Promise<boolean>;
     getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]>;
     getAllBusinesses(): Promise<BusinessSummaryDto[]>;
     getBusinessSettings(businessId: number): Promise<BusinessSettingsDto | null>;

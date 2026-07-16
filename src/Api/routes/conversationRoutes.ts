@@ -5,7 +5,7 @@ import { requireAuth,AuthenticatedRequest, requirePlatformAdmin, requireBusiness
 
 
 
-export function getConversationRoutes(app:express.Application, sql: IDatabaseClient, logger: ILogger) {
+export function getConversationRoutes(app:express.Router, sql: IDatabaseClient, logger: ILogger) {
     app.get("/businesses/:businessId/conversations", requireAuth, async (req, res) => {
       try {
         const authReq = req as AuthenticatedRequest;

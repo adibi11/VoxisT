@@ -4,7 +4,7 @@ This document is a handoff contract for the UI repo. It describes the current AP
 
 ## API Assumptions
 
-- Base API URL: environment-dependent, typically `http://localhost:3000`.
+- Base API URL: environment-dependent, typically `http://localhost:3000/v1`. All paths below are relative to this versioned base URL.
 - All routes below require `Authorization: Bearer <token>`.
 - All business-scoped routes require the authenticated user to have access to `businessId`.
 - Date/time fields are ISO strings.
@@ -67,7 +67,6 @@ export type CreateManualLeadRequestDto = {
 };
 
 export type UpdateLeadRequestDto = {
-  memberId?: number | null;
   status?: LeadStatusDto;
   score?: number | null;
   summary?: string | null;
@@ -75,6 +74,15 @@ export type UpdateLeadRequestDto = {
   name?: string | null;
   phoneNumber?: string | null;
   followUpAt?: string | null;
+};
+
+export type AssignLeadRequestDto = {
+  memberId: number;
+  expectedMemberId: number | null;
+};
+
+export type UnassignLeadRequestDto = {
+  expectedMemberId: number;
 };
 ```
 
@@ -219,7 +227,6 @@ UpdateLeadRequestDto
 Use for:
 
 - status changes
-- assignment changes
 - score updates
 - notes/summary edits
 - follow-up scheduling
@@ -241,6 +248,38 @@ Response:
 ```ts
 LeadDto
 ```
+
+### Claim Lead
+
+```http
+POST /businesses/:businessId/leads/:leadId/claim
+```
+
+No request body. Atomically assigns an unassigned lead to the authenticated member.
+
+### Assign Lead
+
+```http
+POST /businesses/:businessId/leads/:leadId/assign
+```
+
+```json
+{ "memberId": 42, "expectedMemberId": null }
+```
+
+`expectedMemberId` must equal the assignee currently displayed by the client and may be `null`.
+
+### Unassign Lead
+
+```http
+POST /businesses/:businessId/leads/:leadId/unassign
+```
+
+```json
+{ "expectedMemberId": 42 }
+```
+
+Assignment conflicts return `409` with `{ message, lead }`. Replace local data with the returned current lead before allowing a retry.
 
 ### Delete Lead
 

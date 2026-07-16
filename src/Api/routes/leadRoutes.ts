@@ -1,11 +1,13 @@
 import express from "express";
 import {
+  AssignLeadRequestDto,
   CreateManualLeadRequestDto,
   CreatePublicLeadRequestDto,
   CreatePublicLeadResponseDto,
   LeadSourceDto,
   LeadStatusDto,
   UpdateLeadRequestDto
+  ,UnassignLeadRequestDto
 } from "../../contracts";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { ILogger } from "../../logging/logger";
@@ -37,7 +39,7 @@ type BookDemoLeadRequestDto = {
   phone: string;
 };
 
-export function getLeadRoutes(app: express.Application, sql: IDatabaseClient, logger: ILogger) {
+export function getLeadRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger) {
   app.post("/public/leads", async (req, res) => {
     try {
       if (!hasValidPublicLeadCaptureKey(req)) {
@@ -193,6 +195,7 @@ export function getLeadRoutes(app: express.Application, sql: IDatabaseClient, lo
       if (!isValidCreateManualLeadRequest(request)) {
         return res.status(400).json({ message: "Invalid lead request" });
       }
+      if (request.memberId !== undefined && !(await isAssignableBusinessMember(sql, res, businessId, request.memberId))) return;
 
       const lead = await sql.leadRepository.createManualLead(businessId, request);
       logger.info("lead.create.succeeded", {
@@ -206,6 +209,54 @@ export function getLeadRoutes(app: express.Application, sql: IDatabaseClient, lo
       logger.error("lead.create.failed", { error });
       return res.status(500).json({ message: "Failed to create lead" });
     }
+  });
+
+  app.post("/businesses/:businessId/leads/:leadId/claim", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const ids = parseLeadRouteIds(req.params.businessId, req.params.leadId);
+    if (!ids) return res.status(400).json({ message: "Invalid businessId or leadId" });
+    if (!requireBusinessAccess(authReq, res, ids.businessId)) return;
+    if (!(await isAssignableBusinessMember(sql, res, ids.businessId, authReq.auth.userId))) return;
+
+    const result = await sql.leadRepository.compareAndSetAssignee(ids.businessId, ids.leadId, null, authReq.auth.userId);
+    return sendAssignmentResult(res, result);
+  });
+
+  app.post("/businesses/:businessId/leads/:leadId/assign", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const ids = parseLeadRouteIds(req.params.businessId, req.params.leadId);
+    const request = req.body as Partial<AssignLeadRequestDto>;
+    if (!ids || !isPositiveId(request.memberId) || !hasExpectedMemberId(request)) {
+      return res.status(400).json({ message: "memberId and expectedMemberId are required" });
+    }
+    if (!requireBusinessAccess(authReq, res, ids.businessId)) return;
+    if (!(await isAssignableBusinessMember(sql, res, ids.businessId, request.memberId))) return;
+
+    const result = await sql.leadRepository.compareAndSetAssignee(
+      ids.businessId,
+      ids.leadId,
+      request.expectedMemberId!,
+      request.memberId
+    );
+    return sendAssignmentResult(res, result);
+  });
+
+  app.post("/businesses/:businessId/leads/:leadId/unassign", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const ids = parseLeadRouteIds(req.params.businessId, req.params.leadId);
+    const request = req.body as Partial<UnassignLeadRequestDto>;
+    if (!ids || !isPositiveId(request.expectedMemberId)) {
+      return res.status(400).json({ message: "expectedMemberId is required" });
+    }
+    if (!requireBusinessAccess(authReq, res, ids.businessId)) return;
+
+    const result = await sql.leadRepository.compareAndSetAssignee(
+      ids.businessId,
+      ids.leadId,
+      request.expectedMemberId,
+      null
+    );
+    return sendAssignmentResult(res, result);
   });
 
   app.patch("/businesses/:businessId/leads/:leadId", requireAuth, async (req, res) => {
@@ -265,8 +316,8 @@ export function getLeadRoutes(app: express.Application, sql: IDatabaseClient, lo
 }
 
 function parseLeadRouteIds(
-  businessIdValue: string | string[],
-  leadIdValue: string | string[]
+  businessIdValue: number | string | string[],
+  leadIdValue: number | string | string[]
 ): { businessId: number; leadId: number } | null {
   if (Array.isArray(businessIdValue) || Array.isArray(leadIdValue)) {
     return null;
@@ -365,8 +416,7 @@ function isValidUpdateLeadRequest(request: Partial<UpdateLeadRequestDto> | undef
     return false;
   }
 
-  return isValidLeadStatus(request.status) &&
-    isValidOptionalNumber(request.memberId) &&
+  return !("memberId" in request) && isValidLeadStatus(request.status) &&
     isValidOptionalNumber(request.score);
 }
 
@@ -388,4 +438,37 @@ function isValidOptionalText(value?: string | null): boolean {
 
 function hasText(value?: string | null): boolean {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+async function isAssignableBusinessMember(
+  sql: IDatabaseClient,
+  res: express.Response,
+  businessId: number,
+  memberId: number
+): Promise<boolean> {
+  if (!(await sql.isBusinessMember(memberId, businessId))) {
+    res.status(400).json({ message: "Assigned user is not a member of this business" });
+    return false;
+  }
+  return true;
+}
+
+function hasExpectedMemberId(request: Partial<AssignLeadRequestDto>): boolean {
+  return Object.prototype.hasOwnProperty.call(request, "expectedMemberId") &&
+    (request.expectedMemberId === null || isPositiveId(request.expectedMemberId));
+}
+
+function isPositiveId(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function sendAssignmentResult(
+  res: express.Response,
+  result: Awaited<ReturnType<IDatabaseClient["leadRepository"]["compareAndSetAssignee"]>>
+) {
+  if (result.outcome === "not_found") return res.status(404).json({ message: "Lead not found" });
+  if (result.outcome === "conflict") {
+    return res.status(409).json({ message: "Lead assignment changed; refresh and retry", lead: result.lead });
+  }
+  return res.status(200).json(result.lead);
 }

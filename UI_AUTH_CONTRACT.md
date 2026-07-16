@@ -31,11 +31,10 @@ type PlatformRoleDto = "admin" | "user";
 Business role controls permissions inside a specific business.
 
 ```ts
-type BusinessUserRoleDto = "owner" | "admin" | "member";
+type BusinessUserRoleDto = "owner" | "member";
 ```
 
 - `owner`: full business-level control.
-- `admin`: business management role.
 - `member`: operational role with limited access.
 
 ## Auth DTOs
@@ -124,7 +123,7 @@ user.platformRole === "admin"
 or matching membership role:
 
 ```ts
-["owner", "admin"].includes(membership.role)
+membership.role === "owner"
 ```
 
 Examples:
@@ -138,17 +137,14 @@ Examples:
 ### Register Business And Owner User
 
 ```http
-POST /auth/register
+POST /v1/auth/register
 ```
-
-Request includes optional `platformRole`.
 
 ```ts
 type RegisterBusinessUserRequestDto = {
   email: string;
   password: string;
   displayName?: string;
-  platformRole?: PlatformRoleDto;
   business: RegisterBusinessRequestDto;
 };
 ```
@@ -169,7 +165,7 @@ UI behavior:
 ### Login
 
 ```http
-POST /auth/login
+POST /v1/auth/login
 ```
 
 Response:
@@ -183,7 +179,7 @@ UI behavior is the same as registration.
 ### Get Current User Businesses
 
 ```http
-GET /me/businesses
+GET /v1/me/businesses
 ```
 
 Auth: required.
@@ -193,7 +189,7 @@ Use for regular business dashboard scoping.
 ### Platform Admin: Get All Businesses
 
 ```http
-GET /admin/businesses
+GET /v1/admin/businesses
 ```
 
 Auth: required. Requires:
@@ -234,7 +230,7 @@ function canAccessBusiness(user: AuthUserDto, businessId: number): boolean {
 
 function canManageBusiness(user: AuthUserDto, businessId: number): boolean {
   const membership = getBusinessMembership(user, businessId);
-  return isPlatformAdmin(user) || membership?.role === "owner" || membership?.role === "admin";
+  return isPlatformAdmin(user) || membership?.role === "owner";
 }
 ```
 

@@ -20,12 +20,15 @@ import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/I
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
+    AdminCreateUserRequestDto,
     AuthUserDto,
     BusinessActionTypeDto,
     BusinessResponseMetricsDto,
     BusinessSettingsActionDto,
     BusinessSettingsDto,
     BusinessSummaryDto,
+    BusinessMemberDto,
+    BusinessUserRoleDto,
     ClientSummaryDto,
     ConversationMessagesResponseDto,
     ConversationSummaryDto,
@@ -647,7 +650,7 @@ export class SqlManager implements IDatabaseClient {
             businessIds: user.businesses.map((businessUser) => businessUser.businessId),
             businessMemberships: user.businesses.map((businessUser) => ({
                 businessId: businessUser.businessId,
-                role: businessUser.role
+                role: normalizeBusinessRole(businessUser.role)
             }))
         };
     }
@@ -675,9 +678,62 @@ export class SqlManager implements IDatabaseClient {
             businessIds: user.businesses.map((businessUser) => businessUser.businessId),
             businessMemberships: user.businesses.map((businessUser) => ({
                 businessId: businessUser.businessId,
-                role: businessUser.role
+                role: normalizeBusinessRole(businessUser.role)
             }))
         };
+    }
+
+    async getUserById(userId: number): Promise<AuthUserDto | null> {
+        const user = await this.prisma.appUser.findUnique({
+            where: { id: userId },
+            include: { businesses: true }
+        });
+        return user ? mapAppUser(user) : null;
+    }
+
+    async createRefreshSession(userId: number, tokenHash: string, familyId: string, expiresAt: Date): Promise<void> {
+        await this.prisma.refreshSession.create({
+            data: { userId, tokenHash, familyId, expiresAt }
+        });
+    }
+
+    async rotateRefreshSession(
+        tokenHash: string,
+        replacementHash: string,
+        replacementExpiresAt: Date
+    ): Promise<AuthUserDto | null> {
+        return this.prisma.$transaction(async (tx) => {
+            const session = await tx.refreshSession.findUnique({ where: { tokenHash } });
+            if (!session || session.revokedAt || session.expiresAt <= new Date()) return null;
+
+            const claimed = await tx.refreshSession.updateMany({
+                where: { id: session.id, revokedAt: null, expiresAt: { gt: new Date() } },
+                data: { revokedAt: new Date(), replacedByHash: replacementHash }
+            });
+            if (claimed.count !== 1) return null;
+
+            await tx.refreshSession.create({
+                data: {
+                    userId: session.userId,
+                    tokenHash: replacementHash,
+                    familyId: session.familyId,
+                    expiresAt: replacementExpiresAt
+                }
+            });
+            const user = await tx.appUser.findUnique({
+                where: { id: session.userId },
+                include: { businesses: true }
+            });
+            return user ? mapAppUser(user) : null;
+        });
+    }
+
+    async revokeRefreshSession(tokenHash: string): Promise<boolean> {
+        const result = await this.prisma.refreshSession.updateMany({
+            where: { tokenHash, revokedAt: null },
+            data: { revokedAt: new Date() }
+        });
+        return result.count === 1;
     }
 
     async getAllUsers(): Promise<AuthUserDto[]> {
@@ -698,7 +754,7 @@ export class SqlManager implements IDatabaseClient {
             businessIds: user.businesses.map((businessUser) => businessUser.businessId),
             businessMemberships: user.businesses.map((businessUser) => ({
                 businessId: businessUser.businessId,
-                role: businessUser.role
+                role: normalizeBusinessRole(businessUser.role)
             }))
         }));
     }
@@ -734,9 +790,70 @@ export class SqlManager implements IDatabaseClient {
             businessIds: user.businesses.map((businessUser) => businessUser.businessId),
             businessMemberships: user.businesses.map((businessUser) => ({
                 businessId: businessUser.businessId,
-                role: businessUser.role
+                role: normalizeBusinessRole(businessUser.role)
             }))
         };
+    }
+
+    async createAppUser(request: Omit<AdminCreateUserRequestDto, "password"> & { passwordHash: string }): Promise<AuthUserDto> {
+        const user = await this.prisma.appUser.create({
+            data: {
+                email: request.email.toLowerCase(),
+                passwordHash: request.passwordHash,
+                displayName: request.displayName,
+                platformRole: request.platformRole || "user",
+                businesses: request.businessMemberships?.length ? {
+                    create: request.businessMemberships.map((membership) => ({
+                        businessId: membership.businessId,
+                        role: membership.role as any
+                    }))
+                } : undefined
+            },
+            include: { businesses: true }
+        });
+
+        return mapAppUser(user);
+    }
+
+    async upsertBusinessMembership(userId: number, businessId: number, role: BusinessUserRoleDto): Promise<AuthUserDto | null> {
+        const userExists = await this.prisma.appUser.findUnique({ where: { id: userId }, select: { id: true } });
+        const businessExists = await this.prisma.business.findUnique({ where: { id: businessId }, select: { id: true } });
+        if (!userExists || !businessExists) return null;
+
+        await this.prisma.businessUser.upsert({
+            where: { userId_businessId: { userId, businessId } },
+            create: { userId, businessId, role: role as any },
+            update: { role: role as any }
+        });
+        const user = await this.prisma.appUser.findUnique({ where: { id: userId }, include: { businesses: true } });
+        return user ? mapAppUser(user) : null;
+    }
+
+    async deleteBusinessMembership(userId: number, businessId: number): Promise<boolean> {
+        const result = await this.prisma.businessUser.deleteMany({ where: { userId, businessId } });
+        return result.count > 0;
+    }
+
+    async getBusinessMembers(businessId: number): Promise<BusinessMemberDto[]> {
+        const memberships = await this.prisma.businessUser.findMany({
+            where: { businessId },
+            include: { user: true },
+            orderBy: { createdAt: "asc" }
+        });
+        return memberships.map((membership) => ({
+            userId: membership.userId,
+            email: membership.user.email,
+            displayName: membership.user.displayName,
+            role: normalizeBusinessRole(membership.role),
+            createdAt: membership.createdAt.toISOString()
+        }));
+    }
+
+    async isBusinessMember(userId: number, businessId: number): Promise<boolean> {
+        return Boolean(await this.prisma.businessUser.findUnique({
+            where: { userId_businessId: { userId, businessId } },
+            select: { id: true }
+        }));
     }
 
     async getAllBusinesses(): Promise<BusinessSummaryDto[]> {
@@ -1187,6 +1304,24 @@ export class SqlManager implements IDatabaseClient {
 
    
        
+}
+
+function mapAppUser(user: any): AuthUserDto {
+    return {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        platformRole: user.platformRole === "admin" ? "admin" : "user",
+        businessIds: user.businesses.map((membership: any) => membership.businessId),
+        businessMemberships: user.businesses.map((membership: any) => ({
+            businessId: membership.businessId,
+            role: normalizeBusinessRole(membership.role)
+        }))
+    };
+}
+
+function normalizeBusinessRole(role: string): BusinessUserRoleDto {
+    return role === "owner" ? "owner" : "member";
 }
 function mapConversationStatusToState(status: string): ConversationState {
     if (Object.values(ConversationState).includes(status as ConversationState)) {
