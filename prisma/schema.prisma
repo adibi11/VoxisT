@@ -63,6 +63,10 @@ model Business {
   BusinessAction    BusinessAction?
   leads             Lead[]
   channels          BusinessChannel[]
+  integrationConnections IntegrationConnection[]
+  incomingLeads     IncomingLead[]
+  externalLeads     ExternalLead[]
+  ingestionOutbox   IngestionOutbox[]
 }
 
 model BusinessContext {
@@ -242,6 +246,7 @@ model Lead {
   status LeadStatus @default(NEW)
 
   source LeadSource @default(WHATSAPP)
+  origin LeadOrigin @default(MANUAL)
 
   score   Int?
   summary String?
@@ -257,6 +262,121 @@ model Lead {
   followUpAt DateTime?
   closedAt   DateTime?
   followUps  ConversationFollowUp[]
+  externalLeads ExternalLead[]
+  attributions LeadAttribution[]
+}
+
+model IntegrationConnection {
+  id                    Int      @id @default(autoincrement())
+  businessId            Int
+  provider              String
+  integrationType       IntegrationType
+  status                IntegrationConnectionStatus @default(PENDING)
+  connectionToken       String   @unique
+  displayName           String?
+  externalAccountId     String?
+  externalResourceId    String?
+  credentialsEncrypted  String?
+  webhookSecretEncrypted String?
+  config                Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  business              Business @relation(fields: [businessId], references: [id])
+  incomingLeads         IncomingLead[]
+  externalLeads         ExternalLead[]
+
+  @@unique([businessId, provider, integrationType, externalResourceId])
+  @@index([businessId, status])
+}
+
+model IncomingLead {
+  id                      Int      @id @default(autoincrement())
+  businessId              Int
+  integrationConnectionId Int
+  provider                String
+  eventType               String
+  providerEventId         String?
+  idempotencyKey          String
+  payloadHash             String
+  rawPayload              Json?
+  canonicalPayload        Json
+  status                  IncomingLeadStatus @default(RECEIVED)
+  failureCode             String?
+  failureDetail           String?
+  receivedAt              DateTime @default(now())
+  processedAt             DateTime?
+  externalLeadId          Int?
+  business                Business @relation(fields: [businessId], references: [id])
+  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
+  externalLead            ExternalLead? @relation(fields: [externalLeadId], references: [id])
+
+  @@unique([integrationConnectionId, idempotencyKey])
+  @@index([businessId, status, receivedAt])
+  @@index([externalLeadId])
+}
+
+model ExternalLead {
+  id                      Int      @id @default(autoincrement())
+  businessId              Int
+  integrationConnectionId Int
+  leadId                  Int
+  provider                String
+  externalLeadId          String
+  externalContactId       String?
+  metadata                Json?
+  firstReceivedAt         DateTime @default(now())
+  lastReceivedAt          DateTime @default(now())
+  business                Business @relation(fields: [businessId], references: [id])
+  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
+  lead                    Lead @relation(fields: [leadId], references: [id])
+  incomingLeads           IncomingLead[]
+
+  @@unique([integrationConnectionId, externalLeadId])
+  @@index([businessId, leadId])
+}
+
+model LeadAttribution {
+  id                Int      @id @default(autoincrement())
+  leadId            Int
+  provider          String?
+  campaignExternalId String?
+  campaignName      String?
+  formExternalId    String?
+  formName          String?
+  adExternalId      String?
+  adSetExternalId   String?
+  landingPageUrl    String?
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  utmContent        String?
+  utmTerm           String?
+  referrer          String?
+  raw               Json?
+  createdAt         DateTime @default(now())
+  lead              Lead @relation(fields: [leadId], references: [id])
+
+  @@index([leadId, createdAt])
+}
+
+model IngestionOutbox {
+  id            Int      @id @default(autoincrement())
+  businessId    Int
+  aggregateType String
+  aggregateId   Int
+  eventType     String
+  payload       Json
+  status        IngestionOutboxStatus @default(PENDING)
+  attempts      Int      @default(0)
+  availableAt   DateTime @default(now())
+  publishedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  business      Business @relation(fields: [businessId], references: [id])
+
+  @@unique([aggregateType, aggregateId, eventType])
+  @@index([status, availableAt])
 }
 
 enum LeadStatus {
@@ -277,6 +397,44 @@ enum LeadSource {
   GOOGLE_ADS
   WEBSITE
   OTHER
+}
+
+enum LeadOrigin {
+  CAMPAIGN
+  CONVERSATION
+  MANUAL
+  API
+  IMPORT
+}
+
+enum IntegrationType {
+  LEAD_ADS
+  FORM
+  LANDING_PAGE
+  CUSTOM_API
+  MESSAGING
+}
+
+enum IntegrationConnectionStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+  FAILED
+}
+
+enum IncomingLeadStatus {
+  RECEIVED
+  QUEUED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum IngestionOutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
 }
 
 enum FollowUpStatus {

@@ -19,6 +19,12 @@ import {
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
 import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/IBusinessChannelRepository";
+import { IIntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IIntegrationConnectionRepository";
+import { IIncomingLeadRepository } from "./Repositories/IncomingLeadRepo/IIncomingLeadRepository";
+import { IExternalLeadRepository } from "./Repositories/ExternalLeadRepo/IExternalLeadRepository";
+import { IIngestionOutboxRepository } from "./Repositories/IngestionOutboxRepo/IIngestionOutboxRepository";
+import { ILeadIngestionRepository } from "./Repositories/LeadIngestionRepo/ILeadIngestionRepository";
+import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
 
 
 export interface IDatabaseClient {
@@ -28,6 +34,12 @@ export interface IDatabaseClient {
     readonly leadRepository: ILeadRepository;
     readonly followUpRepository: IFollowUpRepository;
     readonly businessChannelRepository: IBusinessChannelRepository;
+    readonly integrationConnectionRepository: IIntegrationConnectionRepository;
+    readonly incomingLeadRepository: IIncomingLeadRepository;
+    readonly externalLeadRepository: IExternalLeadRepository;
+    readonly ingestionOutboxRepository: IIngestionOutboxRepository;
+    readonly leadIngestionRepository: ILeadIngestionRepository;
+    readonly leadProcessingRepository: ILeadProcessingRepository;
 
 
     getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;

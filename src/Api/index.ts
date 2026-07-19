@@ -23,6 +23,7 @@ import { getClientRoutes } from "./routes/clientRoutes";
 import { getConversationRoutes } from "./routes/conversationRoutes";
 import { getLeadRoutes } from "./routes/leadRoutes";
 import { getFollowUpRoutes } from "./routes/followUpRoutes";
+import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 import { createPublicEntrypointRateLimiter, getPublicEntrypointRateLimitConfig } from "./rateLimitMiddleware";
 
@@ -68,6 +69,7 @@ getClientRoutes(v1Router, sqlManager, appLogger);
 getConversationRoutes(v1Router, sqlManager, appLogger);
 getLeadRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getFollowUpRoutes(v1Router, sqlManager, appLogger);
+getLeadIngestionRoutes(v1Router, sqlManager, appLogger);
 
 
 v1Router.post("/webhook/:id", async (req, res) => {

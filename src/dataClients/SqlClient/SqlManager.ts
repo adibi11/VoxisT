@@ -17,6 +17,18 @@ import { FollowUpRepository } from "./Repositories/FollowUpRepo/FollowUpReposito
 import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
 import { BusinessChannelRepository } from "./Repositories/BusinessChannelRepo/BusinessChannelRepository";
 import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/IBusinessChannelRepository";
+import { IntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IntegrationConnectionRepository";
+import { IIntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IIntegrationConnectionRepository";
+import { IncomingLeadRepository } from "./Repositories/IncomingLeadRepo/IncomingLeadRepository";
+import { IIncomingLeadRepository } from "./Repositories/IncomingLeadRepo/IIncomingLeadRepository";
+import { ExternalLeadRepository } from "./Repositories/ExternalLeadRepo/ExternalLeadRepository";
+import { IExternalLeadRepository } from "./Repositories/ExternalLeadRepo/IExternalLeadRepository";
+import { IngestionOutboxRepository } from "./Repositories/IngestionOutboxRepo/IngestionOutboxRepository";
+import { IIngestionOutboxRepository } from "./Repositories/IngestionOutboxRepo/IIngestionOutboxRepository";
+import { LeadIngestionRepository } from "./Repositories/LeadIngestionRepo/LeadIngestionRepository";
+import { ILeadIngestionRepository } from "./Repositories/LeadIngestionRepo/ILeadIngestionRepository";
+import { LeadProcessingRepository } from "./Repositories/LeadProcessingRepo/LeadProcessingRepository";
+import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
@@ -49,6 +61,12 @@ export class SqlManager implements IDatabaseClient {
     readonly leadRepository: ILeadRepository;
     readonly followUpRepository: IFollowUpRepository;
     readonly businessChannelRepository: IBusinessChannelRepository;
+    readonly integrationConnectionRepository: IIntegrationConnectionRepository;
+    readonly incomingLeadRepository: IIncomingLeadRepository;
+    readonly externalLeadRepository: IExternalLeadRepository;
+    readonly ingestionOutboxRepository: IIngestionOutboxRepository;
+    readonly leadIngestionRepository: ILeadIngestionRepository;
+    readonly leadProcessingRepository: ILeadProcessingRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
@@ -56,6 +74,12 @@ export class SqlManager implements IDatabaseClient {
         this.leadRepository = new LeadRepository(this.prisma);
         this.followUpRepository = new FollowUpRepository(this.prisma);
         this.businessChannelRepository = new BusinessChannelRepository(this.prisma);
+        this.integrationConnectionRepository = new IntegrationConnectionRepository(this.prisma);
+        this.incomingLeadRepository = new IncomingLeadRepository(this.prisma);
+        this.externalLeadRepository = new ExternalLeadRepository(this.prisma);
+        this.ingestionOutboxRepository = new IngestionOutboxRepository(this.prisma);
+        this.leadIngestionRepository = new LeadIngestionRepository(this.prisma);
+        this.leadProcessingRepository = new LeadProcessingRepository(this.prisma);
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {
