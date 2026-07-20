@@ -4,8 +4,11 @@ import { decryptMetaCredentials, encryptMetaCredentials, exchangeMetaCode, creat
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { ILogger } from "../../logging/logger";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requireBusinessOwner } from "../authMiddleware";
+import { encryptIntegrationSecret } from "../../LeadIngestion/integrationSecret";
 
-type CreateIntegrationRequest = { provider: "meta"; integrationType: "LEAD_ADS"; displayName?: string };
+type CreateIntegrationRequest =
+    | { provider: "meta"; integrationType: "LEAD_ADS"; displayName?: string }
+    | { provider: "landing_page"; integrationType: "LANDING_PAGE"; displayName?: string; formName?: string };
 
 export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger): void {
     app.get("/businesses/:businessId/integrations", requireAuth, async (req, res) => {
@@ -18,10 +21,32 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
         if (!businessId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) 
             return;
         const body = req.body as Partial<CreateIntegrationRequest>;
-        if (body.provider !== "meta" || body.integrationType !== "LEAD_ADS") 
-            return res.status(400).json({ message: "Only Meta Lead Ads connections are currently supported" });
-        const connection = await sql.integrationConnectionRepository.create({ businessId, provider: "meta", integrationType: "LEAD_ADS", status: "PENDING", connectionToken: randomBytes(32).toString("base64url"), displayName: body.displayName?.trim() || "Meta Lead Ads", externalAccountId: null, externalResourceId: null, config: { authorizationStatus: "NOT_STARTED" } });
-        return res.status(201).json(connection);
+        //Meta Lead Ads integration is created in PENDING state and requires authorization flow to be completed before it can be used.
+        if (body.provider === "meta" && body.integrationType === "LEAD_ADS") {
+            const connection = await sql.integrationConnectionRepository.create({ businessId, provider: "meta", integrationType: "LEAD_ADS", status: "PENDING", connectionToken: randomBytes(32).toString("base64url"), displayName: body.displayName?.trim() || "Meta Lead Ads", externalAccountId: null, externalResourceId: null, config: { authorizationStatus: "NOT_STARTED" } });
+            return res.status(201).json(connection);
+        }
+        if (body.provider !== "landing_page" || body.integrationType !== "LANDING_PAGE")
+            return res.status(400).json({ message: "Only Meta Lead Ads and landing page connections are currently supported" });
+        // Landing page integration is created in ACTIVE state and returns a one-time integration secret for server-to-server authentication.
+        try {
+            const connectionToken = randomBytes(32).toString("base64url");
+            const integrationSecret = randomBytes(32).toString("base64url");
+            const connection = await sql.integrationConnectionRepository.create({
+                businessId, provider: "landing_page", integrationType: "LANDING_PAGE", status: "ACTIVE", connectionToken,
+                webhookSecretEncrypted: encryptIntegrationSecret(integrationSecret), displayName: body.displayName?.trim() || "Landing page form",
+                externalAccountId: null, externalResourceId: null, config: { formName: body.formName?.trim() || null }
+            });
+            return res.status(201).json({
+                connection,
+                integrationSecret,
+                submissionEndpoint: `/v1/lead-submissions/${connectionToken}`,
+                contract: landingPageSubmissionContract()
+            });
+        } catch (error) {
+            logger.error("landingPage.connection.create.failed", { businessId, error });
+            return res.status(503).json({ message: "Landing page integration could not be created" });
+        }
     });
 
     app.get("/businesses/:businessId/integrations/:connectionId", requireAuth, async (req, res) => {
@@ -134,3 +159,17 @@ function parseId(value: unknown): number | null {
      const id = Number(value); 
      return Number.isInteger(id) && id > 0 ? id : null; 
     }
+
+function landingPageSubmissionContract() {
+    return {
+        authentication: { header: "X-Voxis-Integration-Secret", note: "Store this secret only in the landing page server or serverless function. It is returned once when the connection is created." },
+        required: ["externalEventId", "person (at least one of fullName, firstName, lastName, email, or phone)"],
+        optional: ["answers.fields", "attribution", "consent", "metadata"],
+        example: {
+            externalEventId: "submission_123", person: { fullName: "Jane Doe", email: "jane@example.com", phone: "+972501234567" },
+            answers: { fields: [{ key: "service", label: "Requested service", value: "Renovation", valueType: "choice" }] },
+            attribution: { landingPageUrl: "https://client.example/quote", utm: { source: "google", campaign: "summer" } },
+            consent: { contact: { granted: true, capturedAt: "2026-07-20T13:00:00.000Z", channels: ["phone", "email"] } }
+        }
+    };
+}

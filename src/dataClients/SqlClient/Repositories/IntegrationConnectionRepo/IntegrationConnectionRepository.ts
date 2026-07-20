@@ -34,6 +34,11 @@ export class IntegrationConnectionRepository implements IIntegrationConnectionRe
         return connection ? mapConnection(connection) : null;
     }
 
+    async getWebhookSecretEncryptedByConnectionToken(connectionToken: string): Promise<string | null> {
+        const connection = await this.prisma.integrationConnection.findUnique({ where: { connectionToken }, select: { webhookSecretEncrypted: true } });
+        return connection?.webhookSecretEncrypted || null;
+    }
+
     async getActiveByProviderResource(provider: string, integrationType: IntegrationConnectionDto["integrationType"], externalResourceId: string, pageId?: string): Promise<IntegrationConnectionDto | null> {
         const connections = await this.prisma.integrationConnection.findMany({
             where: { provider, integrationType, externalResourceId, status: "ACTIVE" }

@@ -1,6 +1,8 @@
+import { timingSafeEqual } from "crypto";
 import express from "express";
 import { LeadIngestionService } from "../../LeadIngestion/LeadIngestionService";
 import { CanonicalLeadSubmission } from "../../LeadIngestion/canonicalLeadSubmission";
+import { decryptIntegrationSecret } from "../../LeadIngestion/integrationSecret";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { ILogger } from "../../logging/logger";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess } from "../authMiddleware";
@@ -17,28 +19,40 @@ type DirectLeadSubmissionRequest = {
 export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger): void {
     const ingestionService = new LeadIngestionService(sql.leadIngestionRepository, logger.child({ component: "LeadIngestionService" }));
 
-    app.post("/lead-submissions/:connectionToken", requireAuth, async (req, res) => {
-        const connectionTokenParam = req.params.connectionToken;
-        const connectionToken = typeof connectionTokenParam === "string"
-            ? connectionTokenParam.trim()
-            : Array.isArray(connectionTokenParam)
-                ? connectionTokenParam[0]?.trim()
-                : undefined;
+    app.post("/lead-submissions/:connectionToken", async (req, res) => {
+        const connectionToken = connectionTokenFrom(req.params.connectionToken);
         if (!connectionToken) return res.status(400).json({ message: "connectionToken is required" });
-
         const connection = await sql.integrationConnectionRepository.getByConnectionToken(connectionToken);
         if (!connection || connection.status !== "ACTIVE") {
             return res.status(404).json({ message: "Active lead integration connection not found" });
         }
-        if (!requireBusinessAccess(req as AuthenticatedRequest, res, connection.businessId)) return;
 
+        if (connection.integrationType === "LANDING_PAGE") {
+            const providedSecret = req.header("X-Voxis-Integration-Secret");
+            const encryptedSecret = await sql.integrationConnectionRepository.getWebhookSecretEncryptedByConnectionToken(connectionToken);
+            try {
+                if (!providedSecret || !encryptedSecret || !safeEquals(providedSecret, decryptIntegrationSecret(encryptedSecret)))
+                    return res.status(401).json({ message: "Invalid landing page integration secret" });
+            } catch {
+                return res.status(401).json({ message: "Invalid landing page integration secret" });
+            }
+        } else {
+            let authenticated = false;
+            requireAuth(req, res, () => { authenticated = true; });
+            if (!authenticated || !requireBusinessAccess(req as unknown as AuthenticatedRequest, res, connection.businessId)) return;
+        }
+
+        return ingestSubmission(req, res, connection, ingestionService, logger);
+    });
+
+    async function ingestSubmission(req: express.Request, res: express.Response, connection: { id: number; businessId: number; provider: string; integrationType: CanonicalLeadSubmission["source"]["integrationType"] }, service: LeadIngestionService, requestLogger: ILogger) {
         const request = req.body as Partial<DirectLeadSubmissionRequest>;
         if (!isValidDirectLeadSubmission(request)) {
             return res.status(400).json({ message: "Invalid lead submission" });
         }
 
         try {
-            const result = await ingestionService.ingest({
+            const result = await service.ingest({
                 connection: {
                     connectionId: connection.id,
                     businessId: connection.businessId,
@@ -63,7 +77,7 @@ export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient
                 rawPayload: req.body
             });
 
-            logger.info("lead.directSubmission.accepted", {
+            requestLogger.info("lead.directSubmission.accepted", {
                 businessId: connection.businessId,
                 connectionId: connection.id,
                 incomingLeadId: result.incomingLeadId,
@@ -71,10 +85,19 @@ export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient
             });
             return res.status(202).json({ incomingLeadId: result.incomingLeadId, duplicate: result.outcome === "duplicate" });
         } catch (error) {
-            logger.error("lead.directSubmission.failed", { businessId: connection.businessId, connectionId: connection.id, error });
+            requestLogger.error("lead.directSubmission.failed", { businessId: connection.businessId, connectionId: connection.id, error });
             return res.status(400).json({ message: error instanceof Error ? error.message : "Invalid lead submission" });
         }
-    });
+    }
+}
+
+function connectionTokenFrom(value: unknown): string | undefined {
+    return typeof value === "string" ? value.trim() : Array.isArray(value) ? value[0]?.trim() : undefined;
+}
+
+function safeEquals(left: string, right: string): boolean {
+    const leftBytes = Buffer.from(left); const rightBytes = Buffer.from(right);
+    return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
 function isValidDirectLeadSubmission(request: Partial<DirectLeadSubmissionRequest>): request is DirectLeadSubmissionRequest {
