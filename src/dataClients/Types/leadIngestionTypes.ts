@@ -2,6 +2,7 @@ export type IntegrationType = "LEAD_ADS" | "FORM" | "LANDING_PAGE" | "CUSTOM_API
 export type IntegrationConnectionStatus = "PENDING" | "ACTIVE" | "DISABLED" | "FAILED";
 export type IncomingLeadStatus = "RECEIVED" | "QUEUED" | "PROCESSING" | "PROCESSED" | "FAILED" | "IGNORED";
 export type IngestionOutboxStatus = "PENDING" | "PUBLISHED" | "FAILED";
+export type ProviderWebhookEventStatus = "RECEIVED" | "PROCESSING" | "PROCESSED" | "FAILED" | "IGNORED";
 
 export type IntegrationConnectionDto = {
     id: number;
@@ -101,4 +102,17 @@ export type IngestionOutboxDto = CreateIngestionOutboxInput & {
     lastError: string | null;
     createdAt: string;
     updatedAt: string;
+};
+
+export type ProviderWebhookEventDto = {
+    id: number;
+    businessId: number;
+    integrationConnectionId: number;
+    provider: string;
+    eventType: string;
+    providerEventId: string;
+    payloadHash: string;
+    payload: unknown;
+    status: ProviderWebhookEventStatus;
+    receivedAt: string;
 };

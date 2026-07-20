@@ -65,6 +65,7 @@ model Business {
   channels          BusinessChannel[]
   integrationConnections IntegrationConnection[]
   incomingLeads     IncomingLead[]
+  providerWebhookEvents ProviderWebhookEvent[]
   externalLeads     ExternalLead[]
   ingestionOutbox   IngestionOutbox[]
 }
@@ -284,6 +285,7 @@ model IntegrationConnection {
   business              Business @relation(fields: [businessId], references: [id])
   incomingLeads         IncomingLead[]
   externalLeads         ExternalLead[]
+  providerWebhookEvents ProviderWebhookEvent[]
 
   @@unique([businessId, provider, integrationType, externalResourceId])
   @@index([businessId, status])
@@ -379,6 +381,27 @@ model IngestionOutbox {
   @@index([status, availableAt])
 }
 
+model ProviderWebhookEvent {
+  id                      Int      @id @default(autoincrement())
+  businessId              Int
+  integrationConnectionId Int
+  provider                String
+  eventType               String
+  providerEventId         String
+  payloadHash             String
+  payload                 Json
+  status                  ProviderWebhookEventStatus @default(RECEIVED)
+  failureCode             String?
+  failureDetail           String?
+  receivedAt              DateTime @default(now())
+  processedAt             DateTime?
+  business                Business @relation(fields: [businessId], references: [id])
+  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
+
+  @@unique([integrationConnectionId, providerEventId])
+  @@index([businessId, status, receivedAt])
+}
+
 enum LeadStatus {
   NEW
   QUALIFYING
@@ -435,6 +458,14 @@ enum IngestionOutboxStatus {
   PENDING
   PUBLISHED
   FAILED
+}
+
+enum ProviderWebhookEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
 }
 
 enum FollowUpStatus {

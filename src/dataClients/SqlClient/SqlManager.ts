@@ -29,6 +29,8 @@ import { LeadIngestionRepository } from "./Repositories/LeadIngestionRepo/LeadIn
 import { ILeadIngestionRepository } from "./Repositories/LeadIngestionRepo/ILeadIngestionRepository";
 import { LeadProcessingRepository } from "./Repositories/LeadProcessingRepo/LeadProcessingRepository";
 import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
+import { ProviderWebhookEventRepository } from "./Repositories/ProviderWebhookEventRepo/ProviderWebhookEventRepository";
+import { IProviderWebhookEventRepository } from "./Repositories/ProviderWebhookEventRepo/IProviderWebhookEventRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
@@ -67,6 +69,7 @@ export class SqlManager implements IDatabaseClient {
     readonly ingestionOutboxRepository: IIngestionOutboxRepository;
     readonly leadIngestionRepository: ILeadIngestionRepository;
     readonly leadProcessingRepository: ILeadProcessingRepository;
+    readonly providerWebhookEventRepository: IProviderWebhookEventRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
@@ -80,6 +83,7 @@ export class SqlManager implements IDatabaseClient {
         this.ingestionOutboxRepository = new IngestionOutboxRepository(this.prisma);
         this.leadIngestionRepository = new LeadIngestionRepository(this.prisma);
         this.leadProcessingRepository = new LeadProcessingRepository(this.prisma);
+        this.providerWebhookEventRepository = new ProviderWebhookEventRepository(this.prisma);
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {

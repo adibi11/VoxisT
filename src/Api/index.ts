@@ -24,8 +24,10 @@ import { getConversationRoutes } from "./routes/conversationRoutes";
 import { getLeadRoutes } from "./routes/leadRoutes";
 import { getFollowUpRoutes } from "./routes/followUpRoutes";
 import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
+import { getIntegrationRoutes } from "./routes/integrationRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 import { createPublicEntrypointRateLimiter, getPublicEntrypointRateLimitConfig } from "./rateLimitMiddleware";
+import { createMetaLeadAdsWebhookHandlers } from "../MetaLeadAds/metaLeadAdsWebhook";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
@@ -37,6 +39,7 @@ const API_VERSION = version.version || "1.0.0";
 const httpSecurityConfig = getHttpSecurityConfig();
 const publicEntrypointRateLimitConfig = getPublicEntrypointRateLimitConfig();
 const publicEntrypointRateLimiter = createPublicEntrypointRateLimiter(publicEntrypointRateLimitConfig, appLogger);
+const metaLeadAdsWebhook = createMetaLeadAdsWebhookHandlers(sqlManager, appLogger.child({ component: "MetaLeadAdsWebhook" }));
 
 // Staging/production run immediately behind one ALB hop. Local development defaults to
 // direct connections; set TRUST_PROXY_HOPS=1 only while testing through ngrok.
@@ -60,6 +63,11 @@ const corsMiddleware = cors({
 app.use(corsMiddleware);
 app.options(/.*/, corsMiddleware);
 app.use(createSecurityHeaders(httpSecurityConfig));
+// Meta signatures cover the original bytes, so this route must parse its body before
+// the global JSON middleware. It deliberately has no browser authentication.
+app.use("/v1/webhooks/leads/meta", express.raw({ type: "application/json", limit: httpSecurityConfig.jsonBodyLimit }));
+app.get("/v1/webhooks/leads/meta", metaLeadAdsWebhook.verify);
+app.post("/v1/webhooks/leads/meta", metaLeadAdsWebhook.receive);
 app.use(express.json({ limit: httpSecurityConfig.jsonBodyLimit }));
 app.use(express.urlencoded({ extended: false, limit: httpSecurityConfig.formBodyLimit }));
 getBusinessContextRoutes(v1Router, sqlManager, appLogger);
@@ -70,6 +78,7 @@ getConversationRoutes(v1Router, sqlManager, appLogger);
 getLeadRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getFollowUpRoutes(v1Router, sqlManager, appLogger);
 getLeadIngestionRoutes(v1Router, sqlManager, appLogger);
+getIntegrationRoutes(v1Router, sqlManager, appLogger);
 
 
 v1Router.post("/webhook/:id", async (req, res) => {
@@ -181,7 +190,7 @@ function isValidTwilioMessage(event: Partial<twillioMessage> | undefined): event
 
 
 function getAllowedOrigins(): string[] {
-  return (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8081")
+  return (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8081,https://voxistudio.com,https://www.voxistudio.com")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
