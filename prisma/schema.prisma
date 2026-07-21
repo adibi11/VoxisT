@@ -391,6 +391,11 @@ model ProviderWebhookEvent {
   payloadHash             String
   payload                 Json
   status                  ProviderWebhookEventStatus @default(RECEIVED)
+  attempts                Int      @default(0)
+  nextAttemptAt           DateTime @default(now())
+  lockedUntil             DateTime?
+  workerId                String?
+  lastError               String?
   failureCode             String?
   failureDetail           String?
   receivedAt              DateTime @default(now())
@@ -400,6 +405,7 @@ model ProviderWebhookEvent {
 
   @@unique([integrationConnectionId, providerEventId])
   @@index([businessId, status, receivedAt])
+  @@index([status, nextAttemptAt])
 }
 
 enum LeadStatus {

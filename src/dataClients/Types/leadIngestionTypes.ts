@@ -114,5 +114,13 @@ export type ProviderWebhookEventDto = {
     payloadHash: string;
     payload: unknown;
     status: ProviderWebhookEventStatus;
+    attempts: number;
+    nextAttemptAt: string;
+    lockedUntil: string | null;
+    workerId: string | null;
+    lastError: string | null;
+    failureCode: string | null;
+    failureDetail: string | null;
     receivedAt: string;
+    processedAt: string | null;
 };

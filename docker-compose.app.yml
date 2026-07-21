@@ -69,6 +69,20 @@ services:
     command: ["node", "dist/Workers/LeadOutboxPublisherWorker/worker.js"]
     restart: unless-stopped
 
+  provider-event-processor:
+    image: voxis-app:local
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${APP_DATABASE_URL:-postgresql://voxis_user:voxis_password@host.docker.internal:5432/voxis_db}
+      PROVIDER_EVENT_PROCESS_INTERVAL_MS: ${PROVIDER_EVENT_PROCESS_INTERVAL_MS:-2000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["node", "dist/Workers/ProviderEventProcessorWorker/worker.js"]
+    restart: unless-stopped
+
   lead-ingestion-worker:
     image: voxis-app:local
     depends_on:

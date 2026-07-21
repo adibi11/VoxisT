@@ -17,7 +17,7 @@ export type CanonicalLeadSubmission = {
         receivedAt: string;
     };
     person: {
-        firstName?: string;
+        firstName?: string ;
         lastName?: string;
         fullName?: string;
         email?: string;

@@ -80,9 +80,13 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
         try {
             const state = verifyMetaOAuthState(stateText);
             const connection = await sql.integrationConnectionRepository.getById(state.businessId, state.connectionId);
-            if (!connection || connection.provider !== "meta" || connection.status !== "PENDING") throw new Error("Meta integration connection is unavailable");
-            if (typeof req.query.error === "string") throw new Error("Meta authorization was denied");
-            const code = typeof req.query.code === "string" ? req.query.code : ""; if (!code) throw new Error("Meta authorization code is missing");
+            if (!connection || connection.provider !== "meta" || connection.status !== "PENDING") 
+                throw new Error("Meta integration connection is unavailable");
+            if (typeof req.query.error === "string") 
+                throw new Error("Meta authorization was denied");
+            const code = typeof req.query.code === "string" ? req.query.code : ""; 
+            if (!code) 
+                throw new Error("Meta authorization code is missing");
             await sql.integrationConnectionRepository.saveCredentials(state.businessId, state.connectionId, encryptMetaCredentials(await exchangeMetaCode(code)));
             return res.redirect(302, frontendRedirect(state.connectionId, true));
         } catch (error) { logger.warn("meta.callback.failed", { error }); return res.redirect(302, frontendRedirect(undefined, false)); }
@@ -93,16 +97,23 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
         const connectionId = parseId(req.params.connectionId); 
         if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) 
             return;
-        try { return res.json({ pages: await discoverMetaResources(await requiredMetaConnection(sql, businessId, connectionId)) }); }
-        catch (error) { logger.error("meta.resources.failed", { businessId, connectionId, error }); return res.status(400).json({ message: "Unable to discover Meta Pages and forms" }); }
+        try { return res.json(await discoverMetaResources(await requiredMetaConnection(sql, businessId, connectionId))); }
+        catch (error) {
+            const metaError = metaGraphDiagnostic(error);
+            logger.error("meta.resources.failed", { businessId, connectionId, metaError, error });
+            return res.status(error instanceof MetaGraphApiError ? 502 : 400).json({ message: "Unable to discover Meta Pages", metaError });
+        }
     });
 
     app.post("/businesses/:businessId/integrations/:connectionId/meta/resource", requireAuth, async (req, res) => {
-        const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId); if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
-        const pageId = typeof req.body?.pageId === "string" ? req.body.pageId : ""; const formId = typeof req.body?.formId === "string" ? req.body.formId : "";
+        const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId); 
+        if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
+        const pageId = typeof req.body?.pageId === "string" ? req.body.pageId : ""; 
+        const formId = typeof req.body?.formId === "string" ? req.body.formId : "";
         try {
-            const connection = await requiredMetaConnection(sql, businessId, connectionId); const resources = await discoverMetaResources(connection);
-            const page = resources.find((item) => item.id === pageId); 
+            const connection = await requiredMetaConnection(sql, businessId, connectionId); 
+            const resources = await discoverMetaResources(connection);
+            const page = resources.pages.find((page) => page.id === pageId); 
             if (!page || !page.forms.some((form) => form.id === formId)) 
                 return res.status(400).json({ message: "Selected Meta Page/form is not authorized" });
             const credentials = decryptMetaCredentials(connection.credentialsEncrypted); 
@@ -137,19 +148,57 @@ async function requiredMetaConnection(sql: IDatabaseClient, businessId: number, 
         throw new Error("Meta authorization is required"); 
     return { ...connection, credentialsEncrypted }; 
 }
-async function discoverMetaResources(connection: { credentialsEncrypted: string }): Promise<Array<{ id: string; name: string; accessToken: string; forms: Array<{ id: string; name: string }> }>> {
+type MetaResource = { id: string; name: string; accessToken: string; forms: Array<{ id: string; name: string }> };
+type MetaResourceWarning = { pageId: string; pageName: string; message: string; status?: number; code?: number; fbTraceId?: string };
+
+async function discoverMetaResources(connection: { credentialsEncrypted: string }): Promise<{ pages: MetaResource[]; warnings: MetaResourceWarning[] }> {
     const credentials = decryptMetaCredentials(connection.credentialsEncrypted); const version = process.env.META_GRAPH_API_VERSION!;
+    // A failure here means the user token itself cannot discover Pages, so it is a real integration error.
     const pages = await graphGet(version, "me/accounts", credentials.accessToken, "id,name,access_token");
-    return Promise.all((pages.data || []).map(async (page: any) => ({ id: String(page.id), name: String(page.name || page.id), accessToken: String(page.access_token), forms: (await graphGet(version, `${page.id}/leadgen_forms`, String(page.access_token), "id,name")).data?.map((form: any) => ({ id: String(form.id), name: String(form.name || form.id) })) || [] })));
+    const results = await Promise.all((pages.data || []).map(async (page: any): Promise<{ page: MetaResource; warning?: MetaResourceWarning }> => {
+        const pageId = String(page.id); const pageName = String(page.name || page.id); const accessToken = String(page.access_token);
+        try {
+            const forms = await graphGet(version, `${pageId}/leadgen_forms`, accessToken, "id,name");
+            return { page: { id: pageId, name: pageName, accessToken, forms: (forms.data || []).map((form: any) => ({ id: String(form.id), name: String(form.name || form.id) })) } };
+        } catch (error) {
+            // A Page may legitimately have no forms, or Meta may deny form access for this Page.
+            // Preserve every discoverable Page so the UI can explain the issue without blocking setup.
+            const diagnostic = metaGraphDiagnostic(error);
+            return {
+                page: { id: pageId, name: pageName, accessToken, forms: [] },
+                warning: { pageId, pageName, message: diagnostic.message, status: diagnostic.status, code: diagnostic.code, fbTraceId: diagnostic.fbTraceId }
+            };
+        }
+    }));
+    return { pages: results.map((result) => result.page), warnings: results.flatMap((result) => result.warning ? [result.warning] : []) };
 }
 async function graphGet(version: string, path: string, token: string, fields: string): Promise<any> 
 { 
     const url = new URL(`https://graph.facebook.com/${version}/${path}`); 
     url.searchParams.set("access_token", token); url.searchParams.set("fields", fields); 
-    const response = await fetch(url); 
-    if (!response.ok) 
-        throw new Error("Meta Graph API request failed"); 
-    return response.json(); }
+    const response = await fetch(url);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+        const error = payload && typeof payload === "object" ? (payload as { error?: Record<string, unknown> }).error : undefined;
+        throw new MetaGraphApiError(path, response.status, {
+            code: typeof error?.code === "number" ? error.code : undefined,
+            message: typeof error?.message === "string" ? error.message : "Meta Graph API request failed",
+            fbTraceId: typeof error?.fbtrace_id === "string" ? error.fbtrace_id : undefined
+        });
+    }
+    return payload;
+}
+
+class MetaGraphApiError extends Error {
+    constructor(readonly path: string, readonly status: number, readonly details: { code?: number; message: string; fbTraceId?: string }) {
+        super(details.message); this.name = "MetaGraphApiError";
+    }
+}
+
+function metaGraphDiagnostic(error: unknown): { path?: string; status?: number; code?: number; message: string; fbTraceId?: string } {
+    if (error instanceof MetaGraphApiError) return { path: error.path, status: error.status, code: error.details.code, message: error.details.message, fbTraceId: error.details.fbTraceId };
+    return { message: error instanceof Error ? error.message : "Meta resource discovery failed" };
+}
 function frontendRedirect(connectionId: number | undefined, success: boolean): string {
      const base = process.env.META_OAUTH_FRONTEND_REDIRECT?.trim() || "https://voxistudio.com/settings/integrations/meta"; 
      const url = new URL(base); if (connectionId) url.searchParams.set("connectionId", String(connectionId)); 

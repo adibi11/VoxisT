@@ -1,0 +1,5 @@
+-- RenameIndex
+ALTER INDEX "IntegrationConnection_businessId_provider_integrationType_exter" RENAME TO "IntegrationConnection_businessId_provider_integrationType_e_key";
+
+-- RenameIndex
+ALTER INDEX "ProviderWebhookEvent_integrationConnectionId_providerEventId_ke" RENAME TO "ProviderWebhookEvent_integrationConnectionId_providerEventI_key";

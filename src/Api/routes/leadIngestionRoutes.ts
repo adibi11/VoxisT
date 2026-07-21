@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "crypto";
-import express from "express";
+import express, { RequestHandler } from "express";
 import { LeadIngestionService } from "../../LeadIngestion/LeadIngestionService";
 import { CanonicalLeadSubmission } from "../../LeadIngestion/canonicalLeadSubmission";
 import { decryptIntegrationSecret } from "../../LeadIngestion/integrationSecret";
@@ -16,10 +16,11 @@ type DirectLeadSubmissionRequest = {
     metadata?: CanonicalLeadSubmission["metadata"];
 };
 
-export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger): void {
+
+export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger,publicEntrypointRateLimiter: RequestHandler): void {
     const ingestionService = new LeadIngestionService(sql.leadIngestionRepository, logger.child({ component: "LeadIngestionService" }));
 
-    app.post("/lead-submissions/:connectionToken", async (req, res) => {
+    app.post("/lead-submissions/:connectionToken",publicEntrypointRateLimiter, async (req, res) => {
         const connectionToken = connectionTokenFrom(req.params.connectionToken);
         if (!connectionToken) return res.status(400).json({ message: "connectionToken is required" });
         const connection = await sql.integrationConnectionRepository.getByConnectionToken(connectionToken);

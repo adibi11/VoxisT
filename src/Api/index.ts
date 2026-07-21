@@ -77,7 +77,7 @@ getClientRoutes(v1Router, sqlManager, appLogger);
 getConversationRoutes(v1Router, sqlManager, appLogger);
 getLeadRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getFollowUpRoutes(v1Router, sqlManager, appLogger);
-getLeadIngestionRoutes(v1Router, sqlManager, appLogger);
+getLeadIngestionRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getIntegrationRoutes(v1Router, sqlManager, appLogger);
 
 
