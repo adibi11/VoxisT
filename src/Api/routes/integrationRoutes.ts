@@ -78,8 +78,10 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
     app.get("/integrations/oauth/meta/callback", async (req, res) => {
         const stateText = typeof req.query.state === "string" ? req.query.state : "";
         try {
+            //The redis state is stored in the state parameter and is verified here to ensure the request is valid and not a CSRF attack.
             const state = verifyMetaOAuthState(stateText);
             const connection = await sql.integrationConnectionRepository.getById(state.businessId, state.connectionId);
+            //The integration was created earlier in the initial request
             if (!connection || connection.provider !== "meta" || connection.status !== "PENDING") 
                 throw new Error("Meta integration connection is unavailable");
             if (typeof req.query.error === "string") 
@@ -87,6 +89,7 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
             const code = typeof req.query.code === "string" ? req.query.code : ""; 
             if (!code) 
                 throw new Error("Meta authorization code is missing");
+            // The code is exchanged for a long-lived page access token and stored in the integration connection's credentials.
             await sql.integrationConnectionRepository.saveCredentials(state.businessId, state.connectionId, encryptMetaCredentials(await exchangeMetaCode(code)));
             return res.redirect(302, frontendRedirect(state.connectionId, true));
         } catch (error) { logger.warn("meta.callback.failed", { error }); return res.redirect(302, frontendRedirect(undefined, false)); }
