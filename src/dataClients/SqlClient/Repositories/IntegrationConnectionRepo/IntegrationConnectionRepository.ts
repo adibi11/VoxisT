@@ -29,6 +29,11 @@ export class IntegrationConnectionRepository implements IIntegrationConnectionRe
         return connection ? mapConnection(connection) : null;
     }
 
+    async getByConnectionId(connectionId: number): Promise<IntegrationConnectionDto | null> {
+        const connection = await this.prisma.integrationConnection.findUnique({ where: { id: connectionId } });
+        return connection ? mapConnection(connection) : null;
+    }
+
     async getByConnectionToken(connectionToken: string): Promise<IntegrationConnectionDto | null> {
         const connection = await this.prisma.integrationConnection.findUnique({ where: { connectionToken } });
         return connection ? mapConnection(connection) : null;
@@ -74,6 +79,10 @@ export class IntegrationConnectionRepository implements IIntegrationConnectionRe
     async getCredentialsEncrypted(businessId: number, connectionId: number): Promise<string | null> {
         const connection = await this.prisma.integrationConnection.findFirst({ where: { id: connectionId, businessId }, select: { credentialsEncrypted: true } });
         return connection?.credentialsEncrypted || null;
+    }
+
+    async clearCredentials(businessId: number, connectionId: number): Promise<IntegrationConnectionDto> {
+        return this.updateScoped(businessId, connectionId, { credentialsEncrypted: null });
     }
 
     private async updateScoped(businessId: number, connectionId: number, data: Prisma.IntegrationConnectionUncheckedUpdateInput): Promise<IntegrationConnectionDto> {

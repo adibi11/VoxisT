@@ -3,6 +3,7 @@ export type IntegrationConnectionStatus = "PENDING" | "ACTIVE" | "DISABLED" | "F
 export type IncomingLeadStatus = "RECEIVED" | "QUEUED" | "PROCESSING" | "PROCESSED" | "FAILED" | "IGNORED";
 export type IngestionOutboxStatus = "PENDING" | "PUBLISHED" | "FAILED";
 export type ProviderWebhookEventStatus = "RECEIVED" | "PROCESSING" | "PROCESSED" | "FAILED" | "IGNORED";
+export type MetaLeadFormSubscriptionStatus = "ACTIVE" | "DISABLED";
 
 export type IntegrationConnectionDto = {
     id: number;
@@ -123,4 +124,16 @@ export type ProviderWebhookEventDto = {
     failureDetail: string | null;
     receivedAt: string;
     processedAt: string | null;
+};
+
+export type MetaLeadFormSubscriptionDto = {
+    id: number;
+    integrationConnectionId: number;
+    pageId: string;
+    pageName: string | null;
+    formId: string;
+    formName: string | null;
+    status: MetaLeadFormSubscriptionStatus;
+    createdAt: string;
+    updatedAt: string;
 };

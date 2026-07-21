@@ -16,13 +16,15 @@ export class MetaLeadHydrator implements IProviderEventHandler {
     async handle(event: ProviderWebhookEventDto): Promise<void> {
         const leadgenId = readLeadgenId(event);
         const connection = await this.connections.getById(event.businessId, event.integrationConnectionId);
-        if (!connection || connection.provider !== "meta" || connection.integrationType !== "LEAD_ADS" || !connection.externalResourceId) {
+        if (!connection || connection.status !== "ACTIVE" || connection.provider !== "meta" || connection.integrationType !== "LEAD_ADS") {
             throw new ProviderEventHandlingError("Meta integration connection is unavailable", false, "META_CONNECTION_UNAVAILABLE");
         }
         const encryptedCredentials = await this.connections.getCredentialsEncrypted(event.businessId, event.integrationConnectionId);
         if (!encryptedCredentials) 
             throw new ProviderEventHandlingError("Meta Page access token is unavailable", false, "META_PAGE_TOKEN_UNAVAILABLE");
-        const pageAccessToken = decryptMetaCredentials(encryptedCredentials).pageAccessToken;
+        const pageId = readPageId(event);
+        const credentials = decryptMetaCredentials(encryptedCredentials);
+        const pageAccessToken = credentials.pageAccessTokens?.[pageId] || credentials.pageAccessToken;
         if (!pageAccessToken) 
             throw new ProviderEventHandlingError("Meta Page access token has not been selected", false, "META_PAGE_TOKEN_UNAVAILABLE");
         const lead = await fetchMetaLead(leadgenId, pageAccessToken);
@@ -81,6 +83,12 @@ function readLeadgenId(event: ProviderWebhookEventDto): string {
     const leadgenId = stringValue(payload?.leadgen?.leadgenId);
     if (!leadgenId) throw new ProviderEventHandlingError("Meta webhook event has no leadgen ID", false, "META_EVENT_INVALID");
     return leadgenId;
+}
+function readPageId(event: ProviderWebhookEventDto): string {
+    const payload = event.payload as { leadgen?: { pageId?: unknown } } | null;
+    const pageId = stringValue(payload?.leadgen?.pageId);
+    if (!pageId) throw new ProviderEventHandlingError("Meta webhook event has no Page ID", false, "META_EVENT_INVALID");
+    return pageId;
 }
 function stringValue(value: unknown): string | null { return typeof value === "string" && value.trim() ? value.trim() : null; }
 

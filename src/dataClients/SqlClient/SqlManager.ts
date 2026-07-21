@@ -31,6 +31,8 @@ import { LeadProcessingRepository } from "./Repositories/LeadProcessingRepo/Lead
 import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
 import { ProviderWebhookEventRepository } from "./Repositories/ProviderWebhookEventRepo/ProviderWebhookEventRepository";
 import { IProviderWebhookEventRepository } from "./Repositories/ProviderWebhookEventRepo/IProviderWebhookEventRepository";
+import { MetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/MetaLeadFormSubscriptionRepository";
+import { IMetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/IMetaLeadFormSubscriptionRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
@@ -70,6 +72,7 @@ export class SqlManager implements IDatabaseClient {
     readonly leadIngestionRepository: ILeadIngestionRepository;
     readonly leadProcessingRepository: ILeadProcessingRepository;
     readonly providerWebhookEventRepository: IProviderWebhookEventRepository;
+    readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
@@ -84,6 +87,7 @@ export class SqlManager implements IDatabaseClient {
         this.leadIngestionRepository = new LeadIngestionRepository(this.prisma);
         this.leadProcessingRepository = new LeadProcessingRepository(this.prisma);
         this.providerWebhookEventRepository = new ProviderWebhookEventRepository(this.prisma);
+        this.metaLeadFormSubscriptionRepository = new MetaLeadFormSubscriptionRepository(this.prisma);
     }   
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {

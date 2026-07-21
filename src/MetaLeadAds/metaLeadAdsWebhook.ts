@@ -34,11 +34,13 @@ export function createMetaLeadAdsWebhookHandlers(sql: IDatabaseClient, logger: I
 
             let recorded = 0;
             for (const item of leadgenChanges(body)) {
-                const connection = await sql.integrationConnectionRepository.getMetaConnectionByResource(item.formId, item.pageId);
-                if (!connection) {
+                const subscription = await sql.metaLeadFormSubscriptionRepository.getActiveByPageAndForm(item.pageId, item.formId);
+                if (!subscription) {
                     logger.warn("metaLeadAds.webhook.unresolved", { pageId: item.pageId, formId: item.formId, leadgenId: item.leadgenId });
                     continue;
                 }
+                const connection = await sql.integrationConnectionRepository.getByConnectionId(subscription.integrationConnectionId);
+                if (!connection || connection.status !== "ACTIVE") continue;
                 const result = await sql.providerWebhookEventRepository.record({
                     businessId: connection.businessId,
                     integrationConnectionId: connection.id,

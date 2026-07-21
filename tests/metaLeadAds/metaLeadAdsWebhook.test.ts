@@ -33,7 +33,8 @@ describe("Meta Lead Ads webhook", () => {
 
 function fakeSql(): IDatabaseClient & { recorded?: unknown } {
     const sql: any = {
-        integrationConnectionRepository: { getMetaConnectionByResource: async () => ({ id: 3, businessId: 7 }) },
+        integrationConnectionRepository: { getByConnectionId: async () => ({ id: 3, businessId: 7, status: "ACTIVE" }) },
+        metaLeadFormSubscriptionRepository: { getActiveByPageAndForm: async () => ({ integrationConnectionId: 3 }) },
         providerWebhookEventRepository: { record: async (input: unknown) => { sql.recorded = input; return { outcome: "recorded" }; } }
     };
     return sql;

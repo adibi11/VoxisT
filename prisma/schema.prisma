@@ -70,6 +70,22 @@ model Business {
   ingestionOutbox   IngestionOutbox[]
 }
 
+model MetaLeadFormSubscription {
+  id                      Int      @id @default(autoincrement())
+  integrationConnectionId Int
+  pageId                  String
+  pageName                String?
+  formId                  String
+  formName                String?
+  status                  MetaLeadFormSubscriptionStatus @default(ACTIVE)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
+
+  @@unique([integrationConnectionId, formId])
+  @@index([pageId, formId, status])
+}
+
 model BusinessContext {
   id                 Int      @id @default(autoincrement())
   businessId         Int      @unique
@@ -286,6 +302,7 @@ model IntegrationConnection {
   incomingLeads         IncomingLead[]
   externalLeads         ExternalLead[]
   providerWebhookEvents ProviderWebhookEvent[]
+  metaLeadFormSubscriptions MetaLeadFormSubscription[]
 
   @@unique([businessId, provider, integrationType, externalResourceId])
   @@index([businessId, status])
@@ -417,6 +434,11 @@ enum LeadStatus {
   WON
   LOST
   CLOSED
+}
+
+enum MetaLeadFormSubscriptionStatus {
+  ACTIVE
+  DISABLED
 }
 
 enum LeadSource {

@@ -97,7 +97,11 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
         const connectionId = parseId(req.params.connectionId); 
         if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) 
             return;
-        try { return res.json(await discoverMetaResources(await requiredMetaConnection(sql, businessId, connectionId))); }
+        try {
+            const resources = await discoverMetaResources(await requiredMetaConnection(sql, businessId, connectionId));
+            const subscriptions = await sql.metaLeadFormSubscriptionRepository.listByConnection(connectionId);
+            return res.json({ pages: resources.pages.map(({ accessToken, ...page }) => page), warnings: resources.warnings, subscriptions });
+        }
         catch (error) {
             const metaError = metaGraphDiagnostic(error);
             logger.error("meta.resources.failed", { businessId, connectionId, metaError, error });
@@ -105,27 +109,55 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
         }
     });
 
-    app.post("/businesses/:businessId/integrations/:connectionId/meta/resource", requireAuth, async (req, res) => {
+    app.get("/businesses/:businessId/integrations/:connectionId/meta/subscriptions", requireAuth, async (req, res) => {
+        const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId);
+        if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
+        const connection = await sql.integrationConnectionRepository.getById(businessId, connectionId);
+        if (!connection || connection.provider !== "meta") return res.status(404).json({ message: "Meta integration connection not found" });
+        return res.json({ items: await sql.metaLeadFormSubscriptionRepository.listByConnection(connectionId) });
+    });
+
+    app.post("/businesses/:businessId/integrations/:connectionId/meta/subscriptions", requireAuth, async (req, res) => {
         const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId); 
         if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
         const pageId = typeof req.body?.pageId === "string" ? req.body.pageId : ""; 
         const formId = typeof req.body?.formId === "string" ? req.body.formId : "";
         try {
-            const connection = await requiredMetaConnection(sql, businessId, connectionId); 
-            const resources = await discoverMetaResources(connection);
-            const page = resources.pages.find((page) => page.id === pageId); 
-            if (!page || !page.forms.some((form) => form.id === formId)) 
-                return res.status(400).json({ message: "Selected Meta Page/form is not authorized" });
-            const credentials = decryptMetaCredentials(connection.credentialsEncrypted); 
-            credentials.pageAccessToken = page.accessToken;
-            return res.json(await sql.integrationConnectionRepository.configureMetaResource(businessId, connectionId, pageId, formId, encryptMetaCredentials(credentials)));
+            const subscription = await addMetaFormSubscription(sql, businessId, connectionId, pageId, formId);
+            return res.status(201).json(subscription);
         } catch (error) { logger.error("meta.resource.configure.failed", { businessId, connectionId, error }); return res.status(400).json({ message: "Unable to configure Meta Page/form" }); }
+    });
+
+    // Legacy single-resource endpoint. Kept for older clients; it now adds a form subscription.
+    app.post("/businesses/:businessId/integrations/:connectionId/meta/resource", requireAuth, async (req, res) => {
+        const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId);
+        if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
+        try { return res.json(await addMetaFormSubscription(sql, businessId, connectionId, String(req.body?.pageId || ""), String(req.body?.formId || ""))); }
+        catch (error) { logger.error("meta.resource.configure.failed", { businessId, connectionId, error }); return res.status(400).json({ message: "Unable to configure Meta Page/form" }); }
+    });
+
+    app.delete("/businesses/:businessId/integrations/:connectionId/meta/subscriptions/:subscriptionId", requireAuth, async (req, res) => {
+        const businessId = parseId(req.params.businessId); 
+        const connectionId = parseId(req.params.connectionId); 
+        const subscriptionId = parseId(req.params.subscriptionId);
+        if (!businessId || !connectionId || !subscriptionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
+        try {
+            const existing = (await sql.metaLeadFormSubscriptionRepository.listByConnection(connectionId)).find((item) => item.id === subscriptionId);
+            if (!existing || existing.status !== "ACTIVE") 
+                return res.status(404).json({ message: "Meta form subscription not found" });
+            if (await sql.metaLeadFormSubscriptionRepository.countActiveByPage(connectionId, existing.pageId) === 1) 
+                await changeMetaPageSubscription(existing.pageId, await pageToken(sql, businessId, connectionId, existing.pageId), false);
+            const removed = await sql.metaLeadFormSubscriptionRepository.disable(subscriptionId, connectionId);
+            if (!removed) 
+                return res.status(404).json({ message: "Meta form subscription not found" });
+            return res.status(204).send();
+        } catch (error) { logger.error("meta.subscription.remove.failed", { businessId, connectionId, subscriptionId, error }); return res.status(502).json({ message: "Unable to remove Meta form subscription" }); }
     });
 
     app.post("/businesses/:businessId/integrations/:connectionId/meta/verification", requireAuth, async (req, res) => {
         const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId); if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
         const connection = await sql.integrationConnectionRepository.getById(businessId, connectionId);
-        if (!connection?.hasCredentials || !connection.externalResourceId) 
+        if (!connection?.hasCredentials || !(await sql.metaLeadFormSubscriptionRepository.listByConnection(connectionId)).some((item) => item.status === "ACTIVE")) 
             return res.status(400).json({ message: "Authorize Meta and select a Page/form before verification" });
         return res.json({ connectionId, status: connection.status, verificationStatus: "AWAITING_TEST_LEAD", testLeadUrl: "https://developers.facebook.com/tools/lead-ads-testing" });
     });
@@ -133,7 +165,11 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
     app.post("/businesses/:businessId/integrations/:connectionId/disable", requireAuth, async (req, res) => {
         const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId); 
         if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
-        try { 
+        try {
+            const subscriptions = (await sql.metaLeadFormSubscriptionRepository.listByConnection(connectionId)).filter((item) => item.status === "ACTIVE");
+            for (const pageId of [...new Set(subscriptions.map((item) => item.pageId))]) await changeMetaPageSubscription(pageId, await pageToken(sql, businessId, connectionId, pageId), false);
+            await sql.metaLeadFormSubscriptionRepository.disableAll(connectionId);
+            await sql.integrationConnectionRepository.clearCredentials(businessId, connectionId);
             return res.json(await sql.integrationConnectionRepository.updateStatus(businessId, connectionId, "DISABLED")); 
         }
         catch { return res.status(404).json({ message: "Integration connection not found" }); }
@@ -148,18 +184,63 @@ async function requiredMetaConnection(sql: IDatabaseClient, businessId: number, 
         throw new Error("Meta authorization is required"); 
     return { ...connection, credentialsEncrypted }; 
 }
+
+async function addMetaFormSubscription(sql: IDatabaseClient, businessId: number, connectionId: number, pageId: string, formId: string) {
+    if (!pageId || !formId) throw new Error("Meta Page and form are required");
+    const alreadyConnected = await sql.metaLeadFormSubscriptionRepository.getActiveByPageAndForm(pageId, formId);
+    if (alreadyConnected && alreadyConnected.integrationConnectionId !== connectionId) 
+        throw new Error("This Meta form is already connected to another Voxis business");
+    const connection = await requiredMetaConnection(sql, businessId, connectionId);
+    const resources = await discoverMetaResources(connection);
+    const page = resources.pages.find((item) => item.id === pageId);
+    const form = page?.forms.find((item) => item.id === formId);
+    if (!page || !form) 
+        throw new Error("Selected Meta Page/form is not authorized");
+    const activeOnPage = await sql.metaLeadFormSubscriptionRepository.countActiveByPage(connectionId, pageId);
+    if (activeOnPage === 0) await changeMetaPageSubscription(pageId, page.accessToken, true);
+    const credentials = decryptMetaCredentials(connection.credentialsEncrypted);
+    credentials.pageAccessTokens = { ...(credentials.pageAccessTokens || {}), [pageId]: page.accessToken };
+    // Preserve this field while existing connections and code are migrated.
+    credentials.pageAccessToken = page.accessToken;
+    await sql.integrationConnectionRepository.saveCredentials(businessId, connectionId, encryptMetaCredentials(credentials));
+    await sql.integrationConnectionRepository.updateStatus(businessId, connectionId, "ACTIVE");
+    return sql.metaLeadFormSubscriptionRepository.upsert({ integrationConnectionId: connectionId, pageId, pageName: page.name, formId, formName: form.name });
+}
+
+async function pageToken(sql: IDatabaseClient, businessId: number, connectionId: number, pageId: string): Promise<string> {
+    const encrypted = await sql.integrationConnectionRepository.getCredentialsEncrypted(businessId, connectionId);
+    if (!encrypted) throw new Error("Meta Page access token is unavailable");
+    const credentials = decryptMetaCredentials(encrypted);
+    const token = credentials.pageAccessTokens?.[pageId] || credentials.pageAccessToken;
+    if (!token) throw new Error("Meta Page access token is unavailable");
+    return token;
+}
+
+async function changeMetaPageSubscription(pageId: string, token: string, subscribe: boolean): Promise<void> {
+    const version = process.env.META_GRAPH_API_VERSION?.trim();
+    if (!version) throw new Error("META_GRAPH_API_VERSION is not configured");
+    const url = new URL(`https://graph.facebook.com/${version}/${pageId}/subscribed_apps`);
+    url.searchParams.set("access_token", token);
+    if (subscribe) url.searchParams.set("subscribed_fields", "leadgen");
+    const response = await fetch(url, { method: subscribe ? "POST" : "DELETE" });
+    if (!response.ok) throw new Error(`Meta Page webhook ${subscribe ? "subscription" : "unsubscription"} failed (${response.status})`);
+}
 type MetaResource = { id: string; name: string; accessToken: string; forms: Array<{ id: string; name: string }> };
 type MetaResourceWarning = { pageId: string; pageName: string; message: string; status?: number; code?: number; fbTraceId?: string };
 
 async function discoverMetaResources(connection: { credentialsEncrypted: string }): Promise<{ pages: MetaResource[]; warnings: MetaResourceWarning[] }> {
-    const credentials = decryptMetaCredentials(connection.credentialsEncrypted); const version = process.env.META_GRAPH_API_VERSION!;
+    const credentials = decryptMetaCredentials(connection.credentialsEncrypted); 
+    const version = process.env.META_GRAPH_API_VERSION!;
     // A failure here means the user token itself cannot discover Pages, so it is a real integration error.
     const pages = await graphGet(version, "me/accounts", credentials.accessToken, "id,name,access_token");
     const results = await Promise.all((pages.data || []).map(async (page: any): Promise<{ page: MetaResource; warning?: MetaResourceWarning }> => {
-        const pageId = String(page.id); const pageName = String(page.name || page.id); const accessToken = String(page.access_token);
+        const pageId = String(page.id); 
+        const pageName = String(page.name || page.id); 
+        const accessToken = String(page.access_token);
         try {
             const forms = await graphGet(version, `${pageId}/leadgen_forms`, accessToken, "id,name");
-            return { page: { id: pageId, name: pageName, accessToken, forms: (forms.data || []).map((form: any) => ({ id: String(form.id), name: String(form.name || form.id) })) } };
+            return { page: { id: pageId, name: pageName, accessToken, forms: (forms.data || []).map((form: any) => (
+                { id: String(form.id), name: String(form.name || form.id) })) } };
         } catch (error) {
             // A Page may legitimately have no forms, or Meta may deny form access for this Page.
             // Preserve every discoverable Page so the UI can explain the issue without blocking setup.

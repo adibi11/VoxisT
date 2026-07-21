@@ -3,7 +3,7 @@ import { redisClient } from "../dataClients/CacheClient/redis";
 import { getMetaLeadAdsConfig } from "./metaLeadAdsConfig";
 
 export type MetaOAuthState = { businessId: number; connectionId: number; ownerId: number; expiresAt: number; nonce: string };
-export type MetaCredentials = { accessToken: string; pageAccessToken?: string };
+export type MetaCredentials = { accessToken: string; pageAccessToken?: string; pageAccessTokens?: Record<string, string> };
 export type MetaAuthorizationTicket = { businessId: number; connectionId: number; ownerId: number };
 
 const CONSUME_TICKET_SCRIPT = "local value = redis.call('GET', KEYS[1]); if value then redis.call('DEL', KEYS[1]); end; return value";

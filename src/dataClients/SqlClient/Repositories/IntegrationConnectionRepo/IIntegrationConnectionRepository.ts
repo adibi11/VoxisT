@@ -3,6 +3,7 @@ import { CreateIntegrationConnectionInput, IntegrationConnectionDto } from "../.
 export interface IIntegrationConnectionRepository {
     create(input: CreateIntegrationConnectionInput): Promise<IntegrationConnectionDto>;
     getById(businessId: number, connectionId: number): Promise<IntegrationConnectionDto | null>;
+    getByConnectionId(connectionId: number): Promise<IntegrationConnectionDto | null>;
     getByConnectionToken(connectionToken: string): Promise<IntegrationConnectionDto | null>;
     getWebhookSecretEncryptedByConnectionToken(connectionToken: string): Promise<string | null>;
     getActiveByProviderResource(provider: string, integrationType: IntegrationConnectionDto["integrationType"], externalResourceId: string, pageId?: string): Promise<IntegrationConnectionDto | null>;
@@ -12,4 +13,5 @@ export interface IIntegrationConnectionRepository {
     configureMetaResource(businessId: number, connectionId: number, pageId: string, formId: string, credentialsEncrypted: string): Promise<IntegrationConnectionDto>;
     updateStatus(businessId: number, connectionId: number, status: IntegrationConnectionDto["status"]): Promise<IntegrationConnectionDto>;
     getCredentialsEncrypted(businessId: number, connectionId: number): Promise<string | null>;
+    clearCredentials(businessId: number, connectionId: number): Promise<IntegrationConnectionDto>;
 }
