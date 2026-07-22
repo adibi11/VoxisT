@@ -24,6 +24,7 @@ export class LeadProcessingRepository implements ILeadProcessingRepository {
                 return { outcome: "linked_existing_external_lead", crmLeadId: existingExternalLead.leadId, externalLeadId: existingExternalLead.id };
             }
 
+            
             const crmLead = await tx.lead.create({
                 data: {
                     businessId,

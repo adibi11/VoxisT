@@ -44,7 +44,7 @@ export function metaAuthorizeUrl(state: string): string {
     const url = new URL(`https://www.facebook.com/${config.graphApiVersion}/dialog/oauth`);
     url.searchParams.set("client_id", config.appId); url.searchParams.set("redirect_uri", config.oauthRedirectUri);
     url.searchParams.set("state", state); url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", process.env.META_OAUTH_SCOPES || "leads_retrieval,pages_show_list,pages_read_engagement,pages_manage_metadata");
+    url.searchParams.set("scope", process.env.META_OAUTH_SCOPES || "leads_retrieval,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_ads,ads_management,ads_read,business_management");
     return url.toString();
 }
 

@@ -36,7 +36,8 @@ export function createMetaLeadAdsWebhookHandlers(sql: IDatabaseClient, logger: I
             for (const item of leadgenChanges(body)) {
                 const subscription = await sql.metaLeadFormSubscriptionRepository.getActiveByPageAndForm(item.pageId, item.formId);
                 if (!subscription) {
-                    logger.warn("metaLeadAds.webhook.unresolved", { pageId: item.pageId, formId: item.formId, leadgenId: item.leadgenId });
+                    // TEMP_META_DEBUG: do not log raw Meta resource identifiers.
+                    logger.warn("metaLeadAds.webhook.unresolved", { page: fingerprint(item.pageId), form: fingerprint(item.formId), leadgen: fingerprint(item.leadgenId) });
                     continue;
                 }
                 const connection = await sql.integrationConnectionRepository.getByConnectionId(subscription.integrationConnectionId);
@@ -81,3 +82,4 @@ function safeEquals(left: string, right: string): boolean {
     return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 function stringValue(value: unknown): string | null { return typeof value === "string" && value.trim() ? value.trim() : null; }
+function fingerprint(value: string): string { return createHash("sha256").update(value).digest("hex").slice(0, 12); }
