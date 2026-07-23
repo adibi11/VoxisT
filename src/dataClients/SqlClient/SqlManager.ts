@@ -29,10 +29,13 @@ import { LeadIngestionRepository } from "./Repositories/LeadIngestionRepo/LeadIn
 import { ILeadIngestionRepository } from "./Repositories/LeadIngestionRepo/ILeadIngestionRepository";
 import { LeadProcessingRepository } from "./Repositories/LeadProcessingRepo/LeadProcessingRepository";
 import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
+import { LeadCreationService } from "../../Lead/LeadCreationService";
 import { ProviderWebhookEventRepository } from "./Repositories/ProviderWebhookEventRepo/ProviderWebhookEventRepository";
 import { IProviderWebhookEventRepository } from "./Repositories/ProviderWebhookEventRepo/IProviderWebhookEventRepository";
 import { MetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/MetaLeadFormSubscriptionRepository";
 import { IMetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/IMetaLeadFormSubscriptionRepository";
+import { TaskRepository } from "./Repositories/TaskRepo/TaskRepository";
+import { ITaskRepository } from "./Repositories/TaskRepo/ITaskRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
@@ -73,6 +76,7 @@ export class SqlManager implements IDatabaseClient {
     readonly leadProcessingRepository: ILeadProcessingRepository;
     readonly providerWebhookEventRepository: IProviderWebhookEventRepository;
     readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
+    readonly taskRepository: ITaskRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
@@ -88,7 +92,12 @@ export class SqlManager implements IDatabaseClient {
         this.leadProcessingRepository = new LeadProcessingRepository(this.prisma);
         this.providerWebhookEventRepository = new ProviderWebhookEventRepository(this.prisma);
         this.metaLeadFormSubscriptionRepository = new MetaLeadFormSubscriptionRepository(this.prisma);
+        this.taskRepository = new TaskRepository(this.prisma);
     }   
+
+    getPrismaClient(): PrismaClient {
+        return this.prisma;
+    }
 
     async getBusiness(businessId: number): Promise<BusinessDto | null> {
         const business = await this.prisma.business.findUnique({
@@ -533,17 +542,14 @@ export class SqlManager implements IDatabaseClient {
             }
         });
 
-        await this.prisma.lead.create({
-            data: {
-                businessId,
-                clientId,
-                status: "QUALIFIED" as any,
-                source: "WHATSAPP" as any,
-                score,
-                name: client?.name || undefined,
-                phoneNumber: client?.phoneNumber,
-                summary: `Auto-qualified from conversation ${conversationId} with score ${score}.`
-            }
+        await new LeadCreationService(this.prisma).createConversationLead({
+            businessId,
+            clientId,
+            conversationId,
+            score,
+            name: client?.name,
+            phoneNumber: client?.phoneNumber,
+            summary: `Auto-qualified from conversation ${conversationId} with score ${score}.`
         });
     }
 

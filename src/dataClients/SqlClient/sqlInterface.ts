@@ -27,6 +27,7 @@ import { ILeadIngestionRepository } from "./Repositories/LeadIngestionRepo/ILead
 import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
 import { IProviderWebhookEventRepository } from "./Repositories/ProviderWebhookEventRepo/IProviderWebhookEventRepository";
 import { IMetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/IMetaLeadFormSubscriptionRepository";
+import { ITaskRepository } from "./Repositories/TaskRepo/ITaskRepository";
 
 
 export interface IDatabaseClient {
@@ -44,6 +45,7 @@ export interface IDatabaseClient {
     readonly leadProcessingRepository: ILeadProcessingRepository;
     readonly providerWebhookEventRepository: IProviderWebhookEventRepository;
     readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
+    readonly taskRepository: ITaskRepository;
 
 
     getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;

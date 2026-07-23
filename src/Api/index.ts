@@ -25,8 +25,9 @@ import { getLeadRoutes } from "./routes/leadRoutes";
 import { getFollowUpRoutes } from "./routes/followUpRoutes";
 import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
 import { getIntegrationRoutes } from "./routes/integrationRoutes";
+import { getTaskRoutes } from "./routes/taskRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
-import { createPublicEntrypointRateLimiter, getPublicEntrypointRateLimitConfig } from "./rateLimitMiddleware";
+import { createPublicEntrypointRateLimiter, createTaskEntrypointRateLimiter, getPublicEntrypointRateLimitConfig, getTaskEntrypointRateLimitConfig } from "./rateLimitMiddleware";
 import { createMetaLeadAdsWebhookHandlers } from "../MetaLeadAds/metaLeadAdsWebhook";
 
 const appLogger = logger.child({ component: "ApiServer" });
@@ -39,6 +40,8 @@ const API_VERSION = version.version || "1.0.0";
 const httpSecurityConfig = getHttpSecurityConfig();
 const publicEntrypointRateLimitConfig = getPublicEntrypointRateLimitConfig();
 const publicEntrypointRateLimiter = createPublicEntrypointRateLimiter(publicEntrypointRateLimitConfig, appLogger);
+const taskEntrypointRateLimitConfig = getTaskEntrypointRateLimitConfig();
+const taskEntrypointRateLimiter = createTaskEntrypointRateLimiter(taskEntrypointRateLimitConfig, appLogger);
 const metaLeadAdsWebhook = createMetaLeadAdsWebhookHandlers(sqlManager, appLogger.child({ component: "MetaLeadAdsWebhook" }));
 
 // Staging/production run immediately behind one ALB hop. Local development defaults to
@@ -55,7 +58,7 @@ const corsMiddleware = cors({
     callback(new Error(`CORS origin denied: ${origin}`));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-lead-capture-key"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-lead-capture-key", "X-Business-Id", "Idempotency-Key", "If-Match"],
   credentials: false,
   optionsSuccessStatus: 204
 });
@@ -79,6 +82,7 @@ getLeadRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getFollowUpRoutes(v1Router, sqlManager, appLogger);
 getLeadIngestionRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getIntegrationRoutes(v1Router, sqlManager, appLogger);
+getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
 
 
 

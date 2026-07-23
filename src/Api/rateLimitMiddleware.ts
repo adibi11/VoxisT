@@ -15,11 +15,13 @@ end
 return { current, redis.call('PTTL', KEYS[1]) }
 `;
 
-export type PublicEntrypointRateLimitConfig = {
+export type EntrypointRateLimitConfig = {
   maxRequests: number;
   windowSeconds: number;
   keySecret: string;
 };
+
+
 
 /**
  * This is one shared budget for the most exposed browser/public entrypoints.
@@ -28,7 +30,7 @@ export type PublicEntrypointRateLimitConfig = {
  */
 export function getPublicEntrypointRateLimitConfig(
   environment = process.env.NODE_ENV || "development"
-): PublicEntrypointRateLimitConfig {
+): EntrypointRateLimitConfig {
   return {
     maxRequests: getPositiveInteger("PUBLIC_ENTRYPOINT_RATE_LIMIT_MAX", 20),
     windowSeconds: getPositiveInteger("PUBLIC_ENTRYPOINT_RATE_LIMIT_WINDOW_SECONDS", 15 * 60),
@@ -36,8 +38,60 @@ export function getPublicEntrypointRateLimitConfig(
   };
 }
 
+export function getTaskEntrypointRateLimitConfig(
+  environment = process.env.NODE_ENV || "development"
+): EntrypointRateLimitConfig {
+  return {
+    maxRequests: getPositiveInteger("TASK_ENTRYPOINT_RATE_LIMIT_MAX", 120),
+    windowSeconds: getPositiveInteger("TASK_ENTRYPOINT_RATE_LIMIT_WINDOW_SECONDS", 15 * 60),
+    keySecret: getRateLimitKeySecret(environment)
+  };
+}
+
+export function createTaskEntrypointRateLimiter(config : EntrypointRateLimitConfig, logger: ILogger):RequestHandler{
+
+  return async (req ,res,next)=>{
+      const identity = fingerprintIp(req.ip || req.socket.remoteAddress || "unknown", config.keySecret);
+      const key = `rate-limit:v1:task-entrypoint:ip:${identity}`;
+
+      try{
+        const [count,ttlMilliSeconds] = await incrementFixedWindow(key,config.windowSeconds*1000);
+        const retryAfterSeconds = Math.max(1,Math.ceil(ttlMilliSeconds / 1000));
+        const remaining = Math.max(0, config.maxRequests - count);
+
+        res.setHeader("RateLimit-Limit", String(config.maxRequests));
+        res.setHeader("RateLimit-Remaining", String(remaining));
+        res.setHeader("RateLimit-Reset", String(retryAfterSeconds));
+        if (count > config.maxRequests) 
+        {
+          res.setHeader("Retry-After", String(retryAfterSeconds));
+          logger.warn("rate_limit.rejected", {
+            group: "task-entrypoint",
+            identityType: "ip",
+            retryAfterSeconds
+          });
+          return res.status(429).json({ message: "Too many requests. Please try again later." });
+        }
+
+        return next();
+
+      }
+      catch(error){
+        logger.error("rate_limit.unavailable", {
+        group: "task-entrypoint",
+        identityType: "ip",
+        error
+        });
+        return res.status(503).json({ message: "Service temporarily unavailable" });
+      }
+
+
+  }
+
+}
+
 export function createPublicEntrypointRateLimiter(
-  config: PublicEntrypointRateLimitConfig,
+  config: EntrypointRateLimitConfig,
   logger: ILogger
 ): RequestHandler {
   return async (req, res, next) => {

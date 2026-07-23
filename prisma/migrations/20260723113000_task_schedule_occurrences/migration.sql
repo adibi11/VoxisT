@@ -1,0 +1,1 @@
+ALTER TYPE "BusinessActivityEventType" ADD VALUE 'TASK_REMINDER_DUE';

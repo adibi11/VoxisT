@@ -16,6 +16,10 @@
     "start:provider-event-processor": "node dist/Workers/ProviderEventProcessorWorker/worker.js",
     "lead-ingestion-worker": "ts-node src/Workers/LeadIngestionWorker/worker.ts",
     "start:lead-ingestion-worker": "node dist/Workers/LeadIngestionWorker/worker.js",
+    "task-schedule-worker": "ts-node src/Workers/TaskScheduleWorker/worker.ts",
+    "start:task-schedule-worker": "node dist/Workers/TaskScheduleWorker/worker.js",
+    "business-event-processor": "ts-node src/Workers/BusinessActivityEventProcessorWorker/worker.ts",
+    "start:business-event-processor": "node dist/Workers/BusinessActivityEventProcessorWorker/worker.js",
     "db:seed": "ts-node src/dataClients/SqlClient/seed.ts",
     "build": "tsc",
     "start:messageWorker": "node dist/Workers/MessageWorker/worker.js",
@@ -37,7 +41,8 @@
     "express": "^5.2.1",
     "ioredis": "^5.10.1",
     "openai": "^6.34.0",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "rrule": "^2.8.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

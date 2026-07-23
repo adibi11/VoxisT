@@ -43,6 +43,7 @@ model Conversation {
   messages           Message[]
   parameterAnswers   ParameterAnswer[]
   followUps          ConversationFollowUp[]
+  createdLeads       Lead[]
 }
 
 model Business {
@@ -68,6 +69,12 @@ model Business {
   providerWebhookEvents ProviderWebhookEvent[]
   externalLeads     ExternalLead[]
   ingestionOutbox   IngestionOutbox[]
+  tasks             Task[]
+  taskParticipants  TaskParticipant[]
+  taskComments      TaskComment[]
+  taskSchedules     TaskSchedule[]
+  taskOccurrences   TaskOccurrence[]
+  businessActivityEvents BusinessActivityEvent[]
 }
 
 model MetaLeadFormSubscription {
@@ -112,6 +119,21 @@ model AppUser {
   businesses   BusinessUser[]
   leads        Lead[]
   refreshSessions RefreshSession[]
+  taskParticipants TaskParticipant[]
+  createdTasks Task[] @relation("TaskCreatedBy")
+  updatedTasks Task[] @relation("TaskUpdatedBy")
+  completedTasks Task[] @relation("TaskCompletedBy")
+  cancelledTasks Task[] @relation("TaskCancelledBy")
+  deletedTasks Task[] @relation("TaskDeletedBy")
+  authoredTaskComments TaskComment[] @relation("TaskCommentAuthor")
+  deletedTaskComments TaskComment[] @relation("TaskCommentDeletedBy")
+  createdTaskSchedules TaskSchedule[] @relation("TaskScheduleCreatedBy")
+  updatedTaskSchedules TaskSchedule[] @relation("TaskScheduleUpdatedBy")
+  deactivatedTaskSchedules TaskSchedule[] @relation("TaskScheduleDeactivatedBy")
+  assignedTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceAssignee")
+  completedTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceCompletedBy")
+  cancelledTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceCancelledBy")
+  businessActivityEvents BusinessActivityEvent[] @relation("BusinessActivityActor")
 }
 
 model RefreshSession {
@@ -140,6 +162,7 @@ model BusinessUser {
   user       AppUser          @relation(fields: [userId], references: [id])
 
   @@unique([userId, businessId])
+  @@unique([businessId, userId])
   @@index([businessId])
 }
 
@@ -257,6 +280,9 @@ model Lead {
   clientId Int?
   client   Client? @relation(fields: [clientId], references: [id])
 
+  conversationId Int?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+
   memberId Int?
   member   AppUser? @relation(fields: [memberId], references: [id])
 
@@ -281,6 +307,177 @@ model Lead {
   followUps  ConversationFollowUp[]
   externalLeads ExternalLead[]
   attributions LeadAttribution[]
+  tasks        Task[]
+
+  @@unique([id, businessId])
+  @@index([conversationId])
+}
+
+model Task {
+  id                  Int          @id @default(autoincrement())
+  businessId          Int
+  leadId              Int?
+  headline            String
+  description         String
+  status              TaskStatus   @default(OPEN)
+  priority            TaskPriority @default(NORMAL)
+  category            String?
+  startsAt            DateTime?
+  dueAt               DateTime?
+  isAllDay            Boolean      @default(false)
+  timezone            String       @default("UTC")
+  version             Int          @default(1)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  createdByUserId     Int
+  updatedByUserId     Int
+  completedAt         DateTime?
+  completedByUserId   Int?
+  cancelledAt         DateTime?
+  cancelledByUserId   Int?
+  cancellationReason  String?
+  deletedAt           DateTime?
+  deletedByUserId     Int?
+  business            Business     @relation(fields: [businessId], references: [id])
+  lead                Lead?        @relation(fields: [leadId], references: [id])
+  createdBy           AppUser      @relation("TaskCreatedBy", fields: [createdByUserId], references: [id])
+  updatedBy           AppUser      @relation("TaskUpdatedBy", fields: [updatedByUserId], references: [id])
+  completedBy         AppUser?     @relation("TaskCompletedBy", fields: [completedByUserId], references: [id])
+  cancelledBy         AppUser?     @relation("TaskCancelledBy", fields: [cancelledByUserId], references: [id])
+  deletedBy           AppUser?     @relation("TaskDeletedBy", fields: [deletedByUserId], references: [id])
+  participants        TaskParticipant[]
+  comments            TaskComment[]
+  schedules           TaskSchedule[]
+  occurrences         TaskOccurrence[]
+
+  @@unique([id, businessId])
+  @@index([businessId, status, dueAt])
+  @@index([businessId, leadId])
+  @@index([businessId, deletedAt, updatedAt])
+}
+
+model TaskParticipant {
+  id              Int                 @id @default(autoincrement())
+  businessId      Int
+  taskId          Int
+  userId          Int
+  role            TaskParticipantRole
+  addedAt         DateTime            @default(now())
+  addedByUserId   Int
+  removedAt       DateTime?
+  removedByUserId Int?
+  task            Task                @relation(fields: [taskId], references: [id])
+  business        Business            @relation(fields: [businessId], references: [id])
+  user            AppUser             @relation(fields: [userId], references: [id])
+
+  @@index([businessId])
+  @@index([taskId])
+}
+
+model TaskComment {
+  id              Int      @id @default(autoincrement())
+  businessId      Int
+  taskId          Int
+  body            String
+  authorUserId    Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  editedAt        DateTime?
+  deletedAt       DateTime?
+  deletedByUserId Int?
+  task            Task     @relation(fields: [taskId], references: [id])
+  business        Business @relation(fields: [businessId], references: [id])
+  author          AppUser  @relation("TaskCommentAuthor", fields: [authorUserId], references: [id])
+  deletedBy       AppUser? @relation("TaskCommentDeletedBy", fields: [deletedByUserId], references: [id])
+
+  @@index([businessId])
+  @@index([taskId, createdAt])
+}
+
+model TaskSchedule {
+  id                          Int      @id @default(autoincrement())
+  businessId                  Int
+  taskId                      Int
+  rrule                       String
+  timezone                    String
+  isActive                    Boolean  @default(true)
+  startsAt                    DateTime?
+  endsAt                      DateTime?
+  nextOccurrenceAt            DateTime?
+  nextNotificationAt          DateTime?
+  occurrenceDueOffsetMinutes  Int?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  createdByUserId             Int
+  updatedByUserId             Int
+  deactivatedAt               DateTime?
+  deactivatedByUserId         Int?
+  task                        Task     @relation(fields: [taskId], references: [id])
+  business                    Business @relation(fields: [businessId], references: [id])
+  createdBy                   AppUser  @relation("TaskScheduleCreatedBy", fields: [createdByUserId], references: [id])
+  updatedBy                   AppUser  @relation("TaskScheduleUpdatedBy", fields: [updatedByUserId], references: [id])
+  deactivatedBy               AppUser? @relation("TaskScheduleDeactivatedBy", fields: [deactivatedByUserId], references: [id])
+  occurrences                 TaskOccurrence[]
+
+  @@index([businessId, isActive, nextOccurrenceAt])
+  @@index([businessId, isActive, nextNotificationAt])
+  @@index([taskId])
+}
+
+model TaskOccurrence {
+  id                  Int                  @id @default(autoincrement())
+  businessId          Int
+  taskId              Int
+  scheduleId          Int
+  scheduledFor        DateTime
+  dueAt               DateTime?
+  status              TaskOccurrenceStatus @default(SCHEDULED)
+  assigneeUserId      Int
+  completedAt         DateTime?
+  completedByUserId   Int?
+  cancelledAt         DateTime?
+  cancelledByUserId   Int?
+  cancellationReason  String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  task                Task                 @relation(fields: [taskId], references: [id])
+  schedule            TaskSchedule         @relation(fields: [scheduleId], references: [id])
+  business            Business             @relation(fields: [businessId], references: [id])
+  assignee            AppUser              @relation("TaskOccurrenceAssignee", fields: [assigneeUserId], references: [id])
+  completedBy         AppUser?             @relation("TaskOccurrenceCompletedBy", fields: [completedByUserId], references: [id])
+  cancelledBy         AppUser?             @relation("TaskOccurrenceCancelledBy", fields: [cancelledByUserId], references: [id])
+
+  @@unique([scheduleId, scheduledFor])
+  @@index([businessId, status, dueAt])
+  @@index([taskId])
+}
+
+
+
+model BusinessActivityEvent {
+  id                 Int                       @id @default(autoincrement())
+  businessId         Int
+  aggregateType      BusinessActivityAggregateType
+  aggregateId        Int
+  eventType          BusinessActivityEventType
+  actorUserId        Int?
+  metadata           Json?
+  state              BusinessActivityEventState @default(PENDING)
+  dueAt              DateTime                  @default(now())
+  lockedUntil        DateTime?
+  processingWorkerId String?
+  attempts           Int                       @default(0)
+  processedAt        DateTime?
+  lastError          String?
+  dedupeKey          String
+  createdAt          DateTime                  @default(now())
+  business           Business                  @relation(fields: [businessId], references: [id])
+  actor              AppUser?                  @relation("BusinessActivityActor", fields: [actorUserId], references: [id])
+
+  @@unique([businessId, dedupeKey])
+  @@index([state, dueAt])
+  @@index([lockedUntil])
+  @@index([businessId, aggregateType, aggregateId, createdAt])
 }
 
 model IntegrationConnection {
@@ -549,4 +746,75 @@ enum PlatformRole {
   admin
   user
   owner
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DELETED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TaskParticipantRole {
+  MAIN_ASSIGNEE
+  LISTENER
+}
+
+enum TaskOccurrenceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  SKIPPED
+}
+
+
+
+enum BusinessActivityEventState {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum BusinessActivityEventType {
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_COMPLETED
+  TASK_CANCELLED
+  TASK_DELETED
+  ASSIGNEE_CHANGED
+  LISTENER_ADDED
+  LISTENER_REMOVED
+  COMMENT_CREATED
+  COMMENT_EDITED
+  COMMENT_DELETED
+  SCHEDULE_CREATED
+  SCHEDULE_UPDATED
+  SCHEDULE_DEACTIVATED
+  OCCURRENCE_CREATED
+  OCCURRENCE_COMPLETED
+  OCCURRENCE_CANCELLED
+  REMINDER_CREATED
+  REMINDER_CANCELLED
+  TASK_REMINDER_DUE
+  TIME_ENTRY_CREATED
+  TIME_ENTRY_UPDATED
+  TIME_ENTRY_DELETED
+  LEAD_CREATED
+}
+
+enum BusinessActivityAggregateType {
+  LEAD
+  TASK
+  TASK_OCCURRENCE
 }

@@ -8,9 +8,14 @@ import {
     UpdateLeadRequestDto
 } from "../../../../contracts";
 import { ILeadRepository, LeadAssignmentResult } from "./ILeadRepository";
+import { LeadCreationService } from "../../../../Lead/LeadCreationService";
 
 export class LeadRepository implements ILeadRepository {
-    constructor(private readonly prisma: PrismaClient) {}
+    private readonly leadCreation: LeadCreationService;
+
+    constructor(private readonly prisma: PrismaClient) {
+        this.leadCreation = new LeadCreationService(prisma);
+    }
 
     async getLeadsByBusiness(businessId: number): Promise<LeadSummaryDto[]> {
         const leads = await this.prisma.lead.findMany({
@@ -37,32 +42,7 @@ export class LeadRepository implements ILeadRepository {
     }
 
     async createManualLead(businessId: number, leadDto: CreateManualLeadRequestDto): Promise<LeadDto> {
-        const normalizedName = normalizeOptionalString(leadDto.name);
-        const normalizedEmail = normalizeOptionalEmail(leadDto.email);
-        const normalizedPhoneNumber = normalizeOptionalString(leadDto.phoneNumber);
-        if (!leadDto.clientId && !normalizedPhoneNumber) {
-            throw new Error("Manual lead requires clientId or phoneNumber");
-        }
-
-        const client = await this.resolveLeadClient(leadDto.clientId, normalizedPhoneNumber, normalizedName);
-        const lead = await this.prisma.lead.create({
-            data: {
-                businessId,
-                clientId: client.id,
-                memberId: leadDto.memberId,
-                status: (leadDto.status || "NEW") as any,
-                source: (leadDto.source || "MANUAL") as any,
-                score: leadDto.score,
-                summary: normalizeOptionalString(leadDto.summary),
-                notes: normalizeOptionalString(leadDto.notes),
-                name: normalizedName || client?.name || undefined,
-                email: normalizedEmail,
-                phoneNumber: normalizedPhoneNumber || client?.phoneNumber || undefined,
-                followUpAt: parseOptionalDate(leadDto.followUpAt),
-                asignTime: leadDto.memberId ? new Date() : undefined
-            }
-        });
-
+        const lead = await this.leadCreation.createManualLead(businessId, leadDto);
         return mapPrismaLeadToDto(lead);
     }
 
