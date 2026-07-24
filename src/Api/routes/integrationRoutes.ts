@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import express from "express";
 import { decryptMetaCredentials, encryptMetaCredentials, exchangeMetaCode, createMetaOAuthState, metaAuthorizeUrl, verifyMetaOAuthState, createMetaAuthorizationTicket, consumeMetaAuthorizationTicket } from "../../MetaLeadAds/metaOAuthService";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
-import { ILogger } from "../../logging/logger";
+import { ILogger, logger } from "../../logging/logger";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requireBusinessOwner } from "../authMiddleware";
 import { encryptIntegrationSecret } from "../../LeadIngestion/integrationSecret";
 
@@ -143,7 +143,8 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
     app.post("/businesses/:businessId/integrations/:connectionId/meta/resource", requireAuth, async (req, res) => {
         const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId);
         if (!businessId || !connectionId || !requireBusinessOwner(req as AuthenticatedRequest, res, businessId)) return;
-        try { return res.json(await addMetaFormSubscription(sql, businessId, connectionId, String(req.body?.pageId || ""), String(req.body?.formId || ""), logger)); }
+        try { 
+            return res.json(await addMetaFormSubscription(sql, businessId, connectionId, String(req.body?.pageId || ""), String(req.body?.formId || ""), logger)); }
         catch (error) { logger.error("meta.resource.configure.failed", { businessId, connectionId, error }); return res.status(400).json({ message: "Unable to configure Meta Page/form" }); }
     });
 
@@ -158,6 +159,7 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
                 return res.status(404).json({ message: "Meta form subscription not found" });
             if (await sql.metaLeadFormSubscriptionRepository.countActiveByPage(connectionId, existing.pageId) === 1) 
                 await changeMetaPageSubscription(existing.pageId, await pageToken(sql, businessId, connectionId, existing.pageId), false);
+                
             const removed = await sql.metaLeadFormSubscriptionRepository.disable(subscriptionId, connectionId);
             if (!removed) 
                 return res.status(404).json({ message: "Meta form subscription not found" });
@@ -172,6 +174,7 @@ export function getIntegrationRoutes(app: express.Router, sql: IDatabaseClient, 
             return res.status(400).json({ message: "Authorize Meta and select a Page/form before verification" });
         return res.json({ connectionId, status: connection.status, verificationStatus: "AWAITING_TEST_LEAD", testLeadUrl: "https://developers.facebook.com/tools/lead-ads-testing" });
     });
+
 
     app.post("/businesses/:businessId/integrations/:connectionId/disable", requireAuth, async (req, res) => {
         const businessId = parseId(req.params.businessId); const connectionId = parseId(req.params.connectionId); 
@@ -211,6 +214,17 @@ async function addMetaFormSubscription(sql: IDatabaseClient, businessId: number,
     }
     const activeOnPage = await sql.metaLeadFormSubscriptionRepository.countActiveByPage(connectionId, pageId);
     if (activeOnPage === 0) await changeMetaPageSubscription(pageId, page.accessToken, true);
+
+    logger?.info("meta.subscription.start", {
+        pageId,
+        formId,
+        pageName: page.name,
+        formName: form.name,
+    });
+    logger?.info("meta.subscription.completed", {
+        pageId,
+        formId,
+    });
     const credentials = decryptMetaCredentials(connection.credentialsEncrypted);
     credentials.pageAccessTokens = { ...(credentials.pageAccessTokens || {}), [pageId]: page.accessToken };
     // Preserve this field while existing connections and code are migrated.
@@ -236,8 +250,20 @@ async function changeMetaPageSubscription(pageId: string, token: string, subscri
     url.searchParams.set("access_token", token);
     if (subscribe) url.searchParams.set("subscribed_fields", "leadgen");
     const response = await fetch(url, { method: subscribe ? "POST" : "DELETE" });
+        logger?.info("meta.subscription.graphResponse", {
+        pageId,
+        subscribe,
+        status: response.status,
+        
+    });
+
+
+
+    
     if (!response.ok) throw new Error(`Meta Page webhook ${subscribe ? "subscription" : "unsubscription"} failed (${response.status})`);
-}
+    
+}   
+
 type MetaResource = { id: string; name: string; accessToken: string; forms: Array<{ id: string; name: string }> };
 type MetaResourceWarning = { pageId: string; pageName: string; message: string; status?: number; code?: number; fbTraceId?: string };
 
@@ -246,7 +272,8 @@ async function discoverMetaResources(connection: { credentialsEncrypted: string 
     const version = process.env.META_GRAPH_API_VERSION!;
     // A failure here means the user token itself cannot discover Pages, so it is a real integration error.
     logger?.info("meta.debug.discovery.accounts.requested", context || {});
-    const pages = await graphGet(version, "me/accounts", credentials.accessToken, "id,name,access_token");
+    const pages = await graphGet(version, "me/accounts", credentials.accessToken, "id,name,access_token") ;
+    logger?.info("meta.debug.discovery.foram.pages",pages);
     logger?.info("meta.debug.discovery.accounts.succeeded", { ...context, pageCount: Array.isArray(pages.data) ? pages.data.length : 0, pages: Array.isArray(pages.data) ? pages.data.map((page: any) => debugFingerprint(String(page.id))).slice(0, 20) : [] });
     const results = await Promise.all((pages.data || []).map(async (page: any): Promise<{ page: MetaResource; warning?: MetaResourceWarning }> => {
         const pageId = String(page.id); 
@@ -256,6 +283,7 @@ async function discoverMetaResources(connection: { credentialsEncrypted: string 
 
             const forms = await graphGet(version, `${pageId}/leadgen_forms`, accessToken, "id,name");
             logger?.info("meta.debug.discovery.forms.succeeded", { ...context, page: debugFingerprint(pageId), formCount: Array.isArray(forms.data) ? forms.data.length : 0, forms: Array.isArray(forms.data) ? forms.data.map((form: any) => debugFingerprint(String(form.id))).slice(0, 20) : [] });
+            
             return { page: { id: pageId, name: pageName, accessToken, forms: (forms.data || []).map((form: any) => (
                 { id: String(form.id), name: String(form.name || form.id) })) } };
         } catch (error) {

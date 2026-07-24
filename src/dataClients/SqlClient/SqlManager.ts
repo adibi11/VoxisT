@@ -55,6 +55,8 @@ import {
     UpdateBusinessSettingsParameterDto,
     UpdateBusinessSettingsRequestDto,
 } from "../../contracts";
+import { IPushDeviceRepository } from "./Repositories/PushDeviceRepo/IPushDeviceRepository";
+import { PushDeviceRepository } from "./Repositories/PushDeviceRepo/PushDeviceRepository";
 
 
 export const prisma = new PrismaClient();
@@ -77,6 +79,7 @@ export class SqlManager implements IDatabaseClient {
     readonly providerWebhookEventRepository: IProviderWebhookEventRepository;
     readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
     readonly taskRepository: ITaskRepository;
+    readonly pushDeviceRepository: IPushDeviceRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
@@ -93,6 +96,7 @@ export class SqlManager implements IDatabaseClient {
         this.providerWebhookEventRepository = new ProviderWebhookEventRepository(this.prisma);
         this.metaLeadFormSubscriptionRepository = new MetaLeadFormSubscriptionRepository(this.prisma);
         this.taskRepository = new TaskRepository(this.prisma);
+        this.pushDeviceRepository = new PushDeviceRepository(this.prisma);
     }   
 
     getPrismaClient(): PrismaClient {

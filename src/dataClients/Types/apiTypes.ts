@@ -90,3 +90,23 @@ export type BusinessActionDto = {
 
 }
 
+
+export type PushDeviceDto = {
+    appUserId:number;
+    expoPushToken: string;
+    phonePlatform: PhonePlatform;
+    appVersion?: string;
+    lastSeenAt?: Date;
+    isAcive?: boolean;
+    deviceId: string;
+
+
+}
+
+
+export enum PhonePlatform 
+{
+    Ios,
+    Android
+}
+

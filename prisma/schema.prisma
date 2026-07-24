@@ -134,6 +134,24 @@ model AppUser {
   completedTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceCompletedBy")
   cancelledTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceCancelledBy")
   businessActivityEvents BusinessActivityEvent[] @relation("BusinessActivityActor")
+  pushDevice    PushDevice[]
+}
+
+model PushDevice {
+  id           Int            @id @default(autoincrement())
+  appUserId    Int
+  deviceId     String
+  expoPushToken String        @unique
+  platform      PhonePlatform 
+  appVersion    String
+  lastSeenAt    DateTime
+  isActive      Boolean
+
+
+  user       AppUser          @relation(fields: [appUserId], references: [id])
+  @@unique([appUserId, deviceId]) 
+
+  
 }
 
 model RefreshSession {
@@ -817,4 +835,10 @@ enum BusinessActivityAggregateType {
   LEAD
   TASK
   TASK_OCCURRENCE
+}
+
+enum PhonePlatform{
+  IOS 
+  ANDROID
+  UNKNOWN
 }
