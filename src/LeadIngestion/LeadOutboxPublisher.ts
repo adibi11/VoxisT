@@ -1,14 +1,17 @@
 import { IIngestionOutboxRepository } from "../dataClients/SqlClient/Repositories/IngestionOutboxRepo/IIngestionOutboxRepository";
 import { ILogger, logger as rootLogger } from "../logging/logger";
 import { ILeadIngestionQueue } from "../QueueClient/leadIngestionQueue";
+import { LeadIngestionService } from "./LeadIngestionService";
+import { CampaignLeadProcessor } from "./LeadProcessor";
 
 const LEAD_INGESTION_REQUESTED = "lead.ingestion.requested";
 
 export class LeadOutboxPublisher {
     constructor(
         private readonly outboxRepository: IIngestionOutboxRepository,
-        private readonly queue: ILeadIngestionQueue,
-        private readonly logger: ILogger = rootLogger.child({ component: "LeadOutboxPublisher" })
+        //private readonly queue: ILeadIngestionQueue,
+        private readonly logger: ILogger = rootLogger.child({ component: "LeadOutboxPublisher" }),
+        private readonly leadProcessor: CampaignLeadProcessor
     ) {}
 
     async publishPending(limit = 100): Promise<{ published: number; failed: number }> {
@@ -20,7 +23,11 @@ export class LeadOutboxPublisher {
             if (item.eventType !== LEAD_INGESTION_REQUESTED) continue;
             try {
                 const incomingLeadId = readIncomingLeadId(item.payload);
-                await this.queue.enqueue({ incomingLeadId, businessId: item.businessId }); 
+                //TODO - 
+                // For future development, if needed per the leads at scale.
+                //Reduced to manage in one service for less worker managment and costs
+                //await this.queue.enqueue({ incomingLeadId, businessId: item.businessId }); 
+                await this.leadProcessor.process({incomingLeadId,businessId: item.businessId })
                 await this.outboxRepository.markPublished(item.id);
                 published++;
             } catch (error) {
