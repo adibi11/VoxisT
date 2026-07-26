@@ -24,10 +24,26 @@ export type BusinessActionTypeDto =
   | "SEND_EMAIL"
   | "NONE";
 
+// The value space a parameter's answers live in. Owner-defined parameters must
+// be CATEGORICAL, CONTINUOUS, or TIME so collected answers are ML-ready; TEXT
+// is reserved for the system "Name" parameter and legacy rows.
+export type BusinessParameterTypeDto = "CATEGORICAL" | "CONTINUOUS" | "TIME" | "TEXT";
+
+export type BusinessParameterConfigDto = {
+  // CATEGORICAL: closed list of allowed values (2-30 entries).
+  options?: string[];
+  // CONTINUOUS: optional inclusive bounds and display unit.
+  min?: number;
+  max?: number;
+  unit?: string;
+};
+
 export type BusinessSettingsParameterDto = {
   id: number;
   paramName: string;
   use: boolean;
+  paramType: BusinessParameterTypeDto;
+  config?: BusinessParameterConfigDto | null;
   paramValue?: string | null;
 };
 
@@ -72,6 +88,17 @@ export type BusinessChannelDto = {
   updatedAt: string;
 };
 
+// Provider credentials for a messaging channel. Stored encrypted; never
+// returned by any endpoint (BusinessChannelDto only exposes hasCredentials).
+export type BusinessChannelCredentialsDto = {
+  // Twilio subaccount.
+  accountSid?: string;
+  authToken?: string;
+  // Meta WhatsApp Cloud API.
+  accessToken?: string;
+  phoneNumberId?: string;
+};
+
 export type UpsertBusinessChannelRequestDto = {
   channel: string;
   provider: string;
@@ -83,12 +110,16 @@ export type UpsertBusinessChannelRequestDto = {
   externalPhoneNumberId?: string | null;
   webhookUrl?: string | null;
   isDefault?: boolean;
+  // undefined = keep existing credentials; null = remove; object = replace.
+  credentials?: BusinessChannelCredentialsDto | null;
 };
 
 export type UpdateBusinessSettingsParameterDto = {
   id?: number;
   paramName: string;
   use?: boolean;
+  paramType?: BusinessParameterTypeDto;
+  config?: BusinessParameterConfigDto | null;
   paramValue?: string | null;
 };
 

@@ -5,6 +5,7 @@ import { BusinessContextForPrompt, StateMachineInput, StateMachineOutput } from 
 import { ConversationStateMachine } from "./context/conversationSM";
 import { Executer } from "./context/executer";
 import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
+import { BusinessParamDefinition } from "../dataClients/Types/paramTypes";
 import { ILogger, logger } from "../logging/logger";
 
 export class LlmPipeline{
@@ -30,7 +31,8 @@ export class LlmPipeline{
           businessId,
           hasBusinessContext: Boolean(businessContext)
         });
-        const stateMachineInput: StateMachineInput = buildStateMachineInput(conversationState, conversationState.lastMessages[conversationState.lastMessages.length - 1].content, businessContext);
+        const paramDefinitions = await this.sqlInterface.getActiveBusinessParameterDefinitions(businessId);
+        const stateMachineInput: StateMachineInput = buildStateMachineInput(conversationState, conversationState.lastMessages[conversationState.lastMessages.length - 1].content, businessContext, paramDefinitions);
         this.logger.info("llm.executer.started", {
           conversationId: conversationState.conversationId,
           state: conversationState.state,
@@ -57,7 +59,8 @@ export class LlmPipeline{
           businessId,
           hasBusinessContext: Boolean(businessContext)
         });
-        const stateMachineInput = buildStateMachineInput(state, message, businessContext);
+        const paramDefinitions = await this.sqlInterface.getActiveBusinessParameterDefinitions(businessId);
+        const stateMachineInput = buildStateMachineInput(state, message, businessContext, paramDefinitions);
         this.logger.info("llm.executer.started", {
           conversationId: state.conversationId,
           state: state.state,
@@ -96,12 +99,14 @@ export class LlmPipeline{
 function buildStateMachineInput(
     state: ConversationCacheState,
     newMessage: string,
-    businessContext: BusinessContextForPrompt | null
+    businessContext: BusinessContextForPrompt | null,
+    paramDefinitions?: BusinessParamDefinition[]
 ): StateMachineInput {
     return {
         currentState: state.state,
         messageContent: newMessage,
         collectedParams: state.collectedParams,
+        paramDefinitions,
         lastMessages: state.lastMessages,
         businessContext
     };

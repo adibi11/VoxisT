@@ -10,6 +10,14 @@ import {
     CLIENT_NAME_NOT_PROVIDED,
     isClientNameParam
 } from "../Types/clientNameParam";
+import {
+    BusinessParamConfig,
+    BusinessParamDefinition,
+    BusinessParamType,
+    normalizeParamValue,
+    parseBusinessParamConfig,
+    parseBusinessParamType
+} from "../Types/paramTypes";
 import { IDatabaseClient } from "./sqlInterface";
 import { LeadRepository } from "./Repositories/LeadRepo/LeadRepository";
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
@@ -439,6 +447,8 @@ export class SqlManager implements IDatabaseClient {
             return;
         }
 
+        const typedValues = this.buildTypedAnswerValues(param, paramValue);
+
         const existing = await this.prisma.parameterAnswer.findFirst({
             where: {
             clientId,
@@ -453,7 +463,8 @@ export class SqlManager implements IDatabaseClient {
                 id: existing.id
             },
             data: {
-                paramAnswer: paramValue
+                paramAnswer: paramValue,
+                ...typedValues
             }
             });
         } else {
@@ -462,10 +473,53 @@ export class SqlManager implements IDatabaseClient {
                 clientId,
                 conversationId,
                 paramId: param.id,
-                paramAnswer: paramValue
+                paramAnswer: paramValue,
+                ...typedValues
             }
             });
         }
+    }
+
+    // Projects the raw answer into the typed column matching the parameter's
+    // value space, so answers are queryable/learnable without re-parsing text.
+    private buildTypedAnswerValues(
+        param: { id: number; paramName: string; paramType: string; config: Prisma.JsonValue | null },
+        paramValue: string
+    ): { valueCategory: string | null; valueNumber: number | null; valueTime: Date | null } {
+        const definition: BusinessParamDefinition = {
+            id: param.id,
+            paramName: param.paramName,
+            type: parseBusinessParamType(param.paramType),
+            config: parseBusinessParamConfig(param.config)
+        };
+        const normalized = normalizeParamValue(definition, paramValue);
+        const typedValues = { valueCategory: null as string | null, valueNumber: null as number | null, valueTime: null as Date | null };
+
+        if (!normalized.ok) {
+            this.logger.warn("param.answer.normalization_failed", {
+                paramId: param.id,
+                paramName: param.paramName,
+                paramType: definition.type,
+                reason: normalized.reason
+            });
+            return typedValues;
+        }
+
+        switch (normalized.type) {
+            case BusinessParamType.Categorical:
+                typedValues.valueCategory = normalized.value;
+                break;
+            case BusinessParamType.Continuous:
+                typedValues.valueNumber = normalized.value;
+                break;
+            case BusinessParamType.Time:
+                typedValues.valueTime = new Date(normalized.value);
+                break;
+            case BusinessParamType.Text:
+                break;
+        }
+
+        return typedValues;
     }
 
     async getBusinessResponseMetrics(
@@ -974,6 +1028,7 @@ export class SqlManager implements IDatabaseClient {
             });
 
             for (const parameter of normalizedParameters) {
+                const configJson = parameter.config ? toPrismaJson(parameter.config) : Prisma.JsonNull;
                 if (parameter.id !== undefined) {
                     await tx.businessParameter.update({
                         where: {
@@ -981,7 +1036,9 @@ export class SqlManager implements IDatabaseClient {
                         },
                         data: {
                             paramName: parameter.paramName,
-                            use: parameter.use
+                            use: parameter.use,
+                            paramType: parameter.paramType,
+                            config: configJson
                         }
                     });
                     continue;
@@ -997,11 +1054,15 @@ export class SqlManager implements IDatabaseClient {
                     create: {
                         businessId,
                         paramName: parameter.paramName,
-                        use: parameter.use
+                        use: parameter.use,
+                        paramType: parameter.paramType,
+                        config: configJson
                     },
                     update: {
                         paramName: parameter.paramName,
-                        use: parameter.use
+                        use: parameter.use,
+                        paramType: parameter.paramType,
+                        config: configJson
                     }
                 });
             }
@@ -1050,6 +1111,11 @@ export class SqlManager implements IDatabaseClient {
     }
 
     async getActiveBusinessParameterNames(businessId: number): Promise<string[]> {
+        const definitions = await this.getActiveBusinessParameterDefinitions(businessId);
+        return definitions.map((definition) => definition.paramName);
+    }
+
+    async getActiveBusinessParameterDefinitions(businessId: number): Promise<BusinessParamDefinition[]> {
         const parameters = await this.prisma.businessParameter.findMany({
             where: {
                 businessId,
@@ -1060,7 +1126,12 @@ export class SqlManager implements IDatabaseClient {
             }
         });
 
-        return parameters.map((parameter) => parameter.paramName);
+        return parameters.map((parameter) => ({
+            id: parameter.id,
+            paramName: parameter.paramName,
+            type: parseBusinessParamType(parameter.paramType),
+            config: parseBusinessParamConfig(parameter.config)
+        }));
     }
 
     async getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]> {
@@ -1394,6 +1465,8 @@ function mapBusinessSettings(business: {
         id: number;
         paramName: string;
         use: boolean;
+        paramType: string;
+        config: Prisma.JsonValue | null;
     }>;
     BusinessAction?: {
         action: string;
@@ -1414,6 +1487,8 @@ function mapBusinessSettings(business: {
             id: param.id,
             paramName: param.paramName,
             use: param.use,
+            paramType: parseBusinessParamType(param.paramType),
+            config: param.config ? parseBusinessParamConfig(param.config) : null,
             paramValue: null
         })),
         action: business.BusinessAction
@@ -1438,6 +1513,8 @@ function normalizeBusinessSettingsParameters(parameters: UpdateBusinessSettingsP
     id?: number;
     paramName: string;
     use: boolean;
+    paramType: BusinessParamType;
+    config: BusinessParamConfig | null;
 }> {
     const seenParamNames = new Set<string>();
     return parameters.map((parameter) => {
@@ -1452,12 +1529,63 @@ function normalizeBusinessSettingsParameters(parameters: UpdateBusinessSettingsP
         }
         seenParamNames.add(normalizedKey);
 
+        const { paramType, config } = normalizeBusinessParameterTyping(paramName, parameter);
+
         return {
             id: parameter.id,
             paramName,
-            use: parameter.use ?? true
+            use: parameter.use ?? true,
+            paramType,
+            config
         };
     });
+}
+
+// Owner-defined parameters must live in an ML-ready value space; free text is
+// reserved for the system "Name" parameter so answers stay learnable.
+function normalizeBusinessParameterTyping(
+    paramName: string,
+    parameter: UpdateBusinessSettingsParameterDto
+): { paramType: BusinessParamType; config: BusinessParamConfig | null } {
+    if (isClientNameParam(paramName)) {
+        return { paramType: BusinessParamType.Text, config: null };
+    }
+
+    const paramType = parseBusinessParamType(parameter.paramType);
+    const config = parseBusinessParamConfig(parameter.config);
+
+    switch (paramType) {
+        case BusinessParamType.Categorical: {
+            const options = config.options || [];
+            if (options.length < 2) {
+                throw new Error(`Categorical parameter "${paramName}" requires at least 2 options`);
+            }
+            const uniqueOptions = new Set(options.map((option) => option.toLowerCase()));
+            if (uniqueOptions.size !== options.length) {
+                throw new Error(`Categorical parameter "${paramName}" has duplicate options`);
+            }
+            return { paramType, config: { options } };
+        }
+        case BusinessParamType.Continuous: {
+            if (config.min !== undefined && config.max !== undefined && config.min >= config.max) {
+                throw new Error(`Continuous parameter "${paramName}" requires min < max`);
+            }
+            return {
+                paramType,
+                config: {
+                    ...(config.min !== undefined ? { min: config.min } : {}),
+                    ...(config.max !== undefined ? { max: config.max } : {}),
+                    ...(config.unit ? { unit: config.unit } : {})
+                }
+            };
+        }
+        case BusinessParamType.Time:
+            return { paramType, config: null };
+        case BusinessParamType.Text:
+            throw new Error(
+                `Parameter "${paramName}" must declare paramType CATEGORICAL, CONTINUOUS, or TIME`
+            );
+    }
 }
 
 function normalizeNullableString(value?: string | null): string | null {

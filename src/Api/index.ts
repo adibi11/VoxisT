@@ -29,6 +29,7 @@ import { getTaskRoutes } from "./routes/taskRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 import { createPublicEntrypointRateLimiter, createTaskEntrypointRateLimiter, getPublicEntrypointRateLimitConfig, getTaskEntrypointRateLimitConfig } from "./rateLimitMiddleware";
 import { createMetaLeadAdsWebhookHandlers } from "../MetaLeadAds/metaLeadAdsWebhook";
+import { getTwilioSignatureConfig, validateTwilioRequest } from "./twilioSignatureMiddleware";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
@@ -43,6 +44,8 @@ const publicEntrypointRateLimiter = createPublicEntrypointRateLimiter(publicEntr
 const taskEntrypointRateLimitConfig = getTaskEntrypointRateLimitConfig();
 const taskEntrypointRateLimiter = createTaskEntrypointRateLimiter(taskEntrypointRateLimitConfig, appLogger);
 const metaLeadAdsWebhook = createMetaLeadAdsWebhookHandlers(sqlManager, appLogger.child({ component: "MetaLeadAdsWebhook" }));
+const twilioSignatureConfig = getTwilioSignatureConfig();
+const twilioSignatureLogger = appLogger.child({ component: "TwilioSignatureValidator" });
 
 // Staging/production run immediately behind one ALB hop. Local development defaults to
 // direct connections; set TRUST_PROXY_HOPS=1 only while testing through ngrok.
@@ -86,7 +89,11 @@ getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
 
 
 
-v1Router.post("/webhook/:id", async (req, res) => {
+// Business resolution is driven by the receiving number ("To"): the channel a
+// number belongs to identifies both the business and the subaccount auth token
+// that signs the request. The legacy /webhook/:id path stays as a fallback for
+// numbers not yet onboarded as BusinessChannels.
+async function handleTwilioWebhook(req: express.Request, res: express.Response) {
   const event = req.body as twillioMessage;
   appLogger.info("webhook.raw.received", {
     contentType: req.headers["content-type"],
@@ -102,6 +109,38 @@ v1Router.post("/webhook/:id", async (req, res) => {
     return res.status(400).send("Invalid event data");
   }
 
+  let resolvedChannel = null;
+  try {
+    resolvedChannel = await sqlManager.businessChannelRepository.GetChannelForInbound(
+      MessageProvider.Twilio,
+      event.To
+    );
+  } catch (error) {
+    appLogger.error("webhook.channel.resolve.failed", { to: event.To, error });
+    return res.status(500).send("Failed to resolve channel");
+  }
+
+  // Twilio signs webhooks with the auth token of the (sub)account owning the
+  // number, so validation must use the resolved channel's credentials.
+  const signatureCheck = validateTwilioRequest(
+    twilioSignatureConfig,
+    twilioSignatureLogger,
+    req,
+    resolvedChannel?.credentials?.authToken
+  );
+  if (!signatureCheck.ok) {
+    return res.status(403).send("Forbidden");
+  }
+  //Try to get the id from the path params as a fallback
+  //The correct logic is to take it from the resolved integration
+  const pathBusinessId = Number(req.params.id);
+  const businessId = resolvedChannel?.channel.businessId
+    ?? (Number.isInteger(pathBusinessId) && pathBusinessId > 0 ? pathBusinessId : undefined);
+  if (!businessId) {
+    appLogger.warn("webhook.business.unresolved", { to: event.To });
+    return res.status(404).send("Unknown receiving number");
+  }
+
   const jobData: JobData = {
     event: {
       type: ApiActionType.HandleMessage,
@@ -110,7 +149,7 @@ v1Router.post("/webhook/:id", async (req, res) => {
       channel: getTwilioChannel(event),
       provider: MessageProvider.Twilio,
       data: event,
-      businessId: Number(req.params.id)
+      businessId
     }
    };
   appLogger.info("webhook.message.received", {
@@ -118,14 +157,19 @@ v1Router.post("/webhook/:id", async (req, res) => {
     to: event.To,
     channel: jobData.event.channel,
     provider: jobData.event.provider,
+    businessId,
+    resolvedByChannel: Boolean(resolvedChannel),
     bodyLength: event.Body?.length,
     actionType: jobData.event.type
   });
-  
-     await queueManager.addEvent(jobData);
-  
 
-  return res.status(200).json({ message: "Event received successfully"}); });
+  await queueManager.addEvent(jobData);
+
+  return res.status(200).json({ message: "Event received successfully"});
+}
+
+v1Router.post("/webhook", handleTwilioWebhook);
+v1Router.post("/webhook/:id", handleTwilioWebhook);
   
 /*app.post("/business",async (req, res) => {
   try {

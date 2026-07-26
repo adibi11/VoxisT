@@ -199,6 +199,13 @@ model BusinessParameter {
   businessId Int
   business   Business          @relation(fields: [businessId], references: [id])
   use        Boolean          @default(true)
+  // ML-ready value space. TEXT is reserved for legacy rows and the system
+  // "Name" parameter; owner-defined parameters must be one of the typed kinds.
+  paramType  BusinessParameterType @default(TEXT)
+  // CATEGORICAL: { "options": string[] }
+  // CONTINUOUS:  { "min"?: number, "max"?: number, "unit"?: string }
+  // TIME:        {} (values are ISO 8601 timestamps)
+  config     Json?
   answers    ParameterAnswer[]
 
   @@unique([businessId, paramName])
@@ -207,6 +214,11 @@ model BusinessParameter {
 model ParameterAnswer {
   id                Int               @id @default(autoincrement())
   paramAnswer       String
+  // Normalized, learnable projections of paramAnswer - exactly one is set,
+  // matching the parameter's paramType.
+  valueCategory     String?
+  valueNumber       Float?
+  valueTime         DateTime?
   createdAt         DateTime          @default(now())
   clientId          Int
   paramId           Int
@@ -727,6 +739,13 @@ enum ActionType {
   HUMAN_HANDOFF
   SEND_EMAIL
   NONE
+}
+
+enum BusinessParameterType {
+  CATEGORICAL
+  CONTINUOUS
+  TIME
+  TEXT
 }
 
 enum MessageStatus {

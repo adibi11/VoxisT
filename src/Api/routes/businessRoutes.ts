@@ -3,6 +3,7 @@ import {
   BusinessActionTypeDto,
   BusinessChannelOnboardingTypeDto,
   BusinessChannelStatusDto,
+  BusinessParameterTypeDto,
   UpdateBusinessSettingsRequestDto,
   UpsertBusinessChannelRequestDto
 } from '../../contracts';
@@ -31,6 +32,13 @@ const BUSINESS_CHANNEL_ONBOARDING_TYPES = new Set<BusinessChannelOnboardingTypeD
   "manual",
   "embedded_signup",
   "oauth"
+]);
+
+const BUSINESS_PARAMETER_TYPES = new Set<BusinessParameterTypeDto>([
+  "CATEGORICAL",
+  "CONTINUOUS",
+  "TIME",
+  "TEXT"
 ]);
 
 export function getBusinessRoutes(app:express.Router, sql: IDatabaseClient, logger: ILogger) {
@@ -244,7 +252,24 @@ function isValidUpsertBusinessChannelRequest(
     isOptionalText(request.externalAccountId) &&
     isOptionalText(request.externalPhoneNumberId) &&
     isOptionalText(request.webhookUrl) &&
-    isOptionalBoolean(request.isDefault);
+    isOptionalBoolean(request.isDefault) &&
+    isOptionalChannelCredentials(request.credentials);
+}
+
+// Credentials are provider secrets: optional, but when present each field must
+// be a non-empty string and at least one recognized field must be set.
+function isOptionalChannelCredentials(value: UpsertBusinessChannelRequestDto["credentials"] | undefined): boolean {
+  if (value === undefined || value === null) {
+    return true;
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const fields = [value.accountSid, value.authToken, value.accessToken, value.phoneNumberId];
+  const setFields = fields.filter((field) => field !== undefined);
+  return setFields.length > 0 && setFields.every((field) => hasText(field));
 }
 
 function isOptionalBusinessChannelStatus(value?: BusinessChannelStatusDto): boolean {
@@ -276,7 +301,9 @@ function isValidUpdateBusinessSettingsRequest(
       isOptionalNumber(parameter.id) &&
       hasText(parameter.paramName) &&
       isOptionalBoolean(parameter.use) &&
-      isOptionalText(parameter.paramValue)
+      isOptionalText(parameter.paramValue) &&
+      isOptionalBusinessParameterType(parameter.paramType) &&
+      isOptionalBusinessParameterConfig(parameter.config)
     ) &&
     isValidBusinessSettingsAction(request.action);
 }
@@ -289,6 +316,29 @@ function isValidBusinessSettingsAction(action: UpdateBusinessSettingsRequestDto[
   return typeof action === "object" &&
     BUSINESS_ACTION_TYPES.has(action.action) &&
     isOptionalText(action.provider);
+}
+
+function isOptionalBusinessParameterType(value?: BusinessParameterTypeDto): boolean {
+  return value === undefined || BUSINESS_PARAMETER_TYPES.has(value);
+}
+
+function isOptionalBusinessParameterConfig(value?: unknown): boolean {
+  if (value === undefined || value === null) {
+    return true;
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const config = value as { options?: unknown; min?: unknown; max?: unknown; unit?: unknown };
+  const validOptions = config.options === undefined ||
+    (Array.isArray(config.options) && config.options.every((option) => typeof option === "string"));
+
+  return validOptions &&
+    isOptionalNumber(config.min as number | undefined) &&
+    isOptionalNumber(config.max as number | undefined) &&
+    isOptionalText(config.unit as string | undefined);
 }
 
 function hasText(value?: string | null): boolean {

@@ -1,4 +1,5 @@
 import type { LastMessages } from "./messageTypes";
+import type { BusinessParamDefinition } from "./paramTypes";
 
 export type BusinessContextForPrompt = {
     businessProfile: {
@@ -86,6 +87,9 @@ export type StateMachineInput = {
     currentState: ConversationState;
     messageContent: string;
     collectedParams: Record<string, string | number | null>;
+    // Typed value-space definitions for the business's active parameters; the
+    // prompt renders these and extracted values are validated against them.
+    paramDefinitions?: BusinessParamDefinition[];
     lastMessages:LastMessages[];
     businessContext: BusinessContextForPrompt | null;
     conclusion?: string;

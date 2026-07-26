@@ -1,11 +1,17 @@
 import { Prisma, PrismaClient } from "../../../../generated/prisma/client";
 import {
+    BusinessChannelCredentialsDto,
     BusinessChannelDto,
     BusinessChannelOnboardingTypeDto,
     BusinessChannelStatusDto,
     UpsertBusinessChannelRequestDto
 } from "../../../../contracts";
-import { IBusinessChannelRepository } from "./IBusinessChannelRepository";
+import { decryptIntegrationSecret, encryptIntegrationSecret } from "../../../../LeadIngestion/integrationSecret";
+import { normalizePhoneDigits } from "../../../Types/phoneNumber";
+import { IBusinessChannelRepository, ResolvedBusinessChannel } from "./IBusinessChannelRepository";
+
+// Channels in these states must not receive or send traffic.
+const UNUSABLE_CHANNEL_STATUSES = ["disabled", "failed"];
 
 export class BusinessChannelRepository implements IBusinessChannelRepository {
     constructor(private readonly prisma: PrismaClient) {}
@@ -29,6 +35,7 @@ export class BusinessChannelRepository implements IBusinessChannelRepository {
     ): Promise<BusinessChannelDto> {
         const normalizedChannel = normalizeRequiredString(channelDto.channel, "channel");
         const normalizedProvider = normalizeRequiredString(channelDto.provider, "provider");
+        const credentialsEncrypted = encryptCredentials(channelDto.credentials);
 
         const channel = await this.prisma.businessChannel.upsert({
             where: {
@@ -49,7 +56,8 @@ export class BusinessChannelRepository implements IBusinessChannelRepository {
                 externalAccountId: normalizeNullableString(channelDto.externalAccountId),
                 externalPhoneNumberId: normalizeNullableString(channelDto.externalPhoneNumberId),
                 webhookUrl: normalizeNullableString(channelDto.webhookUrl),
-                isDefault: channelDto.isDefault ?? false
+                isDefault: channelDto.isDefault ?? false,
+                credentialsEncrypted: credentialsEncrypted === undefined ? null : credentialsEncrypted
             },
             update: {
                 displayName: channelDto.displayName === undefined ? undefined : normalizeNullableString(channelDto.displayName),
@@ -59,12 +67,92 @@ export class BusinessChannelRepository implements IBusinessChannelRepository {
                 externalAccountId: channelDto.externalAccountId === undefined ? undefined : normalizeNullableString(channelDto.externalAccountId),
                 externalPhoneNumberId: channelDto.externalPhoneNumberId === undefined ? undefined : normalizeNullableString(channelDto.externalPhoneNumberId),
                 webhookUrl: channelDto.webhookUrl === undefined ? undefined : normalizeNullableString(channelDto.webhookUrl),
-                isDefault: channelDto.isDefault
+                isDefault: channelDto.isDefault,
+                credentialsEncrypted
             }
         });
 
         return mapPrismaBusinessChannelToDto(channel);
     }
+
+    async GetChannelForInbound(provider: string, receivingAddress: string): Promise<ResolvedBusinessChannel | null> {
+        const targetDigits = normalizePhoneDigits(receivingAddress);
+        if (!targetDigits) {
+            return null;
+        }
+
+        const candidates = await this.prisma.businessChannel.findMany({
+            where: {
+                provider,
+                status: { notIn: UNUSABLE_CHANNEL_STATUSES },
+                externalPhoneNumberId: { not: null }
+            },
+            orderBy: { id: "asc" }
+        });
+
+        const match = candidates.find(
+            (channel) => normalizePhoneDigits(channel.externalPhoneNumberId) === targetDigits
+        );
+
+        return match ? toResolvedChannel(match) : null;
+    }
+
+    async GetChannelForOutbound(
+        businessId: number,
+        provider: string,
+        fromAddress?: string
+    ): Promise<ResolvedBusinessChannel | null> {
+        const candidates = await this.prisma.businessChannel.findMany({
+            where: {
+                businessId,
+                provider,
+                status: { notIn: UNUSABLE_CHANNEL_STATUSES }
+            },
+            orderBy: { id: "asc" }
+        });
+
+        if (candidates.length === 0) {
+            return null;
+        }
+
+        const fromDigits = normalizePhoneDigits(fromAddress);
+        const byFromNumber = fromDigits
+            ? candidates.find((channel) => normalizePhoneDigits(channel.externalPhoneNumberId) === fromDigits)
+            : undefined;
+        const match = byFromNumber || candidates.find((channel) => channel.isDefault) || candidates[0];
+
+        return toResolvedChannel(match);
+    }
+}
+
+function encryptCredentials(
+    credentials: BusinessChannelCredentialsDto | null | undefined
+): string | null | undefined {
+    if (credentials === undefined) {
+        return undefined; // keep whatever is stored
+    }
+
+    if (credentials === null) {
+        return null; // explicit removal
+    }
+
+    return encryptIntegrationSecret(JSON.stringify(credentials));
+}
+
+function toResolvedChannel(channel: PrismaBusinessChannelForDto): ResolvedBusinessChannel {
+    return {
+        channel: mapPrismaBusinessChannelToDto(channel),
+        credentials: decryptCredentials(channel.credentialsEncrypted)
+    };
+}
+
+function decryptCredentials(credentialsEncrypted: string | null): BusinessChannelCredentialsDto | null {
+    if (!credentialsEncrypted) {
+        return null;
+    }
+
+    const decrypted = decryptIntegrationSecret(credentialsEncrypted);
+    return JSON.parse(decrypted) as BusinessChannelCredentialsDto;
 }
 
 type PrismaBusinessChannelForDto = {

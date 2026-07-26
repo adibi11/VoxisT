@@ -51,19 +51,35 @@ async function main(): Promise<void> {
         data: seedBusinessData()
       });
 
-  for (const paramName of ["name", "service", "preferredDate", "city", "budget"]) {
+  const seedParameters: Array<{
+    paramName: string;
+    paramType: "CATEGORICAL" | "CONTINUOUS" | "TIME" | "TEXT";
+    config?: object;
+  }> = [
+    { paramName: "name", paramType: "TEXT" },
+    { paramName: "service", paramType: "CATEGORICAL", config: { options: ["Consultation", "Course", "Workshop"] } },
+    { paramName: "preferredDate", paramType: "TIME" },
+    { paramName: "city", paramType: "CATEGORICAL", config: { options: ["Tel Aviv", "Haifa", "Jerusalem", "Beer Sheva"] } },
+    { paramName: "budget", paramType: "CONTINUOUS", config: { min: 0, max: 100000, unit: "ILS" } }
+  ];
+  for (const parameter of seedParameters) {
     await prisma.businessParameter.upsert({
       where: {
         businessId_paramName: {
           businessId: business.id,
-          paramName
+          paramName: parameter.paramName
         }
       },
       create: {
         businessId: business.id,
-        paramName
+        paramName: parameter.paramName,
+        paramType: parameter.paramType,
+        config: parameter.config
       },
-      update: {}
+      update: {
+        paramType: parameter.paramType,
+        config: parameter.config
+      }
     });
   }
 

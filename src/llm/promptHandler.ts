@@ -1,6 +1,7 @@
 import { LlmInput,LlmOutput } from "../dataClients/Types/llmTypes";
 import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
 import { ConversationEvent, ConversationMode, ResponseIntent } from "../dataClients/Types/stateMachineTypes";
+import { describeParamDefinition } from "../dataClients/Types/paramTypes";
 import { ILogger, logger } from "../logging/logger";
 
 
@@ -75,8 +76,9 @@ Analyze the latest user message for a business chat.
 
 STATE: ${input.currentState}
 PARAMS: ${JSON.stringify(input.collectedParams)}
+CURRENT DATE: ${new Date().toISOString()}
 BUSINESS PARAMS TO COLLECT:
-${input.collectedParams == null || Object.keys(input.collectedParams).length === 0 ? "No parameters to collect." : Object.keys(input.collectedParams).map(key => `- ${key}`).join("\n")}
+${formatParamDefinitions(input)}
 
 LAST MESSAGES:
 ${input.lastMessages.slice(-4).map(m => `${m.role}: ${m.content}`).join("\n")}
@@ -103,6 +105,11 @@ Rules:
 - Use event "tryEnding" or "ended" only when the user clearly wants to finish or the conversation should end.
 - Use event "failure" only for true extraction failure, not for uncertainty.
 - Extract only params clearly stated by user.
+- Every extracted param value MUST be normalized into that parameter's declared value space:
+  - categorical: emit EXACTLY one of the allowed values, with the exact spelling shown. If the user's answer does not clearly map to one allowed value, do not emit the param.
+  - number: emit a plain number only - no units, currency symbols, words, or ranges. If the user gives a range, emit its midpoint only when the intent is clear; otherwise omit.
+  - date/time: emit ISO 8601 (YYYY-MM-DD or YYYY-MM-DDTHH:mm). Resolve relative expressions like "tomorrow at 3" using CURRENT DATE. If the moment cannot be resolved to a concrete date, omit the param.
+- Never emit a free-text value for a typed param. When unsure, omit the param and let the conversation clarify.
 - "Name" is a system default parameter. Extract it when the user states their name, but do not force the conversation toward it.
 - Collecting parameters should happen only when it feels natural for the response. Represent that with intent "askForParam"; do not put it in event.
 - Do not explain.
@@ -110,7 +117,9 @@ Rules:
 Examples:
 - User asks what courses are available -> {"event":"updateParams","mode":"clarifying","intent":"clarify","params":{},"summary":"User asks about courses"}
 - User sounds afraid or hesitant -> {"event":"clientConcern","mode":"validating","intent":"acknowledgeConcern","params":{},"summary":"User is hesitant"}
-- User gives their city -> {"event":"updateParams","mode":"neutral","intent":"askForParam","params":{"City":"Tel Aviv"},"summary":"User gave city"}
+- User says "somewhere in the Tel Aviv area" for City (categorical, allowed: Tel Aviv | Haifa) -> {"event":"updateParams","mode":"neutral","intent":"askForParam","params":{"City":"Tel Aviv"},"summary":"User gave city"}
+- User says "my budget is around 1,500 shekels" for Budget (number) -> {"event":"updateParams","mode":"neutral","intent":"askForParam","params":{"Budget":1500},"summary":"User gave budget"}
+- User says "tomorrow afternoon works" for PreferredTime (date/time) and CURRENT DATE is 2026-07-26 -> {"event":"updateParams","mode":"neutral","intent":"askForParam","params":{"PreferredTime":"2026-07-27T15:00"},"summary":"User gave preferred time"}
 - User is ready to finish -> {"event":"tryEnding","mode":"neutral","intent":"close","params":{},"summary":"User is ready to finish"}
 `;
 }
@@ -251,6 +260,21 @@ CONVERSATIONAL GUIDANCE:
 - ${intentGuidance[intent]}
 - Emotional compatibility rule: ask a new business question only when mode is "neutral" or "leadin", or when the user's latest message clearly shows readiness to continue.
 - If mode conflicts with responseIntent, prioritize the mode and meet the user there first.`;
+}
+
+function formatParamDefinitions(input: StateMachineInput): string {
+    const definitions = input.paramDefinitions || [];
+    if (definitions.length === 0) {
+        const paramNames = Object.keys(input.collectedParams || {});
+        if (paramNames.length === 0) {
+            return "No parameters to collect.";
+        }
+        return paramNames.map((key) => `- ${key}`).join("\n");
+    }
+
+    return definitions
+        .map((definition) => `- ${describeParamDefinition(definition)}`)
+        .join("\n");
 }
 
 function formatMissingParams(input: StateMachineInput): string {

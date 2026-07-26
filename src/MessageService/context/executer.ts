@@ -3,6 +3,7 @@ import { BotMsg, StateMachineInput, StateMachineOutput } from "../../dataClients
 import { ConversationCacheState } from "../../dataClients/Types/messageTypes";
 import { ConversationStateMachine } from "./conversationSM";
 import { LlmOutput } from "../../dataClients/Types/llmTypes";
+import { normalizeParamValue } from "../../dataClients/Types/paramTypes";
 import { ILogger, logger } from "../../logging/logger";
 import { parseFollowUpResponse } from "../../llm/promptHandler";
 
@@ -27,6 +28,7 @@ export class Executer{
             collectedParamNames: Object.keys(input.collectedParams)
         });
         const output = await this.llmProvider.extractEvents(input);
+        output.params = this.normalizeExtractedParams(input, output.params);
         this.logger.info("llm.event.extracted", {
             currentState: input.currentState,
             conversationEvent: output.conversationEvent,
@@ -104,6 +106,48 @@ export class Executer{
     }
 
     
+
+    // Validation gate between the LLM and the conversation state: every
+    // extracted value must normalize into its parameter's declared value
+    // space (categorical option / bounded number / ISO time) or it is dropped.
+    private normalizeExtractedParams(
+        input: StateMachineInput,
+        params?: Record<string, string | number | null>
+    ): Record<string, string | number | null> {
+        if (!params) {
+            return {};
+        }
+
+        const definitions = new Map(
+            (input.paramDefinitions || []).map((definition) => [definition.paramName.toLowerCase(), definition])
+        );
+        if (definitions.size === 0) {
+            return params;
+        }
+
+        const normalizedParams: Record<string, string | number | null> = {};
+        for (const [paramName, rawValue] of Object.entries(params)) {
+            const definition = definitions.get(paramName.toLowerCase());
+            if (!definition) {
+                this.logger.warn("llm.param.dropped_unknown", { paramName });
+                continue;
+            }
+
+            const normalized = normalizeParamValue(definition, rawValue);
+            if (!normalized.ok) {
+                this.logger.warn("llm.param.dropped_invalid", {
+                    paramName: definition.paramName,
+                    paramType: definition.type,
+                    reason: normalized.reason
+                });
+                continue;
+            }
+
+            normalizedParams[definition.paramName] = normalized.value;
+        }
+
+        return normalizedParams;
+    }
 
     async askForMissingParams(input: StateMachineInput,output: StateMachineOutput): Promise<string>
     {

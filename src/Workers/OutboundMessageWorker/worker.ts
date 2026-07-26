@@ -2,14 +2,17 @@ import "dotenv/config";
 import { Worker } from "bullmq";
 import { connection, verifyRedisConnection } from "../../dataClients/CacheClient/redis";
 import { OutboundMessageJobData } from "../../dataClients/Types/outboundTypes";
+import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
 import { logger } from "../../logging/logger";
-import { TwilioMessageSender } from "../../MessageSender/twilioMessageSender";
+import { OutboundSenderResolver } from "../../MessageSender/outboundSenderResolver";
 import { getBullMqPrefix, OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
 
 const workerLogger = logger.child({ component: "OutboundMessageWorker", queueName: OUTBOUND_MESSAGE_QUEUE_NAME });
-const twilioSender = new TwilioMessageSender({
-  logger: workerLogger.child({ component: "TwilioMessageSender" })
-});
+const sqlManager = new SqlManager(workerLogger.child({ component: "SqlManager" }));
+const senderResolver = new OutboundSenderResolver(
+  sqlManager.businessChannelRepository,
+  workerLogger.child({ component: "OutboundSenderResolver" })
+);
 
 const worker = new Worker(
   OUTBOUND_MESSAGE_QUEUE_NAME,
@@ -33,7 +36,8 @@ const worker = new Worker(
     });
 
     try {
-      const result = await twilioSender.sendMessage(jobData.message);
+      const sender = await senderResolver.resolveSender(jobData.message);
+      const result = await sender.sendMessage(jobData.message);
       jobLogger.info("outbound.job.processing.finished", {
         providerMessageId: result.providerMessageId,
         sentAt: result.sentAt

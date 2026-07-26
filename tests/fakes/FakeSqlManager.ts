@@ -27,11 +27,13 @@ import {
   UpsertBusinessFollowUpPolicyRequestDto
 } from "../../src/contracts";
 import { BusinessActionDto, BusinessDto, CommunicationChannel, MessageProvider } from "../../src/dataClients/Types/apiTypes";
+import { BusinessParamConfig, BusinessParamDefinition, BusinessParamType } from "../../src/dataClients/Types/paramTypes";
 import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { ILeadRepository } from "../../src/dataClients/SqlClient/Repositories/LeadRepo/ILeadRepository";
 import { DueConversationFollowUpCandidate, IFollowUpRepository, OpenConversationPolicyCandidate } from "../../src/dataClients/SqlClient/Repositories/FollowUpRepo/IFollowUpRepository";
-import { IBusinessChannelRepository } from "../../src/dataClients/SqlClient/Repositories/BusinessChannelRepo/IBusinessChannelRepository";
+import { IBusinessChannelRepository, ResolvedBusinessChannel } from "../../src/dataClients/SqlClient/Repositories/BusinessChannelRepo/IBusinessChannelRepository";
+import { normalizePhoneDigits } from "../../src/dataClients/Types/phoneNumber";
 
 type SavedMessage = {
   conversationId: number;
@@ -72,6 +74,8 @@ type SavedBusinessParameter = {
   businessId: number;
   paramName: string;
   use: boolean;
+  paramType?: BusinessParamType;
+  config?: BusinessParamConfig | null;
 };
 
 type SavedBusinessChannel = {
@@ -267,6 +271,9 @@ export class FakeSqlManager implements IDatabaseClient {
     const now = new Date();
 
     if (existingChannel) {
+      if (channelDto.credentials !== undefined) {
+        existingChannel.credentialsEncrypted = channelDto.credentials === null ? null : JSON.stringify(channelDto.credentials);
+      }
       existingChannel.displayName = channelDto.displayName === undefined ? existingChannel.displayName : this.normalizeNullableString(channelDto.displayName);
       existingChannel.status = channelDto.status || existingChannel.status;
       existingChannel.onboardingType = channelDto.onboardingType || existingChannel.onboardingType;
@@ -292,13 +299,64 @@ export class FakeSqlManager implements IDatabaseClient {
       externalPhoneNumberId: this.normalizeNullableString(channelDto.externalPhoneNumberId),
       webhookUrl: this.normalizeNullableString(channelDto.webhookUrl),
       isDefault: channelDto.isDefault ?? false,
-      credentialsEncrypted: null,
+      credentialsEncrypted: channelDto.credentials ? JSON.stringify(channelDto.credentials) : null,
       createdAt: now,
       updatedAt: now
     };
 
     this.businessChannels.set(channel.id, channel);
     return this.toBusinessChannelDto(channel);
+  }
+
+  async GetChannelForInbound(provider: string, receivingAddress: string): Promise<ResolvedBusinessChannel | null> {
+    const targetDigits = normalizePhoneDigits(receivingAddress);
+    if (!targetDigits) {
+      return null;
+    }
+
+    const match = [...this.businessChannels.values()]
+      .filter((channel) =>
+        channel.provider === provider &&
+        !["disabled", "failed"].includes(channel.status) &&
+        Boolean(channel.externalPhoneNumberId)
+      )
+      .sort((left, right) => left.id - right.id)
+      .find((channel) => normalizePhoneDigits(channel.externalPhoneNumberId) === targetDigits);
+
+    return match ? this.toResolvedChannel(match) : null;
+  }
+
+  async GetChannelForOutbound(
+    businessId: number,
+    provider: string,
+    fromAddress?: string
+  ): Promise<ResolvedBusinessChannel | null> {
+    const candidates = [...this.businessChannels.values()]
+      .filter((channel) =>
+        channel.businessId === businessId &&
+        channel.provider === provider &&
+        !["disabled", "failed"].includes(channel.status)
+      )
+      .sort((left, right) => left.id - right.id);
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const fromDigits = normalizePhoneDigits(fromAddress);
+    const byFromNumber = fromDigits
+      ? candidates.find((channel) => normalizePhoneDigits(channel.externalPhoneNumberId) === fromDigits)
+      : undefined;
+    const match = byFromNumber || candidates.find((channel) => channel.isDefault) || candidates[0];
+
+    return this.toResolvedChannel(match);
+  }
+
+  private toResolvedChannel(channel: SavedBusinessChannel): ResolvedBusinessChannel {
+    return {
+      channel: this.toBusinessChannelDto(channel),
+      credentials: channel.credentialsEncrypted ? JSON.parse(channel.credentialsEncrypted) : null
+    };
   }
 
   async upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto> {
@@ -329,6 +387,8 @@ export class FakeSqlManager implements IDatabaseClient {
           id: param.id,
           paramName: param.paramName,
           use: param.use,
+          paramType: param.paramType || BusinessParamType.Text,
+          config: param.config ?? null,
           paramValue: null
         })),
       action: this.businessActions.get(businessId)
@@ -350,7 +410,9 @@ export class FakeSqlManager implements IDatabaseClient {
     const parameters = request.parameters.map((parameter) => ({
       id: parameter.id,
       paramName: parameter.paramName.trim(),
-      use: parameter.use ?? true
+      use: parameter.use ?? true,
+      paramType: (parameter.paramType as BusinessParamType | undefined) || BusinessParamType.Text,
+      config: (parameter.config as BusinessParamConfig | null | undefined) ?? null
     }));
     for (const parameter of parameters) {
       if (parameter.id !== undefined) {
@@ -360,13 +422,17 @@ export class FakeSqlManager implements IDatabaseClient {
         }
         existingParameter.paramName = parameter.paramName;
         existingParameter.use = parameter.use;
+        existingParameter.paramType = parameter.paramType;
+        existingParameter.config = parameter.config;
       } else {
         const id = this.nextBusinessParameterId++;
         this.businessParameters.set(id, {
           id,
           businessId,
           paramName: parameter.paramName,
-          use: parameter.use
+          use: parameter.use,
+          paramType: parameter.paramType,
+          config: parameter.config
         });
       }
     }
@@ -409,6 +475,18 @@ export class FakeSqlManager implements IDatabaseClient {
       .filter((parameter) => parameter.businessId === businessId && parameter.use)
       .sort((left, right) => left.id - right.id)
       .map((parameter) => parameter.paramName);
+  }
+
+  async getActiveBusinessParameterDefinitions(businessId: number): Promise<BusinessParamDefinition[]> {
+    return [...this.businessParameters.values()]
+      .filter((parameter) => parameter.businessId === businessId && parameter.use)
+      .sort((left, right) => left.id - right.id)
+      .map((parameter) => ({
+        id: parameter.id,
+        paramName: parameter.paramName,
+        type: parameter.paramType || BusinessParamType.Text,
+        config: parameter.config || {}
+      }));
   }
 
   async getBusinessResponseMetrics(

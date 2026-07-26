@@ -2,6 +2,7 @@ import { ConversationCacheState, ConversationEntity, BusinessContext } from "../
 import { BusinessDto, BusinessActionDto, CommunicationChannel, MessageProvider } from "../Types/apiTypes";
 import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
+import { BusinessParamDefinition } from "../Types/paramTypes";
 import {
     AdminCreateUserRequestDto,
     AuthUserDto,
@@ -82,6 +83,7 @@ export interface IDatabaseClient {
     updateBusinessSettings(businessId: number, request: UpdateBusinessSettingsRequestDto): Promise<BusinessSettingsDto>;
     getBusinessResponseMetrics(businessId: number, from?: Date, to?: Date): Promise<BusinessResponseMetricsDto>;
     getActiveBusinessParameterNames(businessId: number): Promise<string[]>;
+    getActiveBusinessParameterDefinitions(businessId: number): Promise<BusinessParamDefinition[]>;
     scoreAndCreateLeadForConversation(clientId: number, businessId: number, conversationId: number): Promise<void>;
     upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto>;
     upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void>;

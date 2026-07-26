@@ -3,7 +3,7 @@ import { OpenAI } from "openai";
 import { ILlmProvider } from "./llmInterface";
 import { buildMessagePrompt ,buildClosingPrompt} from "./promptHandler";
 import { StateMachineInput, StateMachineOutput } from "../dataClients/Types/stateMachineTypes";
-import { buildEventPrompt, parseEventResponse } from "./promptHandler";
+import { buildEventPrompt, buildFollowUpPrompt, parseEventResponse } from "./promptHandler";
 import { ILogger, logger } from "../logging/logger";
 
 
@@ -36,7 +36,7 @@ export class OpenAIApi implements ILlmProvider {
     }
 
     async getFollowUpMessage(input: StateMachineInput): Promise<string> {
-        const prompt = buildEventPrompt(input);
+        const prompt = buildFollowUpPrompt(input);
         const model = "gpt-4o";
 
         this.logger.info("openai.followup_message.requested", {
