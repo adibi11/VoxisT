@@ -61,8 +61,8 @@ import { PushDeviceRepository } from "./Repositories/PushDeviceRepo/PushDeviceRe
 
 export const prisma = new PrismaClient();
 const AUTO_LEAD_SCORE_THRESHOLD = 65;
-const LEAD_PARAM_SCORE_WEIGHT = 0.75;
-const LEAD_RESPONSE_TIME_SCORE_WEIGHT = 0.25;
+const LEAD_PARAM_SCORE_WEIGHT = 0.50;
+const LEAD_RESPONSE_TIME_SCORE_WEIGHT = 0.50;
 
 export class SqlManager implements IDatabaseClient {
     private prisma: PrismaClient;

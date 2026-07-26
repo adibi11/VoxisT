@@ -3,7 +3,7 @@ import { NotificationStrategy } from "../../BusinessEventTypes";
 import { BusinessActivityEventDto, NotificationDispatchDto } from "../../BusinessEventTypes";
 
 export const leadCreatedStrategy: NotificationStrategy ={
-    async execute(event: BusinessActivityEventDto, prisma: PrismaClient): Promise<NotificationDispatchDto|null> {
+    async execute(event: BusinessActivityEventDto, prisma: PrismaClient): Promise<NotificationDispatchDto> {
         const lead = await prisma.lead.findUnique({
             where:{
                 id:event.aggregateId
