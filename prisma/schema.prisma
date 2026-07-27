@@ -359,8 +359,10 @@ model Task {
   version             Int          @default(1)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
-  createdByUserId     Int
-  updatedByUserId     Int
+  // Nullable so system-originated tasks (AI-scheduled callbacks) can exist
+  // without a human actor; the owner assigns a person afterwards.
+  createdByUserId     Int?
+  updatedByUserId     Int?
   completedAt         DateTime?
   completedByUserId   Int?
   cancelledAt         DateTime?
@@ -370,8 +372,8 @@ model Task {
   deletedByUserId     Int?
   business            Business     @relation(fields: [businessId], references: [id])
   lead                Lead?        @relation(fields: [leadId], references: [id])
-  createdBy           AppUser      @relation("TaskCreatedBy", fields: [createdByUserId], references: [id])
-  updatedBy           AppUser      @relation("TaskUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdBy           AppUser?     @relation("TaskCreatedBy", fields: [createdByUserId], references: [id])
+  updatedBy           AppUser?     @relation("TaskUpdatedBy", fields: [updatedByUserId], references: [id])
   completedBy         AppUser?     @relation("TaskCompletedBy", fields: [completedByUserId], references: [id])
   cancelledBy         AppUser?     @relation("TaskCancelledBy", fields: [cancelledByUserId], references: [id])
   deletedBy           AppUser?     @relation("TaskDeletedBy", fields: [deletedByUserId], references: [id])

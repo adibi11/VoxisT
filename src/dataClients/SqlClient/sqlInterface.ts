@@ -84,6 +84,19 @@ export interface IDatabaseClient {
     getBusinessResponseMetrics(businessId: number, from?: Date, to?: Date): Promise<BusinessResponseMetricsDto>;
     getActiveBusinessParameterNames(businessId: number): Promise<string[]>;
     getActiveBusinessParameterDefinitions(businessId: number): Promise<BusinessParamDefinition[]>;
+    // Creates or reschedules the AI callback task for a conversation
+    // (idempotent per business+client+conversation) and writes the
+    // TASK_CREATED/TASK_UPDATED activity event that drives the owner's push
+    // notification. Ensures a qualified lead exists for the client.
+    upsertConversationScheduledTask(args: {
+        businessId: number;
+        clientId: number;
+        conversationId: number;
+        scheduledFor: Date;
+        clientName?: string | null;
+        clientPhone?: string | null;
+        summary?: string | null;
+    }): Promise<{ taskId: number; created: boolean }>;
     scoreAndCreateLeadForConversation(clientId: number, businessId: number, conversationId: number): Promise<void>;
     upsertBusiness(businessDto: BusinessDto, businessId: number): Promise<BusinessDto>;
     upsertBusinessAction(businessId: number, actionDto: BusinessActionDto): Promise<void>;

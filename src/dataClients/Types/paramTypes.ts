@@ -149,6 +149,17 @@ function normalizeTime(rawValue: string): NormalizedParamValue {
     return { ok: true, type: BusinessParamType.Time, value: parsed.toISOString() };
 }
 
+// Standalone ISO time normalization for values outside the parameter system
+// (e.g. the scheduling negotiation's agreed callback time).
+export function normalizeTimeString(rawValue: string | null | undefined): string | null {
+    if (!rawValue || !rawValue.trim()) {
+        return null;
+    }
+
+    const result = normalizeTime(rawValue);
+    return result.ok && result.type === BusinessParamType.Time ? result.value : null;
+}
+
 // Human-readable spec line used both in prompts and owner-facing validation errors.
 export function describeParamDefinition(definition: BusinessParamDefinition): string {
     switch (definition.type) {

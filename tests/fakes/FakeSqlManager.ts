@@ -489,6 +489,55 @@ export class FakeSqlManager implements IDatabaseClient {
       }));
   }
 
+  public aiScheduledTasks = new Map<string, { taskId: number; businessId: number; clientId: number; conversationId: number; scheduledFor: Date; updates: number }>();
+  public activityEvents: Array<{ businessId: number; aggregateType: string; aggregateId: number; eventType: string; dedupeKey: string }> = [];
+  private nextAiTaskId = 9000;
+
+  async upsertConversationScheduledTask(args: {
+    businessId: number;
+    clientId: number;
+    conversationId: number;
+    scheduledFor: Date;
+    clientName?: string | null;
+    clientPhone?: string | null;
+    summary?: string | null;
+  }): Promise<{ taskId: number; created: boolean }> {
+    const key = `${args.businessId}:${args.clientId}`;
+    const existing = this.aiScheduledTasks.get(key);
+
+    if (existing) {
+      existing.scheduledFor = args.scheduledFor;
+      existing.conversationId = args.conversationId;
+      existing.updates += 1;
+      this.activityEvents.push({
+        businessId: args.businessId,
+        aggregateType: "TASK",
+        aggregateId: existing.taskId,
+        eventType: "TASK_UPDATED",
+        dedupeKey: `task:${existing.taskId}:ai_reschedule:${args.scheduledFor.toISOString()}`
+      });
+      return { taskId: existing.taskId, created: false };
+    }
+
+    const taskId = this.nextAiTaskId++;
+    this.aiScheduledTasks.set(key, {
+      taskId,
+      businessId: args.businessId,
+      clientId: args.clientId,
+      conversationId: args.conversationId,
+      scheduledFor: args.scheduledFor,
+      updates: 0
+    });
+    this.activityEvents.push({
+      businessId: args.businessId,
+      aggregateType: "TASK",
+      aggregateId: taskId,
+      eventType: "TASK_CREATED",
+      dedupeKey: `task:${taskId}:created`
+    });
+    return { taskId, created: true };
+  }
+
   async getBusinessResponseMetrics(
     businessId: number,
     from: Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),

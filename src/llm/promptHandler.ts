@@ -30,7 +30,7 @@ CONVERSATION MODE: ${output.conversationMode || ConversationMode.neutral}
 RESPONSE INTENT: ${output.responseIntent || ResponseIntent.askForParam}
 COLLECTED PARAMETERS: ${JSON.stringify(input.collectedParams)}
 MISSING PARAMETERS: ${formatMissingParams(input)}
-${formatBusinessContext(input)}
+${formatScheduledTime(output, input)}${formatBusinessContext(input)}
 CONVERSATION HISTORY:
 ${input.lastMessages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}
 LATEST USER MESSAGE: "${input.messageContent}"
@@ -87,15 +87,16 @@ USER: "${input.messageContent}"
 
 Return JSON only:
 {
-  "event": "startConversation|updateParams|clientConcern|tryEnding|ended|failure",
+  "event": "startConversation|updateParams|clientConcern|tryEnding|ended|failure|schedulingAgreed|schedulingDeclined",
   "mode": "neutral|leadin|validating|reflecting|pacing|clarifying",
   "intent": "welcome|askForParam|acknowledgeConcern|clarify|close|end|escalate|ignore",
   "params": {},
+  "scheduledTime": "",
   "summary": "max 12 words"
 }
 
 Rules:
-- event = business state-machine progress only. It must be one of: startConversation, updateParams, clientConcern, tryEnding, ended, failure.
+- event = business state-machine progress only. It must be one of: startConversation, updateParams, clientConcern, tryEnding, ended, failure, schedulingAgreed, schedulingDeclined.
 - mode = how to respond emotionally.
 - intent = customer-facing goal.
 - Never put a response intent in event.
@@ -111,6 +112,11 @@ Rules:
   - date/time: emit ISO 8601 (YYYY-MM-DD or YYYY-MM-DDTHH:mm). Resolve relative expressions like "tomorrow at 3" using CURRENT DATE. If the moment cannot be resolved to a concrete date, omit the param.
 - Never emit a free-text value for a typed param. When unsure, omit the param and let the conversation clarify.
 - "Name" is a system default parameter. Extract it when the user states their name, but do not force the conversation toward it.
+- Scheduling events apply ONLY when the assistant has proposed scheduling a callback (STATE is "scheduling", or the assistant's last message offered to set up a call):
+  - Use "schedulingAgreed" when the user accepts. If they gave a concrete moment, set scheduledTime to ISO 8601 resolved against CURRENT DATE; if they agreed without a time, still use "schedulingAgreed" with scheduledTime "".
+  - Use "schedulingDeclined" when the user turns the offer down ("no thanks", "I'll reach out myself", "don't call me").
+  - Outside a scheduling proposal, never use these events; a stated preferred time is just a param.
+- scheduledTime must be ISO 8601 or "". Never put a time expression in words there.
 - Collecting parameters should happen only when it feels natural for the response. Represent that with intent "askForParam"; do not put it in event.
 - Do not explain.
 
@@ -121,6 +127,8 @@ Examples:
 - User says "my budget is around 1,500 shekels" for Budget (number) -> {"event":"updateParams","mode":"neutral","intent":"askForParam","params":{"Budget":1500},"summary":"User gave budget"}
 - User says "tomorrow afternoon works" for PreferredTime (date/time) and CURRENT DATE is 2026-07-26 -> {"event":"updateParams","mode":"neutral","intent":"askForParam","params":{"PreferredTime":"2026-07-27T15:00"},"summary":"User gave preferred time"}
 - User is ready to finish -> {"event":"tryEnding","mode":"neutral","intent":"close","params":{},"summary":"User is ready to finish"}
+- Assistant offered a callback, user says "sure, tomorrow at 10 works" and CURRENT DATE is 2026-07-26 -> {"event":"schedulingAgreed","mode":"neutral","intent":"close","params":{},"scheduledTime":"2026-07-27T10:00","summary":"User agreed to callback"}
+- Assistant offered a callback, user says "no need, I'll call you" -> {"event":"schedulingDeclined","mode":"neutral","intent":"close","params":{},"summary":"User declined callback"}
 `;
 }
 
@@ -180,7 +188,8 @@ export function parseEventResponse(text: string, loggerInstance: ILogger = logge
             conversationMode: parseConversationMode(json.conversationMode || json.mode, loggerInstance),
             responseIntent: parseResponseIntent(json.responseIntent || json.intent || misplacedIntent, loggerInstance),
             newConclusion: json.newConclusion || json.summary || "",
-            params: json.params || {}
+            params: json.params || {},
+            scheduledTime: typeof json.scheduledTime === "string" && json.scheduledTime.trim() ? json.scheduledTime.trim() : undefined
         };
     } catch (error) {
         loggerInstance.error("llm.event.parse_failed", { error });
@@ -251,7 +260,9 @@ function formatConversationGuidance(output: StateMachineOutput): string {
         [ResponseIntent.close]: "Intent guidance: Confirm the useful details and move gently toward closing.",
         [ResponseIntent.end]: "Intent guidance: End politely without asking for more information.",
         [ResponseIntent.escalate]: "Intent guidance: Explain that a human will help, without asking for more information.",
-        [ResponseIntent.ignore]: "Intent guidance: Keep the response minimal and do not ask a question."
+        [ResponseIntent.ignore]: "Intent guidance: Keep the response minimal and do not ask a question.",
+        [ResponseIntent.proposeSchedule]: "Intent guidance: Warmly offer to set up a callback from the business, or ask for the one missing piece: a concrete day and time that suits the user. One light question, no pressure, and never promise a specific time is available - the business will confirm.",
+        [ResponseIntent.confirmSchedule]: "Intent guidance: Confirm the agreed callback time back to the user in one warm sentence and say the business will reach out then. Do not ask any further question."
     };
 
     return `
@@ -260,6 +271,15 @@ CONVERSATIONAL GUIDANCE:
 - ${intentGuidance[intent]}
 - Emotional compatibility rule: ask a new business question only when mode is "neutral" or "leadin", or when the user's latest message clearly shows readiness to continue.
 - If mode conflicts with responseIntent, prioritize the mode and meet the user there first.`;
+}
+
+function formatScheduledTime(output: StateMachineOutput, input: StateMachineInput): string {
+    const scheduledTime = output.scheduledTime || input.scheduledFor;
+    if (!scheduledTime) {
+        return "";
+    }
+
+    return `AGREED CALLBACK TIME: ${scheduledTime}\n`;
 }
 
 function formatParamDefinitions(input: StateMachineInput): string {

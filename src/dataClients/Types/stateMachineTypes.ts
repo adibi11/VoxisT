@@ -43,7 +43,11 @@ export enum ConversationEvent
     failure = "failure",
     tryEnding = "tryEnding",
     startConversation = "startConversation",
-    updateParams = "updateParams"
+    updateParams = "updateParams",
+    // Scheduling negotiation: only meaningful after the bot proposed setting
+    // up a callback. Agreement without a concrete time keeps negotiating.
+    schedulingAgreed = "schedulingAgreed",
+    schedulingDeclined = "schedulingDeclined"
 }
 
 export enum ConversationMode
@@ -65,7 +69,9 @@ export enum ResponseIntent
     close = "close",
     end = "end",
     escalate = "escalate",
-    ignore = "ignore"
+    ignore = "ignore",
+    proposeSchedule = "proposeSchedule",
+    confirmSchedule = "confirmSchedule"
 }
 
 export enum BotMsg
@@ -77,7 +83,9 @@ export enum BotMsg
     applyParams = "applyParams",
     escalateToHuman = "escalateToHuman",
     clarify = "clarify",
-    ignore = "ignore"
+    ignore = "ignore",
+    proposeSchedule = "proposeSchedule",
+    confirmSchedule = "confirmSchedule"
 }
 
 
@@ -93,6 +101,11 @@ export type StateMachineInput = {
     lastMessages:LastMessages[];
     businessContext: BusinessContextForPrompt | null;
     conclusion?: string;
+    // True when the business opted into AI-scheduled callbacks
+    // (BusinessAction BOOK_APPOINTMENT).
+    schedulingEnabled?: boolean;
+    // Previously agreed callback time (ISO), if any.
+    scheduledFor?: string;
 }
 
 export type StateMachineOutput = {
@@ -101,6 +114,9 @@ export type StateMachineOutput = {
     responseIntent?: ResponseIntent;
     newConclusion: string;
     params?: Record<string, string | number | null>;
+    // ISO 8601 callback time extracted during scheduling; validated by the
+    // executer before it can trigger a transition.
+    scheduledTime?: string;
 }
 
 

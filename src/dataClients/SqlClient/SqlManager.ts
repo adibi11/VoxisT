@@ -69,6 +69,8 @@ import { PushDeviceRepository } from "./Repositories/PushDeviceRepo/PushDeviceRe
 
 export const prisma = new PrismaClient();
 const AUTO_LEAD_SCORE_THRESHOLD = 65;
+const AI_SCHEDULED_LEAD_SCORE = 80;
+export const AI_CALLBACK_TASK_CATEGORY = "ai_callback";
 const LEAD_PARAM_SCORE_WEIGHT = 0.50;
 const LEAD_RESPONSE_TIME_SCORE_WEIGHT = 0.50;
 
@@ -522,6 +524,143 @@ export class SqlManager implements IDatabaseClient {
         return typedValues;
     }
 
+    async upsertConversationScheduledTask(args: {
+        businessId: number;
+        clientId: number;
+        conversationId: number;
+        scheduledFor: Date;
+        clientName?: string | null;
+        clientPhone?: string | null;
+        summary?: string | null;
+    }): Promise<{ taskId: number; created: boolean }> {
+        const { businessId, clientId, conversationId, scheduledFor } = args;
+        const scheduledForIso = scheduledFor.toISOString();
+        const buinessOwnerId = (await this.getBusinessMembers(businessId)).find(u=> u.role == "owner")?.userId;
+
+        return this.prisma.$transaction(async (tx) => {
+            // A client who agreed to a callback is a qualified lead; make sure one exists.
+            let lead = await tx.lead.findFirst({
+                where: {
+                    businessId,
+                    clientId,
+                    status: { notIn: ["WON", "LOST", "CLOSED"] as any }
+                },
+                orderBy: { createdAt: "desc" }
+            });
+
+            if (!lead) {
+                lead = await tx.lead.create({
+                    data: {
+                        businessId,
+                        clientId,
+                        conversationId,
+                        status: "QUALIFIED" as any,
+                        source: "WHATSAPP" as any,
+                        origin: "CONVERSATION" as any,
+                        score: AI_SCHEDULED_LEAD_SCORE,
+                        name: args.clientName || null,
+                        phoneNumber: args.clientPhone || null,
+                        summary: "Client agreed to a scheduled callback."
+                    }
+                });
+                await tx.businessActivityEvent.create({
+                    data: {
+                        businessId,
+                        aggregateType: "LEAD",
+                        aggregateId: lead.id,
+                        eventType: "LEAD_CREATED",
+                        dedupeKey: `lead:${lead.id}:created`
+                    }
+                });
+            }
+
+            const clientLabel = args.clientName || args.clientPhone || "client";
+            const description = args.summary || `AI-scheduled callback from conversation ${conversationId}.`;
+            const activityMetadata = {
+                conversationId,
+                clientId,
+                scheduledFor: scheduledForIso,
+                origin: "ai"
+            };
+
+            const existingTask = await tx.task.findFirst({
+                where: {
+                    businessId,
+                    leadId: lead.id,
+                    category: AI_CALLBACK_TASK_CATEGORY,
+                    status: { in: ["OPEN", "IN_PROGRESS"] as any },
+                    deletedAt: null
+                },
+                orderBy: { createdAt: "desc" }
+            });
+
+            if (existingTask) {
+                await tx.task.update({
+                    where: { id: existingTask.id },
+                    data: {
+                        startsAt: scheduledFor,
+                        dueAt: scheduledFor,
+                        description,
+                        version: { increment: 1 }
+                    }
+                });
+                await tx.businessActivityEvent.create({
+                    data: {
+                        businessId,
+                        aggregateType: "TASK",
+                        aggregateId: existingTask.id,
+                        eventType: "TASK_UPDATED",
+                        metadata: activityMetadata,
+                        dedupeKey: `task:${existingTask.id}:ai_reschedule:${scheduledForIso}`
+                    }
+                });
+                return { taskId: existingTask.id, created: false };
+            }
+
+            if (!buinessOwnerId) {
+                throw new Error(`Cannot schedule an AI callback task for business ${businessId}: no owner found`);
+            }
+
+            // Assigned to the owner by default; the owner can reassign to an employee.
+            const task = await tx.task.create({
+                data: {
+                    businessId,
+                    leadId: lead.id,
+                    headline: `Callback: ${clientLabel}`,
+                    description,
+                    category: AI_CALLBACK_TASK_CATEGORY,
+                    status: "OPEN" as any,
+                    priority: "HIGH" as any,
+                    startsAt: scheduledFor,
+                    dueAt: scheduledFor,
+                    timezone: "UTC",
+                    createdByUserId: buinessOwnerId,
+                    updatedByUserId: buinessOwnerId
+                }
+            });
+            await tx.taskParticipant.create({
+                data: {
+                    businessId,
+                    taskId: task.id,
+                    userId: buinessOwnerId,
+                    role: "MAIN_ASSIGNEE" as any,
+                    addedByUserId: buinessOwnerId
+                }
+            });
+            await tx.businessActivityEvent.create({
+                data: {
+                    businessId,
+                    aggregateType: "TASK",
+                    aggregateId: task.id,
+                    eventType: "TASK_CREATED",
+                    metadata: activityMetadata,
+                    dedupeKey: `task:${task.id}:created`
+                }
+            });
+            return { taskId: task.id, created: true };
+        });
+    }
+
     async getBusinessResponseMetrics(
         businessId: number,
         from: Date = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
@@ -563,6 +702,9 @@ export class SqlManager implements IDatabaseClient {
         businessId: number,
         conversationId: number
     ): Promise<void> {
+        
+        
+
         const score = await this.calculateLeadScore(clientId, businessId, conversationId);
         const existingLead = await this.prisma.lead.findFirst({
             where: {

@@ -38,6 +38,12 @@ export class TwilioMessageSender implements IMessageSender {
 
     const from = this.formatAddress(message.channel, message.from);
     const to = this.formatAddress(message.channel, message.to);
+    console.log({
+      accountSid: this.accountSid,
+      authTokenLength: this.authToken.length,
+      authTokenStart: this.authToken.slice(0, 4),
+      authTokenEnd: this.authToken.slice(-4),
+    });
 
     this.logger.info("twilio.message.send.requested", {
       channel: message.channel,
@@ -50,6 +56,7 @@ export class TwilioMessageSender implements IMessageSender {
       to,
       bodyLength: message.body.length
     });
+
 
     const response = await fetch(this.messagesUrl(), {
       method: "POST",

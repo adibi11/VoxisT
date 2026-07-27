@@ -15,11 +15,12 @@ import { ILogger, logger } from "../logging/logger";
 import { IOutboundMessageQueue } from "../QueueClient/queue";
 
 const CONVERSATION_TIMEOUT_MS = 3 * 24 * 60 * 60 * 1000;
+// schedulingConfirmed/schedulingFailed are never assigned to cache state -
+// confirming or giving up on a callback folds back into "closing" so the
+// conversation stays open. Kept out of this set for that reason.
 const CLOSED_CONVERSATION_STATES = new Set([
     "ended",
-    "failure",
-    "schedulingConfirmed",
-    "schedulingFailed"
+    "failure"
 ]);
 
 export class MessageService {
@@ -152,7 +153,7 @@ export class MessageService {
 
             try{
                 flowLogger.info("llm.pipeline.started", { conversationId: conversationState.conversationId });
-                const botResponse:string = (await this.llmPiplne.applyMessagePipline(conversationState,message.data.Body,businessId)).response
+                const botResponse:string = (await this.llmPiplne.applyMessagePipline(conversationState,message.data.Body,businessId,client.id)).response
                 //Push the response to the messages array to be persisted in the DB and cache state.
                 messages.push({
                     role:"bot",

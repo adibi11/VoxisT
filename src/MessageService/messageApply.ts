@@ -7,18 +7,33 @@ import { Executer } from "./context/executer";
 import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
 import { BusinessParamDefinition } from "../dataClients/Types/paramTypes";
 import { ILogger, logger } from "../logging/logger";
+import { ToolRegistry } from "../Tools/ToolRegistry";
+import { UpsertScheduledTaskTool } from "../Tools/upsertScheduledTaskTool";
 
 export class LlmPipeline{
 
     private llmProvider : ILlmProvider
     private sqlInterface: IDatabaseClient;
     private logger: ILogger;
+    private toolRegistry: ToolRegistry;
 
     constructor(llm:ILlmProvider,sqlInterface: IDatabaseClient, loggerInstance: ILogger = logger.child({ component: "LlmPipeline" }))
     {
         this.llmProvider = llm;
         this.sqlInterface = sqlInterface;
         this.logger = loggerInstance;
+        this.toolRegistry = new ToolRegistry(this.logger.child({ component: "ToolRegistry" }));
+        this.toolRegistry.register(new UpsertScheduledTaskTool(sqlInterface));
+    }
+
+    // AI-initiated scheduling is opt-in per business via the BOOK_APPOINTMENT action.
+    private async isSchedulingEnabled(businessId: number): Promise<boolean> {
+        try {
+            const action = await this.sqlInterface.getBusinessAction(businessId);
+            return action.action === "BOOK_APPOINTMENT";
+        } catch {
+            return false;
+        }
     }
 
 
@@ -42,7 +57,7 @@ export class LlmPipeline{
         return executer.ExecuteFollowUp(stateMachineInput);
     }
 
-    async applyMessagePipline(state:ConversationCacheState,message:string,businessId: number): Promise<LlmOutput>{
+    async applyMessagePipline(state:ConversationCacheState,message:string,businessId: number,clientId?: number): Promise<LlmOutput>{
         this.logger.info("conversation.state.before", {
           conversationId: state.conversationId,
           state: state.state,
@@ -52,7 +67,7 @@ export class LlmPipeline{
           lastMessagesCount: state.lastMessages.length,
           phone: state.phone
         });
-        const executer = new Executer(this.llmProvider, this.logger.child({ component: "Executer" }));
+        const executer = new Executer(this.llmProvider, this.logger.child({ component: "Executer" }), this.toolRegistry);
         this.logger.info("business.context.load.started", { businessId });
         const businessContext = sanitizeBusinessContext(await this.sqlInterface.getBusinessContext(businessId));
         this.logger.info("business.context.load.finished", {
@@ -60,13 +75,23 @@ export class LlmPipeline{
           hasBusinessContext: Boolean(businessContext)
         });
         const paramDefinitions = await this.sqlInterface.getActiveBusinessParameterDefinitions(businessId);
+        //TODO - 
+        //Decide data flow regarding allowed LLM actions for each business
+        const schedulingEnabled = /*await this.isSchedulingEnabled(businessId);*/true;
         const stateMachineInput = buildStateMachineInput(state, message, businessContext, paramDefinitions);
+        stateMachineInput.schedulingEnabled = /*schedulingEnabled*/true;
+        stateMachineInput.scheduledFor = state.scheduledFor;
         this.logger.info("llm.executer.started", {
           conversationId: state.conversationId,
           state: state.state,
+          schedulingEnabled,
           messageLength: message.length
         });
-        const output = await executer.prepareAndExecute(stateMachineInput,state);
+        const output = await executer.prepareAndExecute(
+          stateMachineInput,
+          state,
+          clientId !== undefined ? { businessId, clientId } : undefined
+        );
         this.logger.info("llm.executer.finished", {
           conversationId: state.conversationId,
           state: state.state,

@@ -83,6 +83,11 @@ export type ConversationCacheState = {
     updatedAt: Date;
     conclusion?: string;
     phone: string;
+    // Scheduling negotiation bookkeeping. Attempts are counted so the FSM -
+    // not the LLM - decides when to stop pursuing a callback.
+    schedulingAttempts?: number;
+    scheduledFor?: string;
+    scheduledTaskId?: number;
 }
 
 
