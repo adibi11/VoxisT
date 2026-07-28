@@ -5,6 +5,7 @@ import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
 import { ConversationCacheState, LastMessages as LastMessage } from "../dataClients/Types/messageTypes";
 import {
+    ensureClientNameParamName,
     findClientNameParamKey,
     fillMissingClientNameParam,
     getClientNameParamValue
@@ -64,6 +65,12 @@ export class MessageService {
                 // Handle message logic
                 this.logger.info("message.handle.started", { contentLength: message.content?.length });
                 await this.handleMessage(message);
+                break;
+            case ApiActionType.HumanConversationMessage:
+                // Conversation is human-managed - the webhook already classified
+                // this, so never touch the LLM/bot pipeline here.
+                this.logger.info("human_message.handle.started", { contentLength: message.content?.length });
+                await this.handleHumanConversationMessage(message);
                 break;
 
         }
@@ -209,6 +216,54 @@ export class MessageService {
         }
     }
     
+    // Human lane: the webhook already determined the conversation is
+    // human-managed, so this only persists the inbound message and raises a
+    // push notification - the LLM, cache state, and outbound queue are never
+    // touched, by construction rather than a flag check.
+    async handleHumanConversationMessage(message: Message) {
+        const client = await this.sqlInterface.getOrCreateClientByPhone(message.data.From);
+        const businessId = message.businessId || 1;
+        const flowLogger = this.logger.child({
+            clientId: client.id,
+            businessId,
+            channel: message.channel,
+            provider: message.provider,
+            from: message.data.From,
+            to: message.data.To
+        });
+
+        const lockAcquired = await this.cacheManager.acquireLock(client.id, businessId);
+        if (!lockAcquired) {
+            flowLogger.warn("human_message.lock.skipped");
+            return;
+        }
+        try {
+            const conversationId = await this.resolveHumanConversationId(client.id, businessId);
+            if (!conversationId) {
+                flowLogger.error("human_message.conversation.missing");
+                throw new Error(`No active conversation found for human-managed client ${client.id} in business ${businessId}`);
+            }
+
+            const messageId = await this.sqlInterface.createMessage(conversationId, "user", message.data.Body);
+            await this.sqlInterface.createConversationMessageActivityEvent(businessId, conversationId, messageId);
+
+            flowLogger.info("human_message.persisted", { conversationId, messageId });
+        }
+        finally {
+            await this.cacheManager.releaseLock(client.id, businessId);
+        }
+    }
+
+    private async resolveHumanConversationId(clientId: number, businessId: number): Promise<number | null> {
+        const activeConversationId = await this.cacheManager.getActiveConversationId(clientId, businessId);
+        if (activeConversationId) {
+            return activeConversationId;
+        }
+
+        const latestState = await this.sqlInterface.getLatestConversationCacheState(clientId, businessId);
+        return latestState?.conversationId ?? null;
+    }
+
     async handleCreateMessages(clientId: number, message: Message, conversationState: ConversationCacheState,lastMessages:LastMessage[]) {
         
         //Mock response from bot
@@ -286,7 +341,8 @@ export class MessageService {
                 body: botMessage.content,
                 businessId,
                 clientId,
-                conversationId: conversationState.conversationId
+                conversationId: conversationState.conversationId,
+                origin: "bot"
             }
         });
 
@@ -415,7 +471,11 @@ export class MessageService {
         conversationState: ConversationCacheState,
         businessId: number
     ): Promise<void> {
-        const activeParamNames = await this.sqlInterface.getActiveBusinessParameterNames(businessId);
+        // Collecting the client's name is a program default, independent of
+        // what the business configured - there is no UI to opt into it.
+        const activeParamNames = ensureClientNameParamName(
+            await this.sqlInterface.getActiveBusinessParameterNames(businessId)
+        );
         const activeParamNameSet = new Set(activeParamNames);
 
         for (const paramName of Object.keys(conversationState.collectedParams)) {

@@ -149,7 +149,8 @@ describe("MessageService integration flow with fakes", () => {
           body: "Welcome to Test Business. How can I help?",
           businessId,
           clientId: 1,
-          conversationId: 1
+          conversationId: 1,
+          origin: "bot"
         }
       }
     ]);
@@ -207,6 +208,51 @@ describe("MessageService integration flow with fakes", () => {
     ]);
     expect(outboundQueue.jobs).toHaveLength(1);
     expect(outboundQueue.jobs[0].message.body).toBe("Thanks David, what service do you need?");
+  });
+
+  it("still collects the client's name when the business never configured a name parameter", async () => {
+    // Name collection is a program default, not something owners configure -
+    // there is no UI path to a TEXT-typed parameter. A business with only
+    // "service" configured should still capture a stated name.
+    const initialState = createConversationState(ConversationState.collecting, {
+      service: null
+    });
+    const cache = new FakeCacheManager([
+      { clientId: 1, businessId, state: initialState }
+    ]);
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, {
+      ...createBusiness(),
+      parameters: [{ paramName: "service" }]
+    });
+    sql.seedConversation(1, businessId, initialState);
+    const llm = new FakeLlmProvider({
+      events: [
+        {
+          conversationEvent: ConversationEvent.updateParams,
+          newConclusion: "User provided their name",
+          params: { Name: "David" }
+        }
+      ],
+      responses: ["Thanks David, what service do you need?"]
+    });
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const service = new MessageService(cache, sql, llm, testLogger, outboundQueue);
+
+    await service.processMessage(createMessage("My name is David"));
+
+    const savedCache = await cache.getCacheState(1, businessId);
+    expect(savedCache?.collectedParams).toEqual({
+      service: null,
+      Name: "David"
+    });
+    expect(sql.paramAnswers).toContainEqual({
+      clientId: 1,
+      conversationId: 1,
+      businessId,
+      paramName: "Name",
+      paramValue: "David"
+    });
   });
 
   it("sends only the customer-facing text from a structured follow-up response", async () => {
@@ -273,7 +319,8 @@ describe("MessageService integration flow with fakes", () => {
           body: "Just checking in. Would you like to continue?",
           businessId,
           clientId: 1,
-          conversationId: 1
+          conversationId: 1,
+          origin: "bot"
         }
       }
     ]);

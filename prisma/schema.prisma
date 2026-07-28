@@ -38,12 +38,22 @@ model Conversation {
   lastFollowUpAt     DateTime?
   followUpCount      Int                @default(0)
   nextFollowUpAt     DateTime?
+  // Sticky once true: set on any human takeover or human-initiated
+  // conversation, never cleared automatically, so the bot pipeline stays
+  // silenced even after the conversation is later closed/ended.
+  humanManaged       Boolean            @default(false)
+  takenOverByUserId  Int?
+  takenOverAt        DateTime?
+  releasedAt         DateTime?
   business           Business           @relation(fields: [businessId], references: [id])
   client             Client             @relation(fields: [clientId], references: [id])
+  takenOverBy        AppUser?           @relation(fields: [takenOverByUserId], references: [id])
   messages           Message[]
   parameterAnswers   ParameterAnswer[]
   followUps          ConversationFollowUp[]
   createdLeads       Lead[]
+
+  @@index([businessId, humanManaged])
 }
 
 model Business {
@@ -135,6 +145,7 @@ model AppUser {
   cancelledTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceCancelledBy")
   businessActivityEvents BusinessActivityEvent[] @relation("BusinessActivityActor")
   pushDevice    PushDevice[]
+  takenOverConversations Conversation[]
 }
 
 model PushDevice {
@@ -767,12 +778,14 @@ enum ConversationStatus {
   scheduling
   schedulingConfirmed
   schedulingFailed
+  humanTakeover
 }
 
 enum MessageType {
   user
   bot
   system
+  human
 }
 
 enum BusinessUserRole {
@@ -850,12 +863,14 @@ enum BusinessActivityEventType {
   TIME_ENTRY_UPDATED
   TIME_ENTRY_DELETED
   LEAD_CREATED
+  CONVERSATION_MESSAGE_RECEIVED
 }
 
 enum BusinessActivityAggregateType {
   LEAD
   TASK
   TASK_OCCURRENCE
+  CONVERSATION
 }
 
 enum PhonePlatform{

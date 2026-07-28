@@ -1,13 +1,13 @@
 import "dotenv/config";
 import express from "express";
 import { QueueManager } from "../QueueClient/queue";
-import { verifyRedisConnection } from "../dataClients/CacheClient/redis";
+import { RedisCacheManager, verifyRedisConnection } from "../dataClients/CacheClient/redis";
 import { CommunicationChannel, JobData,ApiActionType, MessageProvider } from "../dataClients/Types/apiTypes";
 import { twillioMessage } from "../dataClients/Types/apiTypes";
 import { BusinessDto } from "../dataClients/Types/apiTypes";
 import { SqlManager } from "../dataClients/SqlClient/SqlManager";
 import { logger } from "../logging/logger";
-import { MESSAGE_QUEUE_NAME } from "../QueueClient/queueNames";
+import { MESSAGE_QUEUE_NAME, OUTBOUND_MESSAGE_QUEUE_NAME } from "../QueueClient/queueNames";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { signJwt } from "../auth/jwt";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requirePlatformAdmin } from "./authMiddleware";
@@ -26,6 +26,7 @@ import { getFollowUpRoutes } from "./routes/followUpRoutes";
 import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
 import { getIntegrationRoutes } from "./routes/integrationRoutes";
 import { getTaskRoutes } from "./routes/taskRoutes";
+import { getHumanTakeoverRoutes } from "./routes/humanTakeoverRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 import { createPublicEntrypointRateLimiter, createTaskEntrypointRateLimiter, getPublicEntrypointRateLimitConfig, getTaskEntrypointRateLimitConfig } from "./rateLimitMiddleware";
 import { createMetaLeadAdsWebhookHandlers } from "../MetaLeadAds/metaLeadAdsWebhook";
@@ -34,6 +35,8 @@ import { getTwilioSignatureConfig, validateTwilioRequest } from "./twilioSignatu
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
 const queueManager = new QueueManager(MESSAGE_QUEUE_NAME, logger.child({ component: "QueueManager", queueName: MESSAGE_QUEUE_NAME }));
+const outboundQueueManager = new QueueManager(OUTBOUND_MESSAGE_QUEUE_NAME, logger.child({ component: "QueueManager", queueName: OUTBOUND_MESSAGE_QUEUE_NAME }));
+const cacheManager = new RedisCacheManager();
 const app = express();
 const v1Router = express.Router();
 const PORT = 3000;
@@ -86,6 +89,7 @@ getFollowUpRoutes(v1Router, sqlManager, appLogger);
 getLeadIngestionRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getIntegrationRoutes(v1Router, sqlManager, appLogger);
 getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
+getHumanTakeoverRoutes(v1Router, sqlManager, cacheManager, outboundQueueManager, appLogger);
 
 
 
@@ -141,9 +145,24 @@ async function handleTwilioWebhook(req: express.Request, res: express.Response) 
     return res.status(404).send("Unknown receiving number");
   }
 
+  // Classify bot vs human lane here, once, before the message is ever
+  // enqueued - a human-managed conversation must never reach the LLM/bot
+  // pipeline, so MessageService doesn't have to re-derive this mid-pipeline.
+  let actionType = ApiActionType.HandleMessage;
+  try {
+    const client = await sqlManager.getOrCreateClientByPhone(event.From);
+    const humanManaged = await sqlManager.isConversationHumanManaged(client.id, businessId);
+    if (humanManaged) {
+      actionType = ApiActionType.HumanConversationMessage;
+    }
+  } catch (error) {
+    appLogger.error("webhook.human_takeover.classify.failed", { from: event.From, businessId, error });
+    return res.status(500).send("Failed to classify inbound message");
+  }
+
   const jobData: JobData = {
     event: {
-      type: ApiActionType.HandleMessage,
+      type: actionType,
       content: event.Body,
       status: "received",
       channel: getTwilioChannel(event),

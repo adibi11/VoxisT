@@ -173,17 +173,25 @@ export type ConversationSummaryDto = {
   businessId: number;
   clientId: number;
   status: string;
+  channel: string;
+  provider: string;
   conclusion?: string | null;
   createdAt: string;
   messageCount: number;
   lastMessageAt?: string;
+  // Sticky once true - set by a human takeover/open-conversation action and
+  // never cleared automatically, so the bot never silently reopens it.
+  humanManaged: boolean;
+  takenOverByUserId?: number | null;
+  takenOverAt?: string | null;
+  releasedAt?: string | null;
 };
 
 // Message transcript contract consumed by the conversation details screen.
 export type ConversationMessageDto = {
   id: number;
   conversationId: number;
-  type: "user" | "bot" | "system";
+  type: "user" | "bot" | "system" | "human";
   content: string;
   status: string;
   createdAt: string;
@@ -201,6 +209,27 @@ export type ConversationMessagesResponseDto = {
   conversation: ConversationSummaryDto;
   messages: ConversationMessageDto[];
   params: ConversationParamAnswerDto[];
+};
+
+// Human takeover: pause the bot on an in-progress conversation and send the
+// agent's own message.
+export type TakeoverConversationRequestDto = {
+  clientId: number;
+  message: string;
+};
+
+// Release a takeover, closing the conversation for good. `humanManaged` stays
+// true afterward so the bot never silently reopens it.
+export type ReleaseConversationRequestDto = {
+  clientId: number;
+};
+
+// Human-initiated conversation: the client may not exist yet, so this is
+// looked up/created by phone number rather than by clientId.
+export type OpenHumanConversationRequestDto = {
+  phoneNumber: string;
+  message: string;
+  clientName?: string;
 };
 
 export type LeadStatusDto =

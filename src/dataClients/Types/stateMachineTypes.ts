@@ -33,7 +33,11 @@ export enum ConversationState
     ended = "ended",
     scheduling = "scheduling",
     schedulingConfirmed = "schedulingConfirmed",
-    schedulingFailed = "schedulingFailed"
+    schedulingFailed = "schedulingFailed",
+    // Hard override set by a human takeover/open-conversation action. The bot's
+    // FSM never transitions into or out of this state - it's only ever set/
+    // cleared by the human-takeover endpoints.
+    humanTakeover = "humanTakeover"
 }
 
 export enum ConversationEvent

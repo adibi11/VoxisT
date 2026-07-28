@@ -14,7 +14,11 @@ SERVICES=(
   "VoxisApiService"
   "VoxisMessageWorker"
   "VoxisOutboundService"
+  "BusinessEventService"
+  "OutboxPublisherService"
+  "VoxisFollowupScheduled"
 )
+
 
 
 

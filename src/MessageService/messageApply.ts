@@ -6,6 +6,7 @@ import { ConversationStateMachine } from "./context/conversationSM";
 import { Executer } from "./context/executer";
 import { IDatabaseClient } from "../dataClients/SqlClient/sqlInterface";
 import { BusinessParamDefinition } from "../dataClients/Types/paramTypes";
+import { ensureClientNameParamDefinition } from "../dataClients/Types/clientNameParam";
 import { ILogger, logger } from "../logging/logger";
 import { ToolRegistry } from "../Tools/ToolRegistry";
 import { UpsertScheduledTaskTool } from "../Tools/upsertScheduledTaskTool";
@@ -46,7 +47,7 @@ export class LlmPipeline{
           businessId,
           hasBusinessContext: Boolean(businessContext)
         });
-        const paramDefinitions = await this.sqlInterface.getActiveBusinessParameterDefinitions(businessId);
+        const paramDefinitions = ensureClientNameParamDefinition(await this.sqlInterface.getActiveBusinessParameterDefinitions(businessId));
         const stateMachineInput: StateMachineInput = buildStateMachineInput(conversationState, conversationState.lastMessages[conversationState.lastMessages.length - 1].content, businessContext, paramDefinitions);
         this.logger.info("llm.executer.started", {
           conversationId: conversationState.conversationId,
@@ -74,8 +75,8 @@ export class LlmPipeline{
           businessId,
           hasBusinessContext: Boolean(businessContext)
         });
-        const paramDefinitions = await this.sqlInterface.getActiveBusinessParameterDefinitions(businessId);
-        //TODO - 
+        const paramDefinitions = ensureClientNameParamDefinition(await this.sqlInterface.getActiveBusinessParameterDefinitions(businessId));
+        //TODO -
         //Decide data flow regarding allowed LLM actions for each business
         const schedulingEnabled = /*await this.isSchedulingEnabled(businessId);*/true;
         const stateMachineInput = buildStateMachineInput(state, message, businessContext, paramDefinitions);

@@ -1,10 +1,34 @@
+import { BusinessParamDefinition, BusinessParamType } from "./paramTypes";
+
 export const CLIENT_NAME_PARAM = "Name";
 export const CLIENT_NAME_NOT_PROVIDED = "not provided";
 
 export type CollectedParams = Record<string, string | number | null>;
 
+// Not a real BusinessParameter row - collecting the client's name is a
+// product default, not something owners configure (there is no UI to
+// configure a TEXT-typed parameter). id 0 marks it as synthetic.
+export const CLIENT_NAME_PARAM_DEFINITION: BusinessParamDefinition = {
+    id: 0,
+    paramName: CLIENT_NAME_PARAM,
+    type: BusinessParamType.Text,
+    config: {}
+};
+
 export function isClientNameParam(paramName: string): boolean {
     return paramName.trim().toLowerCase() === "name";
+}
+
+// Guarantees a name slot exists regardless of business configuration, without
+// duplicating it if the business already has its own name-like parameter row.
+export function ensureClientNameParamName(paramNames: string[]): string[] {
+    return paramNames.some(isClientNameParam) ? paramNames : [...paramNames, CLIENT_NAME_PARAM];
+}
+
+export function ensureClientNameParamDefinition(definitions: BusinessParamDefinition[]): BusinessParamDefinition[] {
+    return definitions.some((definition) => isClientNameParam(definition.paramName))
+        ? definitions
+        : [...definitions, CLIENT_NAME_PARAM_DEFINITION];
 }
 
 export function findClientNameParamKey(params: CollectedParams): string | undefined {

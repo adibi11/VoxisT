@@ -7,6 +7,7 @@ export class FakeCacheManager implements ICacheManager {
   public lockedKeys = new Set<string>();
   public lockRequests: { clientId: number; businessId: number }[] = [];
   public releasedLocks: { clientId: number; businessId: number }[] = [];
+  public cancelledTakeovers = new Set<string>();
 
   constructor(initialStates?: {
     clientId: number;
@@ -68,8 +69,24 @@ export class FakeCacheManager implements ICacheManager {
     this.lockedKeys.add(this.key(clientId, businessId));
   }
 
+  async setTakeoverCancellation(businessId: number, clientId: number, conversationId: number): Promise<void> {
+    this.cancelledTakeovers.add(this.takeoverKey(businessId, clientId, conversationId));
+  }
+
+  async clearTakeoverCancellation(businessId: number, clientId: number, conversationId: number): Promise<void> {
+    this.cancelledTakeovers.delete(this.takeoverKey(businessId, clientId, conversationId));
+  }
+
+  async isTakeoverCancelled(businessId: number, clientId: number, conversationId: number): Promise<boolean> {
+    return this.cancelledTakeovers.has(this.takeoverKey(businessId, clientId, conversationId));
+  }
+
   private key(clientId: number, businessId: number): string {
     return `${clientId}:${businessId}`;
+  }
+
+  private takeoverKey(businessId: number, clientId: number, conversationId: number): string {
+    return `${businessId}:${clientId}:${conversationId}`;
   }
 
   private conversationKey(conversationId: number): string {

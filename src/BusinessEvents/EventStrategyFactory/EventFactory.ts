@@ -8,6 +8,7 @@ import { taskCreatedStrategy } from "./Strategies/TaskCreated";
 import { taskCompletedStrategy } from "./Strategies/TaskCompleted";
 import { cancelStrategy } from "./Strategies/cancelStrategy";
 import { leadCreatedStrategy } from "./Strategies/leadCreatedStrategy";
+import { conversationMessageReceivedStrategy } from "./Strategies/ConversationMessageReceived";
 
 export const notificationStrategyFactory = {
     resolve(eventType: BusinessActivityEventType): NotificationStrategy {
@@ -18,6 +19,8 @@ export const notificationStrategyFactory = {
                 return taskCompletedStrategy;
             case "LEAD_CREATED":
                 return leadCreatedStrategy;
+            case "CONVERSATION_MESSAGE_RECEIVED":
+                return conversationMessageReceivedStrategy;
             case "TASK_CANCELLED":
             case "TASK_DELETED":
             case "ASSIGNEE_CHANGED":

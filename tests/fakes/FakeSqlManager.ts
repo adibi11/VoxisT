@@ -37,8 +37,18 @@ import { normalizePhoneDigits } from "../../src/dataClients/Types/phoneNumber";
 
 type SavedMessage = {
   conversationId: number;
-  type: "user" | "bot";
+  type: "user" | "bot" | "human";
   content: string;
+};
+
+type SavedConversation = {
+  clientId: number;
+  businessId: number;
+  state: ConversationCacheState;
+  humanManaged: boolean;
+  takenOverByUserId: number | null;
+  takenOverAt: Date | null;
+  releasedAt: Date | null;
 };
 
 type SavedParamAnswer = {
@@ -117,7 +127,7 @@ export class FakeSqlManager implements IDatabaseClient {
   readonly businessChannelRepository: IBusinessChannelRepository = this;
 
   public clientsByPhone = new Map<string, Client>();
-  public conversations = new Map<number, { clientId: number; businessId: number; state: ConversationCacheState }>();
+  public conversations = new Map<number, SavedConversation>();
   public businesses = new Map<number, BusinessDto>();
   public businessParameters = new Map<number, SavedBusinessParameter>();
   public businessContexts = new Map<number, BusinessContext>();
@@ -132,6 +142,7 @@ export class FakeSqlManager implements IDatabaseClient {
 
   private nextClientId = 1;
   private nextConversationId = 1;
+  private nextMessageId = 1;
   private nextBusinessParameterId = 1;
   private nextBusinessChannelId = 1;
   private nextLeadId = 1;
@@ -158,11 +169,12 @@ export class FakeSqlManager implements IDatabaseClient {
     throw new Error("FakeSqlManager.getConversationEntity is not implemented for current tests");
   }
 
-  async createMessage(conversationId: number, type: "user" | "bot", content: string): Promise<void> {
+  async createMessage(conversationId: number, type: "user" | "bot" | "human", content: string): Promise<number> {
     const conversation = this.conversations.get(conversationId);
     if (!conversation) {
       throw new Error(`Conversation ${conversationId} does not exist`);
     }
+    const id = this.nextMessageId++;
     this.messages.push({ conversationId, type, content });
     const messageCreatedAt = new Date();
     conversation.state.updatedAt = messageCreatedAt;
@@ -175,6 +187,7 @@ export class FakeSqlManager implements IDatabaseClient {
     } else {
       followUpState.lastBotMessageAt = messageCreatedAt;
     }
+    return id;
   }
 
   async createDbConversation(
@@ -195,7 +208,15 @@ export class FakeSqlManager implements IDatabaseClient {
       updatedAt: new Date(),
       phone: this.findClientPhone(clientId)
     };
-    this.conversations.set(state.conversationId, { clientId, businessId, state });
+    this.conversations.set(state.conversationId, {
+      clientId,
+      businessId,
+      state,
+      humanManaged: false,
+      takenOverByUserId: null,
+      takenOverAt: null,
+      releasedAt: null
+    });
     return this.cloneState(state);
   }
 
@@ -648,6 +669,90 @@ export class FakeSqlManager implements IDatabaseClient {
     }
   }
 
+  async getClientPhoneNumber(clientId: number): Promise<string | null> {
+    return this.findClientById(clientId)?.phone ?? null;
+  }
+
+  async isConversationHumanManaged(clientId: number, businessId: number): Promise<boolean> {
+    const conversation = [...this.conversations.values()]
+      .filter((item) => item.clientId === clientId && item.businessId === businessId)
+      .sort((left, right) => right.state.updatedAt.getTime() - left.state.updatedAt.getTime())[0];
+
+    return conversation?.humanManaged ?? false;
+  }
+
+  async getConversationForBusinessAndClient(businessId: number, clientId: number, conversationId: number): Promise<ConversationSummaryDto | null> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation || conversation.businessId !== businessId || conversation.clientId !== clientId) {
+      return null;
+    }
+    return this.toConversationSummary(conversation);
+  }
+
+  async setHumanTakeover(conversationId: number, userId: number): Promise<ConversationSummaryDto> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation ${conversationId} does not exist`);
+    }
+    conversation.humanManaged = true;
+    conversation.takenOverByUserId = userId;
+    conversation.takenOverAt = new Date();
+    conversation.state.state = ConversationState.humanTakeover;
+    return this.toConversationSummary(conversation);
+  }
+
+  async releaseHumanTakeover(conversationId: number): Promise<ConversationSummaryDto> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation ${conversationId} does not exist`);
+    }
+    conversation.releasedAt = new Date();
+    conversation.state.state = ConversationState.ended;
+    return this.toConversationSummary(conversation);
+  }
+
+  async createHumanConversation(
+    clientId: number,
+    businessId: number,
+    userId: number,
+    channel: CommunicationChannel = CommunicationChannel.Whatsapp,
+    provider: MessageProvider = MessageProvider.Twilio
+  ): Promise<ConversationSummaryDto> {
+    const conversationId = this.nextConversationId++;
+    const now = new Date();
+    const state: ConversationCacheState = {
+      conversationId,
+      state: ConversationState.humanTakeover,
+      channel,
+      provider,
+      collectedParams: this.emptyParamsForBusiness(businessId),
+      lastMessages: [],
+      updatedAt: now,
+      phone: this.findClientPhone(clientId)
+    };
+    const conversation: SavedConversation = {
+      clientId,
+      businessId,
+      state,
+      humanManaged: true,
+      takenOverByUserId: userId,
+      takenOverAt: now,
+      releasedAt: null
+    };
+    this.conversations.set(conversationId, conversation);
+    return this.toConversationSummary(conversation);
+  }
+
+  async createConversationMessageActivityEvent(businessId: number, conversationId: number, messageId: number): Promise<void> {
+    this.activityEvents.push({
+      businessId,
+      aggregateType: "CONVERSATION",
+      aggregateId: conversationId,
+      eventType: "CONVERSATION_MESSAGE_RECEIVED",
+      dedupeKey: `message:${messageId}:conversation_message_received`
+    });
+  }
+
   async upsertParamAnswer(
     clientId: number,
     conversationId: number,
@@ -707,7 +812,7 @@ export class FakeSqlManager implements IDatabaseClient {
     }
 
     return {
-      conversation: this.toConversationSummary(conversation.clientId, conversation.businessId, conversation.state),
+      conversation: this.toConversationSummary(conversation),
       messages: this.messages
         .filter((message) => message.conversationId === conversationId)
         .map((message, index) => ({
@@ -735,7 +840,7 @@ export class FakeSqlManager implements IDatabaseClient {
         conversation.businessId === businessId &&
         (clientId === undefined || conversation.clientId === clientId)
       )
-      .map((conversation) => this.toConversationSummary(conversation.clientId, conversation.businessId, conversation.state))
+      .map((conversation) => this.toConversationSummary(conversation))
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
   }
 
@@ -1074,7 +1179,15 @@ export class FakeSqlManager implements IDatabaseClient {
   }
 
   seedConversation(clientId: number, businessId: number, state: ConversationCacheState): void {
-    this.conversations.set(state.conversationId, { clientId, businessId, state: this.cloneState(state) });
+    this.conversations.set(state.conversationId, {
+      clientId,
+      businessId,
+      state: this.cloneState(state),
+      humanManaged: false,
+      takenOverByUserId: null,
+      takenOverAt: null,
+      releasedAt: null
+    });
     this.nextConversationId = Math.max(this.nextConversationId, state.conversationId + 1);
   }
 
@@ -1120,11 +1233,8 @@ export class FakeSqlManager implements IDatabaseClient {
     };
   }
 
-  private toConversationSummary(
-    clientId: number,
-    businessId: number,
-    state: ConversationCacheState
-  ): ConversationSummaryDto {
+  private toConversationSummary(conversation: SavedConversation): ConversationSummaryDto {
+    const { clientId, businessId, state } = conversation;
     const conversationMessages = this.messages.filter((message) => message.conversationId === state.conversationId);
 
     return {
@@ -1132,10 +1242,16 @@ export class FakeSqlManager implements IDatabaseClient {
       businessId,
       clientId,
       status: state.state,
+      channel: state.channel,
+      provider: state.provider || MessageProvider.Twilio,
       conclusion: state.conclusion,
       createdAt: state.updatedAt.toISOString(),
       messageCount: conversationMessages.length,
-      lastMessageAt: conversationMessages.length > 0 ? state.updatedAt.toISOString() : undefined
+      lastMessageAt: conversationMessages.length > 0 ? state.updatedAt.toISOString() : undefined,
+      humanManaged: conversation.humanManaged,
+      takenOverByUserId: conversation.takenOverByUserId,
+      takenOverAt: conversation.takenOverAt?.toISOString() ?? null,
+      releasedAt: conversation.releasedAt?.toISOString() ?? null
     };
   }
 
@@ -1463,7 +1579,7 @@ export class FakeSqlManager implements IDatabaseClient {
     const savedMessages = this.messages
       .filter((message) => message.conversationId === state.conversationId)
       .map((message) => ({
-        role: message.type,
+        role: message.type as "user" | "bot",
         content: message.content
       }));
     const cloned = this.cloneState(state);

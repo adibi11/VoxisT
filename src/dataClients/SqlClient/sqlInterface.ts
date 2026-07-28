@@ -54,10 +54,11 @@ export interface IDatabaseClient {
     getCacheStateByConversationId(conversationId: number): Promise<ConversationCacheState | null>;
     getLatestConversationCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;
     getConversationEntity(clientId: number, businessId: number): Promise<ConversationEntity>;
-    createMessage(conversationId: number,type: "user"| "bot",content: string): Promise<void> ;
+    createMessage(conversationId: number,type: "user"| "bot" | "human",content: string): Promise<number> ;
     createDbConversation(clientId: number, businessId: number,content: string, channel?: CommunicationChannel, provider?: MessageProvider): Promise<ConversationCacheState>;
     createDbBusiness(businessDto: BusinessDto): Promise<void>;
     getOrCreateClientByPhone(phoneNumber:string):Promise<Client>;
+    getClientPhoneNumber(clientId: number): Promise<string | null>;
     updateClientName(clientId: number, name: string): Promise<void>;
     upsertParamAnswer(clientId: number, conversationId: number,businessId: number, paramName: string, paramValue: string): Promise<void>;
     getBusiness(businessId: number): Promise<BusinessDto | null>;
@@ -104,4 +105,26 @@ export interface IDatabaseClient {
     getMessagesByConversation(businessId: number, conversationId: number): Promise<ConversationMessagesResponseDto | null>;
     getConversationsByBusinessAndClient(businessId: number, clientId?: number): Promise<ConversationSummaryDto[]>;
     getClientsByBusiness(businessId: number): Promise<ClientSummaryDto[]>;
+
+    // Read-only: is the client/business's active conversation human-managed?
+    // Used by the webhook to classify a message into the bot or human lane
+    // before it's ever enqueued - never creates a conversation as a side effect.
+    isConversationHumanManaged(clientId: number, businessId: number): Promise<boolean>;
+    getConversationForBusinessAndClient(businessId: number, clientId: number, conversationId: number): Promise<ConversationSummaryDto | null>;
+    // Marks a conversation humanTakeover/humanManaged and records who took it over.
+    setHumanTakeover(conversationId: number, userId: number): Promise<ConversationSummaryDto>;
+    // Ends a takeover: status -> ended, releasedAt set. humanManaged stays true.
+    releaseHumanTakeover(conversationId: number): Promise<ConversationSummaryDto>;
+    // Starts a brand-new conversation already owned by a human (used when an
+    // agent opens a conversation with a client that may not exist yet).
+    createHumanConversation(
+        clientId: number,
+        businessId: number,
+        userId: number,
+        channel?: CommunicationChannel,
+        provider?: MessageProvider
+    ): Promise<ConversationSummaryDto>;
+    // Writes the BusinessActivityEvent that the existing push-notification
+    // pipeline (BusinessActivityEventProcessorService) picks up.
+    createConversationMessageActivityEvent(businessId: number, conversationId: number, messageId: number): Promise<void>;
 }

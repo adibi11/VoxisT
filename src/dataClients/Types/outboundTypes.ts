@@ -11,5 +11,9 @@ export type OutboundMessageJobData = {
     clientId: number;
     conversationId: number;
     messageId?: number;
+    // "bot" jobs are dropped by the outbound worker if a takeover
+    // cancellation key exists for the conversation; "human" jobs always
+    // bypass that check. Defaults to "bot" for existing call sites.
+    origin?: "bot" | "human";
   };
 };

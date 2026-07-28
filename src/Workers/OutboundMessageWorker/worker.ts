@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Worker } from "bullmq";
-import { connection, verifyRedisConnection } from "../../dataClients/CacheClient/redis";
+import { connection, RedisCacheManager, verifyRedisConnection } from "../../dataClients/CacheClient/redis";
 import { OutboundMessageJobData } from "../../dataClients/Types/outboundTypes";
 import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
 import { logger } from "../../logging/logger";
@@ -9,6 +9,7 @@ import { getBullMqPrefix, OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/
 
 const workerLogger = logger.child({ component: "OutboundMessageWorker", queueName: OUTBOUND_MESSAGE_QUEUE_NAME });
 const sqlManager = new SqlManager(workerLogger.child({ component: "SqlManager" }));
+const cacheManager = new RedisCacheManager();
 const senderResolver = new OutboundSenderResolver(
   sqlManager.businessChannelRepository,
   workerLogger.child({ component: "OutboundSenderResolver" })
@@ -36,6 +37,22 @@ const worker = new Worker(
     });
 
     try {
+      if (jobData.message.origin !== "human") {
+        const cancelled = await cacheManager.isTakeoverCancelled(
+          jobData.message.businessId,
+          jobData.message.clientId,
+          jobData.message.conversationId
+        );
+        if (cancelled) {
+          jobLogger.info("outbound.job.skipped.takeover", {
+            conversationId: jobData.message.conversationId,
+            businessId: jobData.message.businessId,
+            clientId: jobData.message.clientId
+          });
+          return;
+        }
+      }
+
       const sender = await senderResolver.resolveSender(jobData.message);
       const result = await sender.sendMessage(jobData.message);
       jobLogger.info("outbound.job.processing.finished", {

@@ -294,8 +294,8 @@ export class SqlManager implements IDatabaseClient {
         return paramList;
     }
 
-    async createMessage(conversationId: number,type: "user"| "bot",content: string): Promise<void> {
-        await this.prisma.$transaction(async (tx) => {
+    async createMessage(conversationId: number,type: "user"| "bot" | "human",content: string): Promise<number> {
+        return this.prisma.$transaction(async (tx) => {
             const currentMax = await tx.message.aggregate({
                 where: {
                     conversationId
@@ -316,6 +316,8 @@ export class SqlManager implements IDatabaseClient {
                 }
             });
 
+            // "human" messages are agent-authored, same as "bot" - both are
+            // outbound from the business side, so both bump lastBotMessageAt.
             await tx.conversation.update({
                 where: {
                     id: conversationId
@@ -324,9 +326,9 @@ export class SqlManager implements IDatabaseClient {
                     ? { lastUserMessageAt: createdMessage.createdAt }
                     : { lastBotMessageAt: createdMessage.createdAt }
             });
+
+            return createdMessage.id;
         });
-        
-       
     }
 
     async createDbConversation(
@@ -397,6 +399,14 @@ export class SqlManager implements IDatabaseClient {
             email: ""
         };
         return mappedClient;
+    }
+
+    async getClientPhoneNumber(clientId: number): Promise<string | null> {
+        const client = await this.prisma.client.findUnique({
+            where: { id: clientId },
+            select: { phoneNumber: true }
+        });
+        return client?.phoneNumber ?? null;
     }
 
     async updateClientName(clientId: number, name: string): Promise<void> {
@@ -1356,16 +1366,7 @@ export class SqlManager implements IDatabaseClient {
             }
         });
 
-        return conversations.map((conversation) => ({
-            id: conversation.id,
-            businessId: conversation.businessId,
-            clientId: conversation.clientId,
-            status: conversation.conversationStatus,
-            conclusion: conversation.conclusion,
-            createdAt: conversation.createdAt.toISOString(),
-            messageCount: conversation._count.messages,
-            lastMessageAt: conversation.messages[0]?.createdAt.toISOString()
-        }));
+        return conversations.map(mapConversationToSummaryDto);
     }
 
     async getMessagesByConversation(businessId: number, conversationId: number): Promise<ConversationMessagesResponseDto | null> {
@@ -1402,16 +1403,10 @@ export class SqlManager implements IDatabaseClient {
         const lastMessage = conversation.messages[conversation.messages.length - 1];
 
         return {
-            conversation: {
-                id: conversation.id,
-                businessId: conversation.businessId,
-                clientId: conversation.clientId,
-                status: conversation.conversationStatus,
-                conclusion: conversation.conclusion,
-                createdAt: conversation.createdAt.toISOString(),
-                messageCount: conversation._count.messages,
-                lastMessageAt: lastMessage?.createdAt.toISOString()
-            },
+            conversation: mapConversationToSummaryDto({
+                ...conversation,
+                messages: lastMessage ? [lastMessage] : []
+            }),
             messages: conversation.messages.map((message) => ({
                 id: message.id,
                 conversationId: message.conversationId,
@@ -1427,6 +1422,125 @@ export class SqlManager implements IDatabaseClient {
                 createdAt: answer.createdAt.toISOString()
             }))
         };
+    }
+
+    // Read-only: identifies the same "active" conversation the bot pipeline
+    // would pick (most recent activity, not just most recently created) and
+    // reports whether it's human-managed. Never creates a conversation -
+    // that side effect stays in MessageService's get-or-create path.
+    async isConversationHumanManaged(clientId: number, businessId: number): Promise<boolean> {
+        const conversations = await this.prisma.conversation.findMany({
+            where: { clientId, businessId },
+            select: {
+                humanManaged: true,
+                createdAt: true,
+                messages: {
+                    orderBy: [{ messageIndex: "desc" }, { id: "desc" }],
+                    take: 1,
+                    select: { createdAt: true }
+                }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        const conversation = conversations
+            .sort((left, right) => getConversationActivityTime(right).getTime() - getConversationActivityTime(left).getTime())[0];
+
+        return conversation?.humanManaged ?? false;
+    }
+
+    async getConversationForBusinessAndClient(businessId: number, clientId: number, conversationId: number): Promise<ConversationSummaryDto | null> {
+        const conversation = await this.prisma.conversation.findFirst({
+            where: { id: conversationId, businessId, clientId },
+            include: {
+                messages: {
+                    orderBy: [{ messageIndex: "desc" }, { id: "desc" }],
+                    take: 1
+                },
+                _count: { select: { messages: true } }
+            }
+        });
+
+        return conversation ? mapConversationToSummaryDto(conversation) : null;
+    }
+
+    async setHumanTakeover(conversationId: number, userId: number): Promise<ConversationSummaryDto> {
+        const conversation = await this.prisma.conversation.update({
+            where: { id: conversationId },
+            data: {
+                conversationStatus: "humanTakeover",
+                humanManaged: true,
+                takenOverByUserId: userId,
+                takenOverAt: new Date()
+            },
+            include: {
+                messages: {
+                    orderBy: [{ messageIndex: "desc" }, { id: "desc" }],
+                    take: 1
+                },
+                _count: { select: { messages: true } }
+            }
+        });
+
+        return mapConversationToSummaryDto(conversation);
+    }
+
+    async releaseHumanTakeover(conversationId: number): Promise<ConversationSummaryDto> {
+        const conversation = await this.prisma.conversation.update({
+            where: { id: conversationId },
+            data: {
+                conversationStatus: "ended",
+                releasedAt: new Date()
+            },
+            include: {
+                messages: {
+                    orderBy: [{ messageIndex: "desc" }, { id: "desc" }],
+                    take: 1
+                },
+                _count: { select: { messages: true } }
+            }
+        });
+
+        return mapConversationToSummaryDto(conversation);
+    }
+
+    async createHumanConversation(
+        clientId: number,
+        businessId: number,
+        userId: number,
+        channel: CommunicationChannel = CommunicationChannel.Whatsapp,
+        provider: MessageProvider = MessageProvider.Twilio
+    ): Promise<ConversationSummaryDto> {
+        const conversation = await this.prisma.conversation.create({
+            data: {
+                clientId,
+                businessId,
+                conversationStatus: "humanTakeover",
+                humanManaged: true,
+                takenOverByUserId: userId,
+                takenOverAt: new Date(),
+                channel,
+                provider
+            },
+            include: {
+                messages: true,
+                _count: { select: { messages: true } }
+            }
+        });
+
+        return mapConversationToSummaryDto(conversation);
+    }
+
+    async createConversationMessageActivityEvent(businessId: number, conversationId: number, messageId: number): Promise<void> {
+        await this.prisma.businessActivityEvent.create({
+            data: {
+                businessId,
+                aggregateType: "CONVERSATION",
+                aggregateId: conversationId,
+                eventType: "CONVERSATION_MESSAGE_RECEIVED",
+                dedupeKey: `message:${messageId}:conversation_message_received`
+            }
+        });
     }
 
     async getBusinessContext(businessId: number): Promise<BusinessContext | null> {
@@ -1592,6 +1706,40 @@ function mapConversationStatusToState(status: string): ConversationState {
 
 function mapConversationStateToStatus(state: ConversationState): any {
     return state;
+}
+
+function mapConversationToSummaryDto(conversation: {
+    id: number;
+    businessId: number;
+    clientId: number;
+    conversationStatus: string;
+    channel: string;
+    provider: string;
+    conclusion: string | null;
+    createdAt: Date;
+    humanManaged: boolean;
+    takenOverByUserId: number | null;
+    takenOverAt: Date | null;
+    releasedAt: Date | null;
+    messages: { createdAt: Date }[];
+    _count: { messages: number };
+}): ConversationSummaryDto {
+    return {
+        id: conversation.id,
+        businessId: conversation.businessId,
+        clientId: conversation.clientId,
+        status: conversation.conversationStatus,
+        channel: conversation.channel,
+        provider: conversation.provider,
+        conclusion: conversation.conclusion,
+        createdAt: conversation.createdAt.toISOString(),
+        messageCount: conversation._count.messages,
+        lastMessageAt: conversation.messages[0]?.createdAt.toISOString(),
+        humanManaged: conversation.humanManaged,
+        takenOverByUserId: conversation.takenOverByUserId,
+        takenOverAt: conversation.takenOverAt?.toISOString() ?? null,
+        releasedAt: conversation.releasedAt?.toISOString() ?? null
+    };
 }
 
 function mapBusinessSettings(business: {

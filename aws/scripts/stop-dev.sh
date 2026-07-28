@@ -12,6 +12,9 @@ SERVICES=(
   "VoxisApiService"
   "VoxisMessageWorker"
   "VoxisOutboundService"
+  "BusinessEventService"
+  "OutboxPublisherService"
+  "VoxisFollowupScheduled"
 )
 
 echo "Stopping ECS services..."
@@ -32,13 +35,5 @@ done
 echo "Waiting 30 seconds..."
 sleep 30
 
-echo "Stopping RDS..."
 
-aws rds stop-db-instance \
-    --db-instance-identifier $DB_INSTANCE \
-    --region $AWS_REGION \
-    --no-cli-pager
-
-
-echo ""
 echo "Voxis development environment is DOWN."

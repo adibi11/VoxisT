@@ -118,5 +118,23 @@ export class RedisCacheManager implements ICacheManager {
     const lockKey = `lock:${clientId}:${businessId}`;
     await redisClient.del(lockKey);
   }
+
+  //  HUMAN TAKEOVER CANCELLATION
+  async setTakeoverCancellation(businessId: number, clientId: number, conversationId: number): Promise<void> {
+    await redisClient.set(this.takeoverKey(businessId, clientId, conversationId), "1");
+  }
+
+  async clearTakeoverCancellation(businessId: number, clientId: number, conversationId: number): Promise<void> {
+    await redisClient.del(this.takeoverKey(businessId, clientId, conversationId));
+  }
+
+  async isTakeoverCancelled(businessId: number, clientId: number, conversationId: number): Promise<boolean> {
+    const result = await redisClient.exists(this.takeoverKey(businessId, clientId, conversationId));
+    return result === 1;
+  }
+
+  private takeoverKey(businessId: number, clientId: number, conversationId: number): string {
+    return `takeover:${businessId}:${clientId}:${conversationId}`;
+  }
 }
 

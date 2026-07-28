@@ -55,6 +55,11 @@ export enum ApiActionType {
     Delete = "delete",
     HandleMessage = "handleMessage",
     FollowUp = "followUp",
+    // Classified at the webhook, before enqueueing: the receiving
+    // conversation is human-managed, so this message must never reach the
+    // LLM/bot pipeline - it's only persisted and turned into a push
+    // notification for the owning agent.
+    HumanConversationMessage = "humanConversationMessage",
 }
 
 export type twillioMessage = {
