@@ -29,3 +29,4 @@ When the message entered the outbound worker, we get the encrypted credentials f
 This decision was made to enable different businesses to use different providers and different systems to send and receive messages. 
 It was also made to concentrate all of the third party logic in one concentrated place instead of injecting it into the messages worker.
 
+The only service that can edit the Chan
