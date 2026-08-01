@@ -1304,7 +1304,9 @@ export class SqlManager implements IDatabaseClient {
             email: business.businessEmail
         }));
     }
-    //Get all clients for a given business, including the count of conversations and the timestamp of the last conversation in descending order of the last conversation timestamp. If a client has no conversations, it will not be included in the result.
+    //Get all clients for a given business, 
+    // including the count of conversations and the timestamp of the last conversation in descending order of the last conversation timestamp. 
+    // If a client has no conversations, it will not be included in the result.
     async getClientsByBusiness(businessId: number): Promise<ClientSummaryDto[]> {
         const clients = await this.prisma.client.findMany({
             where: {
