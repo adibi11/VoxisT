@@ -13,6 +13,7 @@ import {
     BusinessUserRoleDto,
     ClientSummaryDto,
     ConversationMessagesResponseDto,
+    ConversationMessageDto,
     ConversationSummaryDto,
     PlatformRoleDto,
     UpdateBusinessSettingsRequestDto
@@ -30,6 +31,7 @@ import { IProviderWebhookEventRepository } from "./Repositories/ProviderWebhookE
 import { IMetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/IMetaLeadFormSubscriptionRepository";
 import { IPushDeviceRepository } from "./Repositories/PushDeviceRepo/IPushDeviceRepository";
 import { ITaskRepository } from "./Repositories/TaskRepo/ITaskRepository";
+import { IInstagramRepository } from "../../InstagramCommentAutomation/instagramTypes";
 
 
 export interface IDatabaseClient {
@@ -49,12 +51,18 @@ export interface IDatabaseClient {
     readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
     readonly taskRepository: ITaskRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;
+    readonly instagramRepository: IInstagramRepository;
 
     getCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;
     getCacheStateByConversationId(conversationId: number): Promise<ConversationCacheState | null>;
     getLatestConversationCacheState(clientId: number, businessId: number): Promise<ConversationCacheState | null>;
     getConversationEntity(clientId: number, businessId: number): Promise<ConversationEntity>;
-    createMessage(conversationId: number,type: "user"| "bot" | "human",content: string): Promise<number> ;
+    createMessage(
+        conversationId: number,
+        type: "user" | "bot" | "human",
+        content: string,
+        idempotencyKey?: string
+    ): Promise<ConversationMessageDto>;
     createDbConversation(clientId: number, businessId: number,content: string, channel?: CommunicationChannel, provider?: MessageProvider): Promise<ConversationCacheState>;
     createDbBusiness(businessDto: BusinessDto): Promise<void>;
     getOrCreateClientByPhone(phoneNumber:string):Promise<Client>;

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MessageService } from "../../src/MessageService/messageService";
+import { RealtimeService } from "../../src/Realtime/RealtimeService";
 import { ApiActionType, BusinessDto, CommunicationChannel, Message, MessageProvider } from "../../src/dataClients/Types/apiTypes";
 import { BusinessContext, ConversationCacheState } from "../../src/dataClients/Types/messageTypes";
 import { ConversationEvent, ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
@@ -874,5 +875,73 @@ describe("MessageService integration flow with fakes", () => {
 
     expect(firstClaim?.status).toBe("PROCESSING");
     expect(secondClaim).toBeNull();
+  });
+
+  it("persists, publishes, and enqueues a business-member message with one message identity", async () => {
+    const state = createConversationState(ConversationState.collecting);
+    const cache = new FakeCacheManager([{ clientId: 1, businessId, state }]);
+    const sql = new FakeSqlManager();
+    sql.seedBusiness(businessId, createBusiness());
+    sql.seedConversation(1, businessId, state);
+    const outboundQueue = new FakeOutboundMessageQueue();
+    const publish = vi.fn().mockResolvedValue(1);
+    const realtimeService = new RealtimeService({ publish }, testLogger);
+    const service = new MessageService(
+      cache,
+      sql,
+      new FakeLlmProvider(),
+      testLogger,
+      outboundQueue,
+      realtimeService
+    );
+
+    await service.processMessage({
+      type: ApiActionType.BusinessMemberConversationMessage,
+      content: "I will handle this for you.",
+      status: "pending",
+      channel: CommunicationChannel.Whatsapp,
+      provider: MessageProvider.Twilio,
+      businessId,
+      data: {
+        from: "+15559999999",
+        to: clientPhone,
+        body: "I will handle this for you.",
+        clientId: 1,
+        conversationId: 1,
+        businessMemberUserId: 9,
+        idempotencyKey: "business-member-1-command-1"
+      }
+    });
+
+    expect(sql.messages).toEqual([
+      { conversationId: 1, type: "human", content: "I will handle this for you." }
+    ]);
+    expect(publish).toHaveBeenCalledOnce();
+    const [channel, payload] = publish.mock.calls[0];
+    expect(channel).toBe("realtime:conversation:1");
+    const publishedEvent = JSON.parse(payload);
+    expect(publishedEvent.message).toMatchObject({
+      id: 1,
+      conversationId: 1,
+      type: "human",
+      content: "I will handle this for you.",
+      status: "received"
+    });
+    expect(outboundQueue.jobs).toEqual([
+      {
+        message: {
+          channel: CommunicationChannel.Whatsapp,
+          provider: MessageProvider.Twilio,
+          from: "+15559999999",
+          to: clientPhone,
+          body: "I will handle this for you.",
+          businessId,
+          clientId: 1,
+          conversationId: 1,
+          messageId: 1,
+          origin: "human"
+        }
+      }
+    ]);
   });
 });

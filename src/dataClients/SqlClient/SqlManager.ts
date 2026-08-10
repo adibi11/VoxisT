@@ -58,6 +58,7 @@ import {
     BusinessUserRoleDto,
     ClientSummaryDto,
     ConversationMessagesResponseDto,
+    ConversationMessageDto,
     ConversationSummaryDto,
     PlatformRoleDto,
     UpdateBusinessSettingsParameterDto,
@@ -65,6 +66,8 @@ import {
 } from "../../contracts";
 import { IPushDeviceRepository } from "./Repositories/PushDeviceRepo/IPushDeviceRepository";
 import { PushDeviceRepository } from "./Repositories/PushDeviceRepo/PushDeviceRepository";
+import { InstagramRepository } from "../../InstagramCommentAutomation/InstagramRepository";
+import { IInstagramRepository } from "../../InstagramCommentAutomation/instagramTypes";
 
 
 export const prisma = new PrismaClient();
@@ -90,6 +93,7 @@ export class SqlManager implements IDatabaseClient {
     readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
     readonly taskRepository: ITaskRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;
+    readonly instagramRepository: IInstagramRepository;
 
     constructor(loggerInstance: ILogger = logger.child({ component: "SqlManager" })) {
         this.prisma = prisma;
@@ -107,6 +111,7 @@ export class SqlManager implements IDatabaseClient {
         this.metaLeadFormSubscriptionRepository = new MetaLeadFormSubscriptionRepository(this.prisma);
         this.taskRepository = new TaskRepository(this.prisma);
         this.pushDeviceRepository = new PushDeviceRepository(this.prisma);
+        this.instagramRepository = new InstagramRepository(this.prisma);
     }   
 
     getPrismaClient(): PrismaClient {
@@ -294,8 +299,28 @@ export class SqlManager implements IDatabaseClient {
         return paramList;
     }
 
-    async createMessage(conversationId: number,type: "user"| "bot" | "human",content: string): Promise<number> {
-        return this.prisma.$transaction(async (tx) => {
+    async createMessage(
+        conversationId: number,
+        type: "user" | "bot" | "human",
+        content: string,
+        idempotencyKey?: string
+    ): Promise<ConversationMessageDto> {
+        const createdMessage = await this.prisma.$transaction(async (tx) => {
+            if (idempotencyKey) {
+                const existingMessage = await tx.message.findUnique({
+                    where: { externalId: idempotencyKey }
+                });
+                if (existingMessage) {
+                    if (existingMessage.conversationId !== conversationId) {
+                        throw new Error("Message idempotency key belongs to another conversation");
+                    }
+                    if (existingMessage.type !== type || existingMessage.content !== content) {
+                        throw new Error("Message idempotency key was reused with different content");
+                    }
+                    return existingMessage;
+                }
+            }
+
             const currentMax = await tx.message.aggregate({
                 where: {
                     conversationId
@@ -305,14 +330,14 @@ export class SqlManager implements IDatabaseClient {
                 }
             });
 
-            const createdMessage = await tx.message.create({
+            const persistedMessage = await tx.message.create({
                 data: {
                     conversationId,
                     messageIndex: (currentMax._max.messageIndex || 0) + 1,
                     type,
                     content,
                     status: "received",
-                    externalId: crypto.randomUUID()
+                    externalId: idempotencyKey || crypto.randomUUID()
                 }
             });
 
@@ -323,12 +348,21 @@ export class SqlManager implements IDatabaseClient {
                     id: conversationId
                 },
                 data: type === "user"
-                    ? { lastUserMessageAt: createdMessage.createdAt }
-                    : { lastBotMessageAt: createdMessage.createdAt }
+                    ? { lastUserMessageAt: persistedMessage.createdAt }
+                    : { lastBotMessageAt: persistedMessage.createdAt }
             });
 
-            return createdMessage.id;
+            return persistedMessage;
         });
+
+        return {
+            id: createdMessage.id,
+            conversationId: createdMessage.conversationId,
+            type: createdMessage.type,
+            content: createdMessage.content,
+            status: createdMessage.status,
+            createdAt: createdMessage.createdAt.toISOString()
+        };
     }
 
     async createDbConversation(

@@ -8,6 +8,8 @@ import { OpenAIApi } from "../../llm/openaiApi";
 import { logger } from "../../logging/logger";
 import { QueueManager } from "../../QueueClient/queue";
 import { getBullMqPrefix, MESSAGE_QUEUE_NAME, OUTBOUND_MESSAGE_QUEUE_NAME } from "../../QueueClient/queueNames";
+import { RedisRealtimePublisher } from "../../Realtime/RedisRealtimePublisher";
+import { RealtimeService } from "../../Realtime/RealtimeService";
 
 const workerLogger = logger.child({ component: "MessageWorker", queueName: MESSAGE_QUEUE_NAME });
 
@@ -15,7 +17,18 @@ const openAiApi = new OpenAIApi(workerLogger.child({ component: "OpenAIApi" }));
 const cacheManager = new RedisCacheManager();
 const sqlInterface = new SqlManager(workerLogger.child({ component: "SqlManager" })); // Assuming you have a SqlManager implementation
 const outboundQueue = new QueueManager(OUTBOUND_MESSAGE_QUEUE_NAME, workerLogger.child({ component: "QueueManager", queueName: OUTBOUND_MESSAGE_QUEUE_NAME }));
-const messageService = new MessageService(cacheManager, sqlInterface, openAiApi, workerLogger.child({ component: "MessageService" }), outboundQueue);
+const realtimeService = new RealtimeService(
+  new RedisRealtimePublisher(),
+  workerLogger.child({ component: "RealtimeService" })
+);
+const messageService = new MessageService(
+  cacheManager,
+  sqlInterface,
+  openAiApi,
+  workerLogger.child({ component: "MessageService" }),
+  outboundQueue,
+  realtimeService
+);
 
 
 

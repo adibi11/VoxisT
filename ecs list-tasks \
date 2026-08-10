@@ -1,0 +1,28 @@
+{
+    "TargetGroups": [
+        {
+            "TargetGroupArn": "arn:aws:elasticloadbalancing:eu-central-1:147997143638:targetgroup/voxis-api-staging-tg/cea2ffe9c4f5e213",
+            "TargetGroupName": "voxis-api-staging-tg",
+            "Protocol": "HTTP",
+            "Port": 3000,
+            "VpcId": "vpc-0caa523766483c891",
+            "HealthCheckProtocol": "HTTP",
+            "HealthCheckPort": "traffic-port",
+            "HealthCheckEnabled": true,
+            "HealthCheckIntervalSeconds": 30,
+            "HealthCheckTimeoutSeconds": 5,
+            "HealthyThresholdCount": 5,
+            "UnhealthyThresholdCount": 2,
+            "HealthCheckPath": "/v1/health",
+            "Matcher": {
+                "HttpCode": "200"
+            },
+            "LoadBalancerArns": [
+                "arn:aws:elasticloadbalancing:eu-central-1:147997143638:loadbalancer/app/voxis-alb/f5a79ae4d9b5a67e"
+            ],
+            "TargetType": "ip",
+            "ProtocolVersion": "HTTP1",
+            "IpAddressType": "ipv4"
+        }
+    ]
+}

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import { createServer } from "http";
 import { QueueManager } from "../QueueClient/queue";
 import { RedisCacheManager, verifyRedisConnection } from "../dataClients/CacheClient/redis";
 import { CommunicationChannel, JobData,ApiActionType, MessageProvider } from "../dataClients/Types/apiTypes";
@@ -7,7 +8,7 @@ import { twillioMessage } from "../dataClients/Types/apiTypes";
 import { BusinessDto } from "../dataClients/Types/apiTypes";
 import { SqlManager } from "../dataClients/SqlClient/SqlManager";
 import { logger } from "../logging/logger";
-import { MESSAGE_QUEUE_NAME, OUTBOUND_MESSAGE_QUEUE_NAME } from "../QueueClient/queueNames";
+import { MESSAGE_QUEUE_NAME } from "../QueueClient/queueNames";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { signJwt } from "../auth/jwt";
 import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requirePlatformAdmin } from "./authMiddleware";
@@ -31,13 +32,16 @@ import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityCon
 import { createPublicEntrypointRateLimiter, createTaskEntrypointRateLimiter, getPublicEntrypointRateLimitConfig, getTaskEntrypointRateLimitConfig } from "./rateLimitMiddleware";
 import { createMetaLeadAdsWebhookHandlers } from "../MetaLeadAds/metaLeadAdsWebhook";
 import { getTwilioSignatureConfig, validateTwilioRequest } from "./twilioSignatureMiddleware";
+import { createRedisRealtimeSubscriber } from "../Realtime/RedisRealtimeSubscriber";
+import { WebSocketService } from "../Realtime/WebSocketService";
+import { getInstagramCommentAutomationRoutes } from "../InstagramCommentAutomation/instagramRoutes";
 
 const appLogger = logger.child({ component: "ApiServer" });
 const sqlManager = new SqlManager(logger.child({ component: "SqlManager" }));
 const queueManager = new QueueManager(MESSAGE_QUEUE_NAME, logger.child({ component: "QueueManager", queueName: MESSAGE_QUEUE_NAME }));
-const outboundQueueManager = new QueueManager(OUTBOUND_MESSAGE_QUEUE_NAME, logger.child({ component: "QueueManager", queueName: OUTBOUND_MESSAGE_QUEUE_NAME }));
 const cacheManager = new RedisCacheManager();
 const app = express();
+const httpServer = createServer(app);
 const v1Router = express.Router();
 const PORT = 3000;
 const API_VERSION = version.version || "1.0.0";
@@ -48,6 +52,17 @@ const taskEntrypointRateLimitConfig = getTaskEntrypointRateLimitConfig();
 const taskEntrypointRateLimiter = createTaskEntrypointRateLimiter(taskEntrypointRateLimitConfig, appLogger);
 const metaLeadAdsWebhook = createMetaLeadAdsWebhookHandlers(sqlManager, appLogger.child({ component: "MetaLeadAdsWebhook" }));
 const twilioSignatureConfig = getTwilioSignatureConfig();
+const realtimeSubscriber = createRedisRealtimeSubscriber(appLogger.child({ component: "RealtimeSubscriber" }));
+const webSocketService = new WebSocketService(
+  httpServer,
+  realtimeSubscriber,
+  async (businessId, conversationId) => Boolean(
+    await sqlManager.getMessagesByConversation(businessId, conversationId)
+  ),
+  appLogger.child({ component: "WebSocketService" }),
+  { allowedOrigins: getAllowedOrigins() }
+);
+
 const twilioSignatureLogger = appLogger.child({ component: "TwilioSignatureValidator" });
 
 // Staging/production run immediately behind one ALB hop. Local development defaults to
@@ -88,8 +103,9 @@ getLeadRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getFollowUpRoutes(v1Router, sqlManager, appLogger);
 getLeadIngestionRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getIntegrationRoutes(v1Router, sqlManager, appLogger);
+getInstagramCommentAutomationRoutes(v1Router, sqlManager, appLogger.child({ component: "InstagramCommentAutomation" }));
 getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
-getHumanTakeoverRoutes(v1Router, sqlManager, cacheManager, outboundQueueManager, appLogger);
+getHumanTakeoverRoutes(v1Router, sqlManager, cacheManager, queueManager, appLogger);
 
 
 
@@ -153,7 +169,7 @@ async function handleTwilioWebhook(req: express.Request, res: express.Response) 
     const client = await sqlManager.getOrCreateClientByPhone(event.From);
     const humanManaged = await sqlManager.isConversationHumanManaged(client.id, businessId);
     if (humanManaged) {
-      actionType = ApiActionType.HumanConversationMessage;
+      actionType = ApiActionType.ClientConversationMessage;
     }
   } catch (error) {
     appLogger.error("webhook.human_takeover.classify.failed", { from: event.From, businessId, error });
@@ -230,7 +246,7 @@ async function startServer(): Promise<void> {
   await queueManager.queue.waitUntilReady();
   appLogger.info("queue.connection.verify.succeeded", { queueName: MESSAGE_QUEUE_NAME });
 
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     appLogger.info("server.started", {
       port: PORT,
       trustProxyHops: httpSecurityConfig.trustProxyHops,

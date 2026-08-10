@@ -25,29 +25,29 @@ model Message {
 }
 
 model Conversation {
-  id                 Int                @id @default(autoincrement())
+  id                 Int                    @id @default(autoincrement())
   conclusion         String?
   conversationStatus ConversationStatus
   businessId         Int
   clientId           Int
-  channel            String             @default("whatsapp")
-  provider           String             @default("twilio")
-  createdAt          DateTime           @default(now())
+  channel            String                 @default("whatsapp")
+  provider           String                 @default("twilio")
+  createdAt          DateTime               @default(now())
   lastUserMessageAt  DateTime?
   lastBotMessageAt   DateTime?
   lastFollowUpAt     DateTime?
-  followUpCount      Int                @default(0)
+  followUpCount      Int                    @default(0)
   nextFollowUpAt     DateTime?
   // Sticky once true: set on any human takeover or human-initiated
   // conversation, never cleared automatically, so the bot pipeline stays
   // silenced even after the conversation is later closed/ended.
-  humanManaged       Boolean            @default(false)
+  humanManaged       Boolean                @default(false)
   takenOverByUserId  Int?
   takenOverAt        DateTime?
   releasedAt         DateTime?
-  business           Business           @relation(fields: [businessId], references: [id])
-  client             Client             @relation(fields: [clientId], references: [id])
-  takenOverBy        AppUser?           @relation(fields: [takenOverByUserId], references: [id])
+  business           Business               @relation(fields: [businessId], references: [id])
+  client             Client                 @relation(fields: [clientId], references: [id])
+  takenOverBy        AppUser?               @relation(fields: [takenOverByUserId], references: [id])
   messages           Message[]
   parameterAnswers   ParameterAnswer[]
   followUps          ConversationFollowUp[]
@@ -57,47 +57,47 @@ model Conversation {
 }
 
 model Business {
-  id                Int                 @id @default(autoincrement())
-  businessName      String
-  businessPhone     String
-  businessEmail     String
-  enderMessage      String
-  escalationMessage String
-  language          String
-  starterMessage    String
-  parameters        BusinessParameter[]
-  users             BusinessUser[]
-  conversations     Conversation[]
-  followUpPolicy    BusinessFollowUpPolicy?
-  conversationFollowUps ConversationFollowUp[]
-  context           BusinessContext?
-  BusinessAction    BusinessAction?
-  leads             Lead[]
-  channels          BusinessChannel[]
+  id                     Int                     @id @default(autoincrement())
+  businessName           String
+  businessPhone          String
+  businessEmail          String
+  enderMessage           String
+  escalationMessage      String
+  language               String
+  starterMessage         String
+  parameters             BusinessParameter[]
+  users                  BusinessUser[]
+  conversations          Conversation[]
+  followUpPolicy         BusinessFollowUpPolicy?
+  conversationFollowUps  ConversationFollowUp[]
+  context                BusinessContext?
+  BusinessAction         BusinessAction?
+  leads                  Lead[]
+  channels               BusinessChannel[]
   integrationConnections IntegrationConnection[]
-  incomingLeads     IncomingLead[]
-  providerWebhookEvents ProviderWebhookEvent[]
-  externalLeads     ExternalLead[]
-  ingestionOutbox   IngestionOutbox[]
-  tasks             Task[]
-  taskParticipants  TaskParticipant[]
-  taskComments      TaskComment[]
-  taskSchedules     TaskSchedule[]
-  taskOccurrences   TaskOccurrence[]
+  incomingLeads          IncomingLead[]
+  providerWebhookEvents  ProviderWebhookEvent[]
+  externalLeads          ExternalLead[]
+  ingestionOutbox        IngestionOutbox[]
+  tasks                  Task[]
+  taskParticipants       TaskParticipant[]
+  taskComments           TaskComment[]
+  taskSchedules          TaskSchedule[]
+  taskOccurrences        TaskOccurrence[]
   businessActivityEvents BusinessActivityEvent[]
 }
 
 model MetaLeadFormSubscription {
-  id                      Int      @id @default(autoincrement())
+  id                      Int                            @id @default(autoincrement())
   integrationConnectionId Int
   pageId                  String
   pageName                String?
   formId                  String
   formName                String?
   status                  MetaLeadFormSubscriptionStatus @default(ACTIVE)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
+  createdAt               DateTime                       @default(now())
+  updatedAt               DateTime                       @updatedAt
+  integrationConnection   IntegrationConnection          @relation(fields: [integrationConnectionId], references: [id])
 
   @@unique([integrationConnectionId, formId])
   @@index([pageId, formId, status])
@@ -119,62 +119,60 @@ model BusinessContext {
 }
 
 model AppUser {
-  id           Int            @id @default(autoincrement())
-  email        String         @unique
-  passwordHash String
-  displayName  String?
-  platformRole PlatformRole   @default(user)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  businesses   BusinessUser[]
-  leads        Lead[]
-  refreshSessions RefreshSession[]
-  taskParticipants TaskParticipant[]
-  createdTasks Task[] @relation("TaskCreatedBy")
-  updatedTasks Task[] @relation("TaskUpdatedBy")
-  completedTasks Task[] @relation("TaskCompletedBy")
-  cancelledTasks Task[] @relation("TaskCancelledBy")
-  deletedTasks Task[] @relation("TaskDeletedBy")
-  authoredTaskComments TaskComment[] @relation("TaskCommentAuthor")
-  deletedTaskComments TaskComment[] @relation("TaskCommentDeletedBy")
-  createdTaskSchedules TaskSchedule[] @relation("TaskScheduleCreatedBy")
-  updatedTaskSchedules TaskSchedule[] @relation("TaskScheduleUpdatedBy")
-  deactivatedTaskSchedules TaskSchedule[] @relation("TaskScheduleDeactivatedBy")
-  assignedTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceAssignee")
-  completedTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceCompletedBy")
-  cancelledTaskOccurrences TaskOccurrence[] @relation("TaskOccurrenceCancelledBy")
-  businessActivityEvents BusinessActivityEvent[] @relation("BusinessActivityActor")
-  pushDevice    PushDevice[]
-  takenOverConversations Conversation[]
+  id                       Int                     @id @default(autoincrement())
+  email                    String                  @unique
+  passwordHash             String
+  displayName              String?
+  platformRole             PlatformRole            @default(user)
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  businesses               BusinessUser[]
+  leads                    Lead[]
+  refreshSessions          RefreshSession[]
+  taskParticipants         TaskParticipant[]
+  createdTasks             Task[]                  @relation("TaskCreatedBy")
+  updatedTasks             Task[]                  @relation("TaskUpdatedBy")
+  completedTasks           Task[]                  @relation("TaskCompletedBy")
+  cancelledTasks           Task[]                  @relation("TaskCancelledBy")
+  deletedTasks             Task[]                  @relation("TaskDeletedBy")
+  authoredTaskComments     TaskComment[]           @relation("TaskCommentAuthor")
+  deletedTaskComments      TaskComment[]           @relation("TaskCommentDeletedBy")
+  createdTaskSchedules     TaskSchedule[]          @relation("TaskScheduleCreatedBy")
+  updatedTaskSchedules     TaskSchedule[]          @relation("TaskScheduleUpdatedBy")
+  deactivatedTaskSchedules TaskSchedule[]          @relation("TaskScheduleDeactivatedBy")
+  assignedTaskOccurrences  TaskOccurrence[]        @relation("TaskOccurrenceAssignee")
+  completedTaskOccurrences TaskOccurrence[]        @relation("TaskOccurrenceCompletedBy")
+  cancelledTaskOccurrences TaskOccurrence[]        @relation("TaskOccurrenceCancelledBy")
+  businessActivityEvents   BusinessActivityEvent[] @relation("BusinessActivityActor")
+  pushDevice               PushDevice[]
+  takenOverConversations   Conversation[]
 }
 
 model PushDevice {
-  id           Int            @id @default(autoincrement())
-  appUserId    Int
-  deviceId     String
+  id            Int           @id @default(autoincrement())
+  appUserId     Int
+  deviceId      String
   expoPushToken String        @unique
-  platform      PhonePlatform 
+  platform      PhonePlatform
   appVersion    String
   lastSeenAt    DateTime
   isActive      Boolean
 
+  user AppUser @relation(fields: [appUserId], references: [id])
 
-  user       AppUser          @relation(fields: [appUserId], references: [id])
-  @@unique([appUserId, deviceId]) 
-
-  
+  @@unique([appUserId, deviceId])
 }
 
 model RefreshSession {
-  id           Int       @id @default(autoincrement())
-  userId       Int
-  tokenHash    String    @unique
-  familyId     String
-  expiresAt    DateTime
-  revokedAt    DateTime?
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  tokenHash      String    @unique
+  familyId       String
+  expiresAt      DateTime
+  revokedAt      DateTime?
   replacedByHash String?
-  createdAt    DateTime  @default(now())
-  user         AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime  @default(now())
+  user           AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
   @@index([familyId])
@@ -205,11 +203,11 @@ model Client {
 }
 
 model BusinessParameter {
-  id         Int               @id @default(autoincrement())
+  id         Int                   @id @default(autoincrement())
   paramName  String
   businessId Int
-  business   Business          @relation(fields: [businessId], references: [id])
-  use        Boolean          @default(true)
+  business   Business              @relation(fields: [businessId], references: [id])
+  use        Boolean               @default(true)
   // ML-ready value space. TEXT is reserved for legacy rows and the system
   // "Name" parameter; owner-defined parameters must be one of the typed kinds.
   paramType  BusinessParameterType @default(TEXT)
@@ -336,62 +334,62 @@ model Lead {
   summary String?
   notes   String?
 
-  name    String?
-  email   String?
+  name        String?
+  email       String?
   phoneNumber String?
 
-  createdAt  DateTime  @default(now())
-  asignTime  DateTime?
-  updatedAt  DateTime  @updatedAt
-  followUpAt DateTime?
-  closedAt   DateTime?
-  followUps  ConversationFollowUp[]
+  createdAt     DateTime               @default(now())
+  asignTime     DateTime?
+  updatedAt     DateTime               @updatedAt
+  followUpAt    DateTime?
+  closedAt      DateTime?
+  followUps     ConversationFollowUp[]
   externalLeads ExternalLead[]
-  attributions LeadAttribution[]
-  tasks        Task[]
+  attributions  LeadAttribution[]
+  tasks         Task[]
 
   @@unique([id, businessId])
   @@index([conversationId])
 }
 
 model Task {
-  id                  Int          @id @default(autoincrement())
-  businessId          Int
-  leadId              Int?
-  headline            String
-  description         String
-  status              TaskStatus   @default(OPEN)
-  priority            TaskPriority @default(NORMAL)
-  category            String?
-  startsAt            DateTime?
-  dueAt               DateTime?
-  isAllDay            Boolean      @default(false)
-  timezone            String       @default("UTC")
-  version             Int          @default(1)
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                 Int               @id @default(autoincrement())
+  businessId         Int
+  leadId             Int?
+  headline           String
+  description        String
+  status             TaskStatus        @default(OPEN)
+  priority           TaskPriority      @default(NORMAL)
+  category           String?
+  startsAt           DateTime?
+  dueAt              DateTime?
+  isAllDay           Boolean           @default(false)
+  timezone           String            @default("UTC")
+  version            Int               @default(1)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
   // Nullable so system-originated tasks (AI-scheduled callbacks) can exist
   // without a human actor; the owner assigns a person afterwards.
-  createdByUserId     Int?
-  updatedByUserId     Int?
-  completedAt         DateTime?
-  completedByUserId   Int?
-  cancelledAt         DateTime?
-  cancelledByUserId   Int?
-  cancellationReason  String?
-  deletedAt           DateTime?
-  deletedByUserId     Int?
-  business            Business     @relation(fields: [businessId], references: [id])
-  lead                Lead?        @relation(fields: [leadId], references: [id])
-  createdBy           AppUser?     @relation("TaskCreatedBy", fields: [createdByUserId], references: [id])
-  updatedBy           AppUser?     @relation("TaskUpdatedBy", fields: [updatedByUserId], references: [id])
-  completedBy         AppUser?     @relation("TaskCompletedBy", fields: [completedByUserId], references: [id])
-  cancelledBy         AppUser?     @relation("TaskCancelledBy", fields: [cancelledByUserId], references: [id])
-  deletedBy           AppUser?     @relation("TaskDeletedBy", fields: [deletedByUserId], references: [id])
-  participants        TaskParticipant[]
-  comments            TaskComment[]
-  schedules           TaskSchedule[]
-  occurrences         TaskOccurrence[]
+  createdByUserId    Int?
+  updatedByUserId    Int?
+  completedAt        DateTime?
+  completedByUserId  Int?
+  cancelledAt        DateTime?
+  cancelledByUserId  Int?
+  cancellationReason String?
+  deletedAt          DateTime?
+  deletedByUserId    Int?
+  business           Business          @relation(fields: [businessId], references: [id])
+  lead               Lead?             @relation(fields: [leadId], references: [id])
+  createdBy          AppUser?          @relation("TaskCreatedBy", fields: [createdByUserId], references: [id])
+  updatedBy          AppUser?          @relation("TaskUpdatedBy", fields: [updatedByUserId], references: [id])
+  completedBy        AppUser?          @relation("TaskCompletedBy", fields: [completedByUserId], references: [id])
+  cancelledBy        AppUser?          @relation("TaskCancelledBy", fields: [cancelledByUserId], references: [id])
+  deletedBy          AppUser?          @relation("TaskDeletedBy", fields: [deletedByUserId], references: [id])
+  participants       TaskParticipant[]
+  comments           TaskComment[]
+  schedules          TaskSchedule[]
+  occurrences        TaskOccurrence[]
 
   @@unique([id, businessId])
   @@index([businessId, status, dueAt])
@@ -418,49 +416,49 @@ model TaskParticipant {
 }
 
 model TaskComment {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   businessId      Int
   taskId          Int
   body            String
   authorUserId    Int
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   editedAt        DateTime?
   deletedAt       DateTime?
   deletedByUserId Int?
-  task            Task     @relation(fields: [taskId], references: [id])
-  business        Business @relation(fields: [businessId], references: [id])
-  author          AppUser  @relation("TaskCommentAuthor", fields: [authorUserId], references: [id])
-  deletedBy       AppUser? @relation("TaskCommentDeletedBy", fields: [deletedByUserId], references: [id])
+  task            Task      @relation(fields: [taskId], references: [id])
+  business        Business  @relation(fields: [businessId], references: [id])
+  author          AppUser   @relation("TaskCommentAuthor", fields: [authorUserId], references: [id])
+  deletedBy       AppUser?  @relation("TaskCommentDeletedBy", fields: [deletedByUserId], references: [id])
 
   @@index([businessId])
   @@index([taskId, createdAt])
 }
 
 model TaskSchedule {
-  id                          Int      @id @default(autoincrement())
-  businessId                  Int
-  taskId                      Int
-  rrule                       String
-  timezone                    String
-  isActive                    Boolean  @default(true)
-  startsAt                    DateTime?
-  endsAt                      DateTime?
-  nextOccurrenceAt            DateTime?
-  nextNotificationAt          DateTime?
-  occurrenceDueOffsetMinutes  Int?
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
-  createdByUserId             Int
-  updatedByUserId             Int
-  deactivatedAt               DateTime?
-  deactivatedByUserId         Int?
-  task                        Task     @relation(fields: [taskId], references: [id])
-  business                    Business @relation(fields: [businessId], references: [id])
-  createdBy                   AppUser  @relation("TaskScheduleCreatedBy", fields: [createdByUserId], references: [id])
-  updatedBy                   AppUser  @relation("TaskScheduleUpdatedBy", fields: [updatedByUserId], references: [id])
-  deactivatedBy               AppUser? @relation("TaskScheduleDeactivatedBy", fields: [deactivatedByUserId], references: [id])
-  occurrences                 TaskOccurrence[]
+  id                         Int              @id @default(autoincrement())
+  businessId                 Int
+  taskId                     Int
+  rrule                      String
+  timezone                   String
+  isActive                   Boolean          @default(true)
+  startsAt                   DateTime?
+  endsAt                     DateTime?
+  nextOccurrenceAt           DateTime?
+  nextNotificationAt         DateTime?
+  occurrenceDueOffsetMinutes Int?
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
+  createdByUserId            Int
+  updatedByUserId            Int
+  deactivatedAt              DateTime?
+  deactivatedByUserId        Int?
+  task                       Task             @relation(fields: [taskId], references: [id])
+  business                   Business         @relation(fields: [businessId], references: [id])
+  createdBy                  AppUser          @relation("TaskScheduleCreatedBy", fields: [createdByUserId], references: [id])
+  updatedBy                  AppUser          @relation("TaskScheduleUpdatedBy", fields: [updatedByUserId], references: [id])
+  deactivatedBy              AppUser?         @relation("TaskScheduleDeactivatedBy", fields: [deactivatedByUserId], references: [id])
+  occurrences                TaskOccurrence[]
 
   @@index([businessId, isActive, nextOccurrenceAt])
   @@index([businessId, isActive, nextNotificationAt])
@@ -468,54 +466,52 @@ model TaskSchedule {
 }
 
 model TaskOccurrence {
-  id                  Int                  @id @default(autoincrement())
-  businessId          Int
-  taskId              Int
-  scheduleId          Int
-  scheduledFor        DateTime
-  dueAt               DateTime?
-  status              TaskOccurrenceStatus @default(SCHEDULED)
-  assigneeUserId      Int
-  completedAt         DateTime?
-  completedByUserId   Int?
-  cancelledAt         DateTime?
-  cancelledByUserId   Int?
-  cancellationReason  String?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  task                Task                 @relation(fields: [taskId], references: [id])
-  schedule            TaskSchedule         @relation(fields: [scheduleId], references: [id])
-  business            Business             @relation(fields: [businessId], references: [id])
-  assignee            AppUser              @relation("TaskOccurrenceAssignee", fields: [assigneeUserId], references: [id])
-  completedBy         AppUser?             @relation("TaskOccurrenceCompletedBy", fields: [completedByUserId], references: [id])
-  cancelledBy         AppUser?             @relation("TaskOccurrenceCancelledBy", fields: [cancelledByUserId], references: [id])
+  id                 Int                  @id @default(autoincrement())
+  businessId         Int
+  taskId             Int
+  scheduleId         Int
+  scheduledFor       DateTime
+  dueAt              DateTime?
+  status             TaskOccurrenceStatus @default(SCHEDULED)
+  assigneeUserId     Int
+  completedAt        DateTime?
+  completedByUserId  Int?
+  cancelledAt        DateTime?
+  cancelledByUserId  Int?
+  cancellationReason String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  task               Task                 @relation(fields: [taskId], references: [id])
+  schedule           TaskSchedule         @relation(fields: [scheduleId], references: [id])
+  business           Business             @relation(fields: [businessId], references: [id])
+  assignee           AppUser              @relation("TaskOccurrenceAssignee", fields: [assigneeUserId], references: [id])
+  completedBy        AppUser?             @relation("TaskOccurrenceCompletedBy", fields: [completedByUserId], references: [id])
+  cancelledBy        AppUser?             @relation("TaskOccurrenceCancelledBy", fields: [cancelledByUserId], references: [id])
 
   @@unique([scheduleId, scheduledFor])
   @@index([businessId, status, dueAt])
   @@index([taskId])
 }
 
-
-
 model BusinessActivityEvent {
-  id                 Int                       @id @default(autoincrement())
+  id                 Int                           @id @default(autoincrement())
   businessId         Int
   aggregateType      BusinessActivityAggregateType
   aggregateId        Int
   eventType          BusinessActivityEventType
   actorUserId        Int?
   metadata           Json?
-  state              BusinessActivityEventState @default(PENDING)
-  dueAt              DateTime                  @default(now())
+  state              BusinessActivityEventState    @default(PENDING)
+  dueAt              DateTime                      @default(now())
   lockedUntil        DateTime?
   processingWorkerId String?
-  attempts           Int                       @default(0)
+  attempts           Int                           @default(0)
   processedAt        DateTime?
   lastError          String?
   dedupeKey          String
-  createdAt          DateTime                  @default(now())
-  business           Business                  @relation(fields: [businessId], references: [id])
-  actor              AppUser?                  @relation("BusinessActivityActor", fields: [actorUserId], references: [id])
+  createdAt          DateTime                      @default(now())
+  business           Business                      @relation(fields: [businessId], references: [id])
+  actor              AppUser?                      @relation("BusinessActivityActor", fields: [actorUserId], references: [id])
 
   @@unique([businessId, dedupeKey])
   @@index([state, dueAt])
@@ -524,32 +520,33 @@ model BusinessActivityEvent {
 }
 
 model IntegrationConnection {
-  id                    Int      @id @default(autoincrement())
-  businessId            Int
-  provider              String
-  integrationType       IntegrationType
-  status                IntegrationConnectionStatus @default(PENDING)
-  connectionToken       String   @unique
-  displayName           String?
-  externalAccountId     String?
-  externalResourceId    String?
-  credentialsEncrypted  String?
-  webhookSecretEncrypted String?
-  config                Json?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  business              Business @relation(fields: [businessId], references: [id])
-  incomingLeads         IncomingLead[]
-  externalLeads         ExternalLead[]
-  providerWebhookEvents ProviderWebhookEvent[]
+  id                        Int                         @id @default(autoincrement())
+  businessId                Int
+  provider                  String
+  integrationType           IntegrationType
+  status                    IntegrationConnectionStatus @default(PENDING)
+  connectionToken           String                      @unique
+  displayName               String?
+  externalAccountId         String?
+  externalResourceId        String?
+  credentialsEncrypted      String?
+  webhookSecretEncrypted    String?
+  config                    Json?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime                    @updatedAt
+  business                  Business                    @relation(fields: [businessId], references: [id])
+  incomingLeads             IncomingLead[]
+  externalLeads             ExternalLead[]
+  providerWebhookEvents     ProviderWebhookEvent[]
   metaLeadFormSubscriptions MetaLeadFormSubscription[]
+  instagramAccount          InstagramAccount?
 
   @@unique([businessId, provider, integrationType, externalResourceId])
   @@index([businessId, status])
 }
 
 model IncomingLead {
-  id                      Int      @id @default(autoincrement())
+  id                      Int                   @id @default(autoincrement())
   businessId              Int
   integrationConnectionId Int
   provider                String
@@ -559,15 +556,15 @@ model IncomingLead {
   payloadHash             String
   rawPayload              Json?
   canonicalPayload        Json
-  status                  IncomingLeadStatus @default(RECEIVED)
+  status                  IncomingLeadStatus    @default(RECEIVED)
   failureCode             String?
   failureDetail           String?
-  receivedAt              DateTime @default(now())
+  receivedAt              DateTime              @default(now())
   processedAt             DateTime?
   externalLeadId          Int?
-  business                Business @relation(fields: [businessId], references: [id])
+  business                Business              @relation(fields: [businessId], references: [id])
   integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
-  externalLead            ExternalLead? @relation(fields: [externalLeadId], references: [id])
+  externalLead            ExternalLead?         @relation(fields: [externalLeadId], references: [id])
 
   @@unique([integrationConnectionId, idempotencyKey])
   @@index([businessId, status, receivedAt])
@@ -575,7 +572,7 @@ model IncomingLead {
 }
 
 model ExternalLead {
-  id                      Int      @id @default(autoincrement())
+  id                      Int                   @id @default(autoincrement())
   businessId              Int
   integrationConnectionId Int
   leadId                  Int
@@ -583,11 +580,11 @@ model ExternalLead {
   externalLeadId          String
   externalContactId       String?
   metadata                Json?
-  firstReceivedAt         DateTime @default(now())
-  lastReceivedAt          DateTime @default(now())
-  business                Business @relation(fields: [businessId], references: [id])
+  firstReceivedAt         DateTime              @default(now())
+  lastReceivedAt          DateTime              @default(now())
+  business                Business              @relation(fields: [businessId], references: [id])
   integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
-  lead                    Lead @relation(fields: [leadId], references: [id])
+  lead                    Lead                  @relation(fields: [leadId], references: [id])
   incomingLeads           IncomingLead[]
 
   @@unique([integrationConnectionId, externalLeadId])
@@ -595,51 +592,51 @@ model ExternalLead {
 }
 
 model LeadAttribution {
-  id                Int      @id @default(autoincrement())
-  leadId            Int
-  provider          String?
+  id                 Int      @id @default(autoincrement())
+  leadId             Int
+  provider           String?
   campaignExternalId String?
-  campaignName      String?
-  formExternalId    String?
-  formName          String?
-  adExternalId      String?
-  adSetExternalId   String?
-  landingPageUrl    String?
-  utmSource         String?
-  utmMedium         String?
-  utmCampaign       String?
-  utmContent        String?
-  utmTerm           String?
-  referrer          String?
-  raw               Json?
-  createdAt         DateTime @default(now())
-  lead              Lead @relation(fields: [leadId], references: [id])
+  campaignName       String?
+  formExternalId     String?
+  formName           String?
+  adExternalId       String?
+  adSetExternalId    String?
+  landingPageUrl     String?
+  utmSource          String?
+  utmMedium          String?
+  utmCampaign        String?
+  utmContent         String?
+  utmTerm            String?
+  referrer           String?
+  raw                Json?
+  createdAt          DateTime @default(now())
+  lead               Lead     @relation(fields: [leadId], references: [id])
 
   @@index([leadId, createdAt])
 }
 
 model IngestionOutbox {
-  id            Int      @id @default(autoincrement())
+  id            Int                   @id @default(autoincrement())
   businessId    Int
   aggregateType String
   aggregateId   Int
   eventType     String
   payload       Json
   status        IngestionOutboxStatus @default(PENDING)
-  attempts      Int      @default(0)
-  availableAt   DateTime @default(now())
+  attempts      Int                   @default(0)
+  availableAt   DateTime              @default(now())
   publishedAt   DateTime?
   lastError     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  business      Business @relation(fields: [businessId], references: [id])
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  business      Business              @relation(fields: [businessId], references: [id])
 
   @@unique([aggregateType, aggregateId, eventType])
   @@index([status, availableAt])
 }
 
 model ProviderWebhookEvent {
-  id                      Int      @id @default(autoincrement())
+  id                      Int                        @id @default(autoincrement())
   businessId              Int
   integrationConnectionId Int
   provider                String
@@ -648,17 +645,17 @@ model ProviderWebhookEvent {
   payloadHash             String
   payload                 Json
   status                  ProviderWebhookEventStatus @default(RECEIVED)
-  attempts                Int      @default(0)
-  nextAttemptAt           DateTime @default(now())
+  attempts                Int                        @default(0)
+  nextAttemptAt           DateTime                   @default(now())
   lockedUntil             DateTime?
   workerId                String?
   lastError               String?
   failureCode             String?
   failureDetail           String?
-  receivedAt              DateTime @default(now())
+  receivedAt              DateTime                   @default(now())
   processedAt             DateTime?
-  business                Business @relation(fields: [businessId], references: [id])
-  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id])
+  business                Business                   @relation(fields: [businessId], references: [id])
+  integrationConnection   IntegrationConnection      @relation(fields: [integrationConnectionId], references: [id])
 
   @@unique([integrationConnectionId, providerEventId])
   @@index([businessId, status, receivedAt])
@@ -704,6 +701,7 @@ enum IntegrationType {
   LANDING_PAGE
   CUSTOM_API
   MESSAGING
+  INSTAGRAM_COMMENT_AUTOMATION
 }
 
 enum IntegrationConnectionStatus {
@@ -828,8 +826,6 @@ enum TaskOccurrenceStatus {
   SKIPPED
 }
 
-
-
 enum BusinessActivityEventState {
   PENDING
   PROCESSING
@@ -873,8 +869,101 @@ enum BusinessActivityAggregateType {
   CONVERSATION
 }
 
-enum PhonePlatform{
-  IOS 
+enum PhonePlatform {
+  IOS
   ANDROID
   UNKNOWN
+}
+
+model InstagramAccount {
+  id                      Int                   @id @default(autoincrement())
+  integrationConnectionId Int                   @unique
+  instagramUserId         String                @unique
+  username                String
+  name                    String?
+  profilePictureUrl       String?
+  lastSyncedAt            DateTime              @default(now())
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id], onDelete: Cascade)
+  media                   InstagramMedia[]
+
+  @@index([username])
+}
+
+model InstagramMedia {
+  id                 Int                              @id @default(autoincrement())
+  instagramAccountId Int
+  instagramMediaId   String                           @unique
+  caption            String?
+  mediaType          String
+  mediaUrl           String?
+  thumbnailUrl       String?
+  permalink          String
+  publishedAt        DateTime
+  lastSyncedAt       DateTime                         @default(now())
+  createdAt          DateTime                         @default(now())
+  updatedAt          DateTime                         @updatedAt
+  instagramAccount   InstagramAccount                 @relation(fields: [instagramAccountId], references: [id], onDelete: Cascade)
+  automationRules    InstagramCommentAutomationRule[]
+  commentEvents      InstagramCommentEvent[]
+
+  @@index([instagramAccountId, publishedAt])
+}
+
+model InstagramCommentAutomationRule {
+  id               Int                       @id @default(autoincrement())
+  instagramMediaId Int
+  name             String
+  keywords         Json
+  matchType        InstagramCommentMatchType @default(ANY_KEYWORD)
+  publicReplyText  String?
+  privateReplyText String
+  status           InstagramAutomationStatus @default(DISABLED)
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  instagramMedia   InstagramMedia            @relation(fields: [instagramMediaId], references: [id], onDelete: Cascade)
+  commentEvents    InstagramCommentEvent[]
+
+  @@index([instagramMediaId, status])
+}
+
+model InstagramCommentEvent {
+  id                 Int                             @id @default(autoincrement())
+  automationRuleId   Int?
+  instagramMediaId   Int
+  instagramCommentId String                          @unique
+  commenterId        String?
+  commenterUsername  String?
+  commentText        String?
+  status             InstagramCommentEventStatus     @default(RECEIVED)
+  publicReplyId      String?
+  privateMessageId   String?
+  failureDetail      String?
+  receivedAt         DateTime                        @default(now())
+  processedAt        DateTime?
+  automationRule     InstagramCommentAutomationRule? @relation(fields: [automationRuleId], references: [id], onDelete: SetNull)
+  instagramMedia     InstagramMedia                  @relation(fields: [instagramMediaId], references: [id], onDelete: Cascade)
+
+  @@index([instagramMediaId, receivedAt])
+  @@index([status, receivedAt])
+}
+
+enum InstagramCommentMatchType {
+  ANY_KEYWORD
+  ALL_KEYWORDS
+  EXACT
+}
+
+enum InstagramAutomationStatus {
+  ENABLED
+  DISABLED
+}
+
+enum InstagramCommentEventStatus {
+  RECEIVED
+  MATCHED
+  IGNORED
+  PROCESSED
+  FAILED
 }

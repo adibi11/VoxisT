@@ -9,7 +9,12 @@ export interface IOutboundMessageQueue {
     addOutboundMessage(jobData: OutboundMessageJobData): Promise<unknown>;
 }
 
+export interface IMessageQueue {
+    addEvent(jobData: JobData): Promise<unknown>;
+}
+
 export class QueueManager {
+
     public queue: Queue;
     private logger: ILogger;
 
@@ -65,7 +70,13 @@ export class QueueManager {
         const job = await this.queue.add(
             "send-message",
             jobData,
-            { attempts: 3, backoff: {delay : 1000, type: 'exponential'} }
+            {
+                attempts: 3,
+                backoff: { delay: 1000, type: "exponential" },
+                ...(jobData.message.messageId
+                    ? { jobId: `message-${jobData.message.messageId}` }
+                    : {})
+            }
         );
 
         this.logger.info("queue.outbound.enqueued", {

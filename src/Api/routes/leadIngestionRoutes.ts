@@ -28,6 +28,10 @@ export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient
             return res.status(404).json({ message: "Active lead integration connection not found" });
         }
 
+        if (connection.integrationType === "INSTAGRAM_COMMENT_AUTOMATION") {
+            return res.status(404).json({ message: "Active lead integration connection not found" });
+        }
+
         if (connection.integrationType === "LANDING_PAGE") {
             const providedSecret = req.header("X-Voxis-Integration-Secret");
             const encryptedSecret = await sql.integrationConnectionRepository.getWebhookSecretEncryptedByConnectionToken(connectionToken);
@@ -43,7 +47,7 @@ export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient
             if (!authenticated || !requireBusinessAccess(req as unknown as AuthenticatedRequest, res, connection.businessId)) return;
         }
 
-        return ingestSubmission(req, res, connection, ingestionService, logger);
+        return ingestSubmission(req, res, connection as Parameters<typeof ingestSubmission>[2], ingestionService, logger);
     });
 
     async function ingestSubmission(req: express.Request, res: express.Response, connection: { id: number; businessId: number; provider: string; integrationType: CanonicalLeadSubmission["source"]["integrationType"] }, service: LeadIngestionService, requestLogger: ILogger) {

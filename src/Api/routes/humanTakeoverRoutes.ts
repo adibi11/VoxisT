@@ -1,9 +1,10 @@
 import express from 'express';
+import crypto from 'crypto';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
 import { ICacheManager } from '../../dataClients/CacheClient/cacheInterface';
-import { IOutboundMessageQueue } from '../../QueueClient/queue';
+import { IMessageQueue } from '../../QueueClient/queue';
 import { ILogger } from '../../logging/logger';
-import { CommunicationChannel, MessageProvider } from '../../dataClients/Types/apiTypes';
+import { ApiActionType, CommunicationChannel, MessageProvider } from '../../dataClients/Types/apiTypes';
 import { requireAuth, AuthenticatedRequest, requireBusinessAccess } from '../authMiddleware';
 import {
   TakeoverConversationRequestDto,
@@ -15,7 +16,7 @@ export function getHumanTakeoverRoutes(
   app: express.Router,
   sql: IDatabaseClient,
   cache: ICacheManager,
-  outboundQueue: IOutboundMessageQueue,
+  messageQueue: IMessageQueue,
   logger: ILogger
 ) {
   // Take over an in-progress conversation: pauses the bot (and cancels any
@@ -58,19 +59,23 @@ export function getHumanTakeoverRoutes(
       await cache.setTakeoverCancellation(businessId, clientId, conversationId);
       const updated = await sql.setHumanTakeover(conversationId, authReq.auth.userId);
 
-      const messageId = await sql.createMessage(conversationId, "human", message);
-      await outboundQueue.addOutboundMessage({
-        message: {
+      await messageQueue.addEvent({
+        event: {
+          type: ApiActionType.BusinessMemberConversationMessage,
+          content: message,
+          status: "pending",
           channel,
           provider,
-          from,
-          to: phoneNumber,
-          body: message,
           businessId,
-          clientId,
-          conversationId,
-          messageId,
-          origin: "human"
+          data: {
+            from,
+            to: phoneNumber,
+            body: message,
+            clientId,
+            conversationId,
+            businessMemberUserId: authReq.auth.userId,
+            idempotencyKey: getMessageIdempotencyKey(req, conversationId)
+          }
         }
       });
 
@@ -158,19 +163,23 @@ export function getHumanTakeoverRoutes(
       // classified as bot-lane by the webhook a moment before this ran.
       await cache.setTakeoverCancellation(businessId, client.id, conversation.id);
 
-      const messageId = await sql.createMessage(conversation.id, "human", message);
-      await outboundQueue.addOutboundMessage({
-        message: {
+      await messageQueue.addEvent({
+        event: {
+          type: ApiActionType.BusinessMemberConversationMessage,
+          content: message,
+          status: "pending",
           channel,
           provider,
-          from,
-          to: phoneNumber,
-          body: message,
           businessId,
-          clientId: client.id,
-          conversationId: conversation.id,
-          messageId,
-          origin: "human"
+          data: {
+            from,
+            to: phoneNumber,
+            body: message,
+            clientId: client.id,
+            conversationId: conversation.id,
+            businessMemberUserId: authReq.auth.userId,
+            idempotencyKey: getMessageIdempotencyKey(req, conversation.id)
+          }
         }
       });
 
@@ -186,6 +195,11 @@ export function getHumanTakeoverRoutes(
       return res.status(500).json({ message: "Failed to open conversation" });
     }
   });
+}
+
+function getMessageIdempotencyKey(req: express.Request, conversationId: number): string {
+  const requestKey = req.header("Idempotency-Key")?.trim() || crypto.randomUUID();
+  return `business-member-${conversationId}-${requestKey}`;
 }
 
 async function resolveFromAddress(sql: IDatabaseClient, businessId: number, provider: MessageProvider): Promise<string> {

@@ -15,4 +15,4 @@ RUN npx prisma generate
 RUN npm run build
 
 
-CMD ["npm", "run", "start:messageWorker"]
+CMD ["node", "dist/Workers/MessageWorker/worker.js"]

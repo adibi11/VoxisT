@@ -1,4 +1,4 @@
-export type IntegrationType = "LEAD_ADS" | "FORM" | "LANDING_PAGE" | "CUSTOM_API" | "MESSAGING";
+export type IntegrationType = "LEAD_ADS" | "FORM" | "LANDING_PAGE" | "CUSTOM_API" | "MESSAGING" | "INSTAGRAM_COMMENT_AUTOMATION";
 export type IntegrationConnectionStatus = "PENDING" | "ACTIVE" | "DISABLED" | "FAILED";
 export type IncomingLeadStatus = "RECEIVED" | "QUEUED" | "PROCESSING" | "PROCESSED" | "FAILED" | "IGNORED";
 export type IngestionOutboxStatus = "PENDING" | "PUBLISHED" | "FAILED";

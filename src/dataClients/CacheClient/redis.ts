@@ -2,14 +2,8 @@ import Redis from "ioredis";
 import { ILogger, logger } from "../../logging/logger";
 import { ConversationCacheState } from "../Types/messageTypes";
 import { ICacheManager } from "./cacheInterface";
-
-const useTls = process.env.REDIS_TLS === "true";
-
-export const connection ={
-  host: process.env.REDIS_HOST || "127.0.0.1",
-  port: Number(process.env.REDIS_PORT) || 6379,
-  ...(useTls ? { tls: {} } : {}),
-}
+import { connection, redisUseTls } from "./redisConnection";
+export { connection } from "./redisConnection";
 
 export const redisClient = new Redis(connection);
 const redisLogger = logger.child({ component: "RedisClient" });
@@ -44,7 +38,7 @@ function getConnectionLogData(): Record<string, unknown> {
   return {
     host: connection.host,
     port: connection.port,
-    tls: useTls
+    tls: redisUseTls
   };
 }
 

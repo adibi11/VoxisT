@@ -1,4 +1,4 @@
-import { ApiActionType, CommunicationChannel, FollowUpJobData, Message, MessageProvider } from "../dataClients/Types/apiTypes";
+import { ApiActionType, BusinessMemberConversationMessageData, CommunicationChannel, FollowUpJobData, Message, MessageProvider } from "../dataClients/Types/apiTypes";
 
 import { ICacheManager } from "../dataClients/CacheClient/cacheInterface";
 
@@ -14,6 +14,8 @@ import { ILlmProvider } from "../llm/llmInterface";
 import { LlmPipeline } from "./messageApply";
 import { ILogger, logger } from "../logging/logger";
 import { IOutboundMessageQueue } from "../QueueClient/queue";
+import { ConversationMessageDto } from "../contracts";
+import { RealtimeService } from "../Realtime/RealtimeService";
 
 const CONVERSATION_TIMEOUT_MS = 3 * 24 * 60 * 60 * 1000;
 // schedulingConfirmed/schedulingFailed are never assigned to cache state -
@@ -30,18 +32,21 @@ export class MessageService {
     private llmPiplne: LlmPipeline;
     private logger: ILogger;
     private outboundQueue?: IOutboundMessageQueue;
+    private realtimeService?: RealtimeService;
 
     constructor(
         cacheManager: ICacheManager,
         sqlInterface: IDatabaseClient,
         llm: ILlmProvider,
         loggerInstance: ILogger = logger.child({ component: "MessageService" }),
-        outboundQueue?: IOutboundMessageQueue
+        outboundQueue?: IOutboundMessageQueue,
+        realtimeService?: RealtimeService
     ) {
         this.cacheManager = cacheManager;
         this.sqlInterface = sqlInterface;
         this.logger = loggerInstance;
         this.outboundQueue = outboundQueue;
+        this.realtimeService = realtimeService;
         this.llmPiplne = new LlmPipeline(llm, sqlInterface, this.logger.child({ component: "LlmPipeline" }));
     }
 
@@ -66,11 +71,15 @@ export class MessageService {
                 this.logger.info("message.handle.started", { contentLength: message.content?.length });
                 await this.handleMessage(message);
                 break;
-            case ApiActionType.HumanConversationMessage:
+            case ApiActionType.ClientConversationMessage:
                 // Conversation is human-managed - the webhook already classified
                 // this, so never touch the LLM/bot pipeline here.
-                this.logger.info("human_message.handle.started", { contentLength: message.content?.length });
-                await this.handleHumanConversationMessage(message);
+                this.logger.info("client_takeover_message.handle.started", { contentLength: message.content?.length });
+                await this.handleClientConversationMessage(message);
+                break;
+            case ApiActionType.BusinessMemberConversationMessage:
+                this.logger.info("business_member_message.handle.started", { contentLength: message.content?.length });
+                await this.handleBusinessMemberConversationMessage(message);
                 break;
 
         }
@@ -94,7 +103,7 @@ export class MessageService {
             };
             cacheState.lastMessages.push(botMessage);
             await this.cacheManager.setCacheStateByConversationId(followUpData.conversationId, cacheState);
-            await this.sqlInterface.createMessage(followUpData.conversationId, "bot", llmOutput.response);
+            await this.persistAndPublishMessage(message.businessId || 1, followUpData.conversationId, "bot", llmOutput.response);
 
             await this.enqueueOutboundMessage(
                 followUpData.clientId,
@@ -220,7 +229,7 @@ export class MessageService {
     // human-managed, so this only persists the inbound message and raises a
     // push notification - the LLM, cache state, and outbound queue are never
     // touched, by construction rather than a flag check.
-    async handleHumanConversationMessage(message: Message) {
+    async handleClientConversationMessage(message: Message) {
         const client = await this.sqlInterface.getOrCreateClientByPhone(message.data.From);
         const businessId = message.businessId || 1;
         const flowLogger = this.logger.child({
@@ -244,13 +253,95 @@ export class MessageService {
                 throw new Error(`No active conversation found for human-managed client ${client.id} in business ${businessId}`);
             }
 
-            const messageId = await this.sqlInterface.createMessage(conversationId, "user", message.data.Body);
-            await this.sqlInterface.createConversationMessageActivityEvent(businessId, conversationId, messageId);
+            const createdMessage = await this.persistAndPublishMessage(businessId, conversationId, "user", message.data.Body);
+            await this.sqlInterface.createConversationMessageActivityEvent(businessId, conversationId, createdMessage.id);
 
-            flowLogger.info("human_message.persisted", { conversationId, messageId });
+            flowLogger.info("client_takeover_message.persisted", { conversationId, messageId: createdMessage.id });
         }
         finally {
             await this.cacheManager.releaseLock(client.id, businessId);
+        }
+    }
+
+    async handleBusinessMemberConversationMessage(message: Message): Promise<void> {
+        const data = message.data as Partial<BusinessMemberConversationMessageData>;
+        const businessId = message.businessId;
+        if (
+            !businessId
+            || !Number.isInteger(data.clientId)
+            || !Number.isInteger(data.conversationId)
+            || !Number.isInteger(data.businessMemberUserId)
+            || !data.from
+            || !data.to
+            || !data.body
+            || !data.idempotencyKey
+            || !message.provider
+        ) {
+            throw new Error("Invalid business member conversation message");
+        }
+        if (!this.outboundQueue) {
+            throw new Error("Outbound queue is required for business member messages");
+        }
+
+        const clientId = data.clientId as number;
+        const conversationId = data.conversationId as number;
+        const businessMemberUserId = data.businessMemberUserId as number;
+        const provider = message.provider;
+        const flowLogger = this.logger.child({
+            businessId,
+            clientId,
+            conversationId,
+            businessMemberUserId,
+            channel: message.channel,
+            provider
+        });
+
+        const lockAcquired = await this.cacheManager.acquireLock(clientId, businessId);
+        if (!lockAcquired) {
+            throw new Error(`Conversation lock unavailable for business member message ${conversationId}`);
+        }
+
+        try {
+            const conversation = await this.sqlInterface.getConversationForBusinessAndClient(
+                businessId,
+                clientId,
+                conversationId
+            );
+            if (!conversation) {
+                throw new Error(`Conversation ${conversationId} does not belong to business ${businessId} and client ${clientId}`);
+            }
+            if (conversation.channel !== message.channel || conversation.provider !== provider) {
+                throw new Error(`Conversation ${conversationId} channel or provider does not match the queued message`);
+            }
+
+            const createdMessage = await this.persistAndPublishMessage(
+                businessId,
+                conversationId,
+                "human",
+                data.body,
+                data.idempotencyKey
+            );
+
+            await this.outboundQueue.addOutboundMessage({
+                message: {
+                    channel: message.channel,
+                    provider,
+                    from: data.from,
+                    to: data.to,
+                    body: createdMessage.content,
+                    businessId,
+                    clientId,
+                    conversationId,
+                    messageId: createdMessage.id,
+                    origin: "human"
+                }
+            });
+
+            flowLogger.info("business_member_message.persisted_and_enqueued", {
+                messageId: createdMessage.id
+            });
+        } finally {
+            await this.cacheManager.releaseLock(clientId, businessId);
         }
     }
 
@@ -283,7 +374,8 @@ export class MessageService {
         }
 
         for (const message of messages) {
-            await this.sqlInterface.createMessage(
+            await this.persistAndPublishMessage(
+                businessId,
                 conversationState.conversationId,
                 message.role,
                 message.content
@@ -296,6 +388,37 @@ export class MessageService {
             }
         }
         await this.sqlInterface.scoreAndCreateLeadForConversation(clientId, businessId, conversationState.conversationId);
+    }
+
+    private async persistAndPublishMessage(
+        businessId: number,
+        conversationId: number,
+        type: "user" | "bot" | "human",
+        content: string,
+        idempotencyKey?: string
+    ): Promise<ConversationMessageDto> {
+        const createdMessage = await this.sqlInterface.createMessage(
+            conversationId,
+            type,
+            content
+        );
+
+        if (this.realtimeService) {
+            try {
+                await this.realtimeService.publishMessageCreated(businessId, createdMessage);
+            } catch (error) {
+                // Persistence is authoritative. A transient Redis failure must
+                // not retry the job and create another database message.
+                this.logger.warn("realtime.message_created.publish_skipped", {
+                    businessId,
+                    conversationId,
+                    messageId: createdMessage.id,
+                    error
+                });
+            }
+        }
+
+        return createdMessage;
     }
 
     applyMessagesToCacheState(conversationState: ConversationCacheState, messages: LastMessage[]) {

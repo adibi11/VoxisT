@@ -7,6 +7,7 @@ import {
   BusinessSummaryDto,
   ClientSummaryDto,
   ConversationMessagesResponseDto,
+  ConversationMessageDto,
   ConversationSummaryDto,
   BusinessFollowUpPolicyDto,
   ConversationFollowUpDto,
@@ -143,6 +144,7 @@ export class FakeSqlManager implements IDatabaseClient {
   private nextClientId = 1;
   private nextConversationId = 1;
   private nextMessageId = 1;
+  private messagesByIdempotencyKey = new Map<string, ConversationMessageDto>();
   private nextBusinessParameterId = 1;
   private nextBusinessChannelId = 1;
   private nextLeadId = 1;
@@ -169,7 +171,16 @@ export class FakeSqlManager implements IDatabaseClient {
     throw new Error("FakeSqlManager.getConversationEntity is not implemented for current tests");
   }
 
-  async createMessage(conversationId: number, type: "user" | "bot" | "human", content: string): Promise<number> {
+  async createMessage(
+    conversationId: number,
+    type: "user" | "bot" | "human",
+    content: string,
+    idempotencyKey?: string
+  ): Promise<ConversationMessageDto> {
+    if (idempotencyKey) {
+      const existing = this.messagesByIdempotencyKey.get(idempotencyKey);
+      if (existing) return existing;
+    }
     const conversation = this.conversations.get(conversationId);
     if (!conversation) {
       throw new Error(`Conversation ${conversationId} does not exist`);
@@ -187,7 +198,16 @@ export class FakeSqlManager implements IDatabaseClient {
     } else {
       followUpState.lastBotMessageAt = messageCreatedAt;
     }
-    return id;
+    const createdMessage: ConversationMessageDto = {
+      id,
+      conversationId,
+      type,
+      content,
+      status: "received",
+      createdAt: messageCreatedAt.toISOString()
+    };
+    if (idempotencyKey) this.messagesByIdempotencyKey.set(idempotencyKey, createdMessage);
+    return createdMessage;
   }
 
   async createDbConversation(

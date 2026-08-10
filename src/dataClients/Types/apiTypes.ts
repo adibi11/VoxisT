@@ -41,6 +41,16 @@ export type FollowUpJobData = {
                     
 }
 
+export type BusinessMemberConversationMessageData = {
+    from: string;
+    to: string;
+    body: string;
+    clientId: number;
+    conversationId: number;
+    businessMemberUserId: number;
+    idempotencyKey: string;
+};
+
 
 export enum MessageType {
     HandleMessage = "handleMessage",
@@ -59,7 +69,9 @@ export enum ApiActionType {
     // conversation is human-managed, so this message must never reach the
     // LLM/bot pipeline - it's only persisted and turned into a push
     // notification for the owning agent.
-    HumanConversationMessage = "humanConversationMessage",
+    // Keep the existing wire value so jobs queued before this rename remain processable.
+    ClientConversationMessage = "humanConversationMessage",
+    BusinessMemberConversationMessage = "businessMemberConversationMessage",
 }
 
 export type twillioMessage = {
