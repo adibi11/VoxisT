@@ -86,9 +86,9 @@ export type BusinessDto = {
     phone: string;
     email: string;
     parameters: BusinessParamDto[];
-    starterMessage: string;
-    endMessage: string;
-    escalationMessage: string;
+    starterMessage: string | null;
+    endMessage: string | null;
+    escalationMessage: string | null;
     language?: string;
 }
 

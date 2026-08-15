@@ -20,3 +20,13 @@ We also hold keys for conversations to take care of concurrency
 
 
 
+
+### Document upload configuration
+
+The document upload-request endpoint uses the AWS SDK default credential provider chain. Configure only:
+
+- `DOCUMENTS_BUCKET_NAME`: private S3 bucket used for document objects.
+- `AWS_REGION`: AWS region containing the bucket.
+- `DOCUMENT_UPLOAD_MAX_BYTES` (optional): maximum accepted upload size in bytes; defaults to 26214400 (25 MiB).
+
+Do not put AWS access keys in application configuration. Local development may use the standard AWS profile, while ECS should use a task role.

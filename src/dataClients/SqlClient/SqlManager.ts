@@ -25,6 +25,8 @@ import { FollowUpRepository } from "./Repositories/FollowUpRepo/FollowUpReposito
 import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
 import { BusinessChannelRepository } from "./Repositories/BusinessChannelRepo/BusinessChannelRepository";
 import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/IBusinessChannelRepository";
+import { BusinessParameterRepository } from "./Repositories/BusinessParameterRepo/BusinessParameterRepository";
+import { IBusinessParameterRepository } from "./Repositories/BusinessParameterRepo/IBusinessParameterRepository";
 import { IntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IntegrationConnectionRepository";
 import { IIntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IIntegrationConnectionRepository";
 import { IncomingLeadRepository } from "./Repositories/IncomingLeadRepo/IncomingLeadRepository";
@@ -44,9 +46,17 @@ import { MetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormS
 import { IMetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/IMetaLeadFormSubscriptionRepository";
 import { TaskRepository } from "./Repositories/TaskRepo/TaskRepository";
 import { ITaskRepository } from "./Repositories/TaskRepo/ITaskRepository";
+import { SchemaRepository } from "./Repositories/SchemaRepo/SchemaRepository";
+import { ISchemaRepository } from "./Repositories/SchemaRepo/ISchemaRepository";
+import { CaseRepository } from "./Repositories/CaseRepo/CaseRepository";
+import { ICaseRepository } from "./Repositories/CaseRepo/ICaseRepository";
+
+import { DocumentRepository } from "./Repositories/DocumentRepo/DocumentRepository";
+import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
+    AdminCreateBusinessRequestDto,
     AdminCreateUserRequestDto,
     AuthUserDto,
     BusinessActionTypeDto,
@@ -83,6 +93,7 @@ export class SqlManager implements IDatabaseClient {
     readonly leadRepository: ILeadRepository;
     readonly followUpRepository: IFollowUpRepository;
     readonly businessChannelRepository: IBusinessChannelRepository;
+    readonly businessParameterRepository: IBusinessParameterRepository;
     readonly integrationConnectionRepository: IIntegrationConnectionRepository;
     readonly incomingLeadRepository: IIncomingLeadRepository;
     readonly externalLeadRepository: IExternalLeadRepository;
@@ -92,6 +103,10 @@ export class SqlManager implements IDatabaseClient {
     readonly providerWebhookEventRepository: IProviderWebhookEventRepository;
     readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
     readonly taskRepository: ITaskRepository;
+    readonly schemaRepository: ISchemaRepository;
+    readonly caseRepository: ICaseRepository;
+    
+    readonly documentRepository: IDocumentRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;
     readonly instagramRepository: IInstagramRepository;
 
@@ -101,6 +116,7 @@ export class SqlManager implements IDatabaseClient {
         this.leadRepository = new LeadRepository(this.prisma);
         this.followUpRepository = new FollowUpRepository(this.prisma);
         this.businessChannelRepository = new BusinessChannelRepository(this.prisma);
+        this.businessParameterRepository = new BusinessParameterRepository(this.prisma);
         this.integrationConnectionRepository = new IntegrationConnectionRepository(this.prisma);
         this.incomingLeadRepository = new IncomingLeadRepository(this.prisma);
         this.externalLeadRepository = new ExternalLeadRepository(this.prisma);
@@ -110,6 +126,10 @@ export class SqlManager implements IDatabaseClient {
         this.providerWebhookEventRepository = new ProviderWebhookEventRepository(this.prisma);
         this.metaLeadFormSubscriptionRepository = new MetaLeadFormSubscriptionRepository(this.prisma);
         this.taskRepository = new TaskRepository(this.prisma);
+        this.schemaRepository = new SchemaRepository(this.prisma);
+        this.caseRepository = new CaseRepository(this.prisma);
+        
+        this.documentRepository = new DocumentRepository(this.prisma);
         this.pushDeviceRepository = new PushDeviceRepository(this.prisma);
         this.instagramRepository = new InstagramRepository(this.prisma);
     }   
@@ -1153,6 +1173,23 @@ export class SqlManager implements IDatabaseClient {
         }));
     }
 
+    async createBusiness(request: AdminCreateBusinessRequestDto): Promise<BusinessSummaryDto> {
+        const business = await this.prisma.business.create({
+            data: {
+                businessName: request.name.trim(),
+                businessPhone: request.phone.trim(),
+                businessEmail: request.email.trim(),
+                language: request.language?.trim() || "en"
+            }
+        });
+        return {
+            id: business.id,
+            name: business.businessName,
+            phone: business.businessPhone,
+            email: business.businessEmail
+        };
+    }
+
     async getBusinessSettings(businessId: number): Promise<BusinessSettingsDto | null> {
         const business = await this.prisma.business.findUnique({
             where: {
@@ -1186,18 +1223,6 @@ export class SqlManager implements IDatabaseClient {
                 throw new Error(`Business ${businessId} not found`);
             }
 
-            const normalizedParameters = normalizeBusinessSettingsParameters(request.parameters);
-            const submittedParameterIds = new Set(
-                normalizedParameters
-                    .map((param) => param.id)
-                    .filter((id): id is number => id !== undefined)
-            );
-            const existingParameterIds = new Set(existingBusiness.parameters.map((param) => param.id));
-            const invalidParameterId = [...submittedParameterIds].find((id) => !existingParameterIds.has(id));
-            if (invalidParameterId !== undefined) {
-                throw new Error(`Business parameter ${invalidParameterId} does not belong to business ${businessId}`);
-            }
-
             await tx.business.update({
                 where: {
                     id: businessId
@@ -1206,52 +1231,12 @@ export class SqlManager implements IDatabaseClient {
                     businessName: request.name,
                     businessPhone: request.phone,
                     businessEmail: request.email,
-                    starterMessage: request.starterMessage,
-                    enderMessage: request.endMessage,
-                    escalationMessage: request.escalationMessage,
+                    starterMessage: request.starterMessage === undefined ? undefined : normalizeNullableString(request.starterMessage),
+                    enderMessage: request.endMessage === undefined ? undefined : normalizeNullableString(request.endMessage),
+                    escalationMessage: request.escalationMessage === undefined ? undefined : normalizeNullableString(request.escalationMessage),
                     language: request.language || "en"
                 }
             });
-
-            for (const parameter of normalizedParameters) {
-                const configJson = parameter.config ? toPrismaJson(parameter.config) : Prisma.JsonNull;
-                if (parameter.id !== undefined) {
-                    await tx.businessParameter.update({
-                        where: {
-                            id: parameter.id
-                        },
-                        data: {
-                            paramName: parameter.paramName,
-                            use: parameter.use,
-                            paramType: parameter.paramType,
-                            config: configJson
-                        }
-                    });
-                    continue;
-                }
-
-                await tx.businessParameter.upsert({
-                    where: {
-                        businessId_paramName: {
-                            businessId,
-                            paramName: parameter.paramName
-                        }
-                    },
-                    create: {
-                        businessId,
-                        paramName: parameter.paramName,
-                        use: parameter.use,
-                        paramType: parameter.paramType,
-                        config: configJson
-                    },
-                    update: {
-                        paramName: parameter.paramName,
-                        use: parameter.use,
-                        paramType: parameter.paramType,
-                        config: configJson
-                    }
-                });
-            }
 
             if (request.action) {
                 await tx.businessAction.upsert({
@@ -1783,9 +1768,9 @@ function mapBusinessSettings(business: {
     businessName: string;
     businessPhone: string;
     businessEmail: string;
-    starterMessage: string;
-    enderMessage: string;
-    escalationMessage: string;
+    starterMessage: string | null;
+    enderMessage: string | null;
+    escalationMessage: string | null;
     language: string;
     parameters: Array<{
         id: number;
@@ -2005,3 +1990,4 @@ function mapPrismaBusinessContext(context: {
 function toPrismaJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
 }
+

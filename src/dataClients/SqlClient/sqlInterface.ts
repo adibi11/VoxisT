@@ -4,6 +4,7 @@ import { Client } from "../Types/messageTypes";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { BusinessParamDefinition } from "../Types/paramTypes";
 import {
+    AdminCreateBusinessRequestDto,
     AdminCreateUserRequestDto,
     AuthUserDto,
     BusinessMemberDto,
@@ -21,6 +22,7 @@ import {
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { IFollowUpRepository } from "./Repositories/FollowUpRepo/IFollowUpRepository";
 import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/IBusinessChannelRepository";
+import { IBusinessParameterRepository } from "./Repositories/BusinessParameterRepo/IBusinessParameterRepository";
 import { IIntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IIntegrationConnectionRepository";
 import { IIncomingLeadRepository } from "./Repositories/IncomingLeadRepo/IIncomingLeadRepository";
 import { IExternalLeadRepository } from "./Repositories/ExternalLeadRepo/IExternalLeadRepository";
@@ -31,6 +33,10 @@ import { IProviderWebhookEventRepository } from "./Repositories/ProviderWebhookE
 import { IMetaLeadFormSubscriptionRepository } from "./Repositories/MetaLeadFormSubscriptionRepo/IMetaLeadFormSubscriptionRepository";
 import { IPushDeviceRepository } from "./Repositories/PushDeviceRepo/IPushDeviceRepository";
 import { ITaskRepository } from "./Repositories/TaskRepo/ITaskRepository";
+import { ISchemaRepository } from "./Repositories/SchemaRepo/ISchemaRepository";
+import { ICaseRepository } from "./Repositories/CaseRepo/ICaseRepository";
+
+import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
 import { IInstagramRepository } from "../../InstagramCommentAutomation/instagramTypes";
 
 
@@ -41,6 +47,7 @@ export interface IDatabaseClient {
     readonly leadRepository: ILeadRepository;
     readonly followUpRepository: IFollowUpRepository;
     readonly businessChannelRepository: IBusinessChannelRepository;
+    readonly businessParameterRepository: IBusinessParameterRepository;
     readonly integrationConnectionRepository: IIntegrationConnectionRepository;
     readonly incomingLeadRepository: IIncomingLeadRepository;
     readonly externalLeadRepository: IExternalLeadRepository;
@@ -50,6 +57,10 @@ export interface IDatabaseClient {
     readonly providerWebhookEventRepository: IProviderWebhookEventRepository;
     readonly metaLeadFormSubscriptionRepository: IMetaLeadFormSubscriptionRepository;
     readonly taskRepository: ITaskRepository;
+    readonly schemaRepository: ISchemaRepository;
+    readonly caseRepository: ICaseRepository;
+    
+    readonly documentRepository: IDocumentRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;
     readonly instagramRepository: IInstagramRepository;
 
@@ -88,6 +99,7 @@ export interface IDatabaseClient {
     isBusinessMember(userId: number, businessId: number): Promise<boolean>;
     getBusinessesForUser(userId: number): Promise<BusinessSummaryDto[]>;
     getAllBusinesses(): Promise<BusinessSummaryDto[]>;
+    createBusiness(request: AdminCreateBusinessRequestDto): Promise<BusinessSummaryDto>;
     getBusinessSettings(businessId: number): Promise<BusinessSettingsDto | null>;
     updateBusinessSettings(businessId: number, request: UpdateBusinessSettingsRequestDto): Promise<BusinessSettingsDto>;
     getBusinessResponseMetrics(businessId: number, from?: Date, to?: Date): Promise<BusinessResponseMetricsDto>;
@@ -136,3 +148,4 @@ export interface IDatabaseClient {
     // pipeline (BusinessActivityEventProcessorService) picks up.
     createConversationMessageActivityEvent(businessId: number, conversationId: number, messageId: number): Promise<void>;
 }
+

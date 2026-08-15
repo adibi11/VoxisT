@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  AdminCreateBusinessRequestDto,
   BusinessActionTypeDto,
   BusinessChannelOnboardingTypeDto,
   BusinessChannelStatusDto,
@@ -179,6 +180,24 @@ export function getBusinessRoutes(app:express.Router, sql: IDatabaseClient, logg
       }
     });
 
+    app.post("/admin/businesses", requireAuth, async (req, res) => {
+      try {
+        const authReq = req as AuthenticatedRequest;
+        if (!requirePlatformAdmin(authReq, res)) return;
+        const request = req.body as Partial<AdminCreateBusinessRequestDto>;
+        if (!request || !hasText(request.name) || !hasText(request.phone) ||
+            !hasText(request.email) || !isOptionalText(request.language)) {
+          return res.status(400).json({ message: "Invalid business creation request" });
+        }
+        const business = await sql.createBusiness(request as AdminCreateBusinessRequestDto);
+        logger.info("admin.business.create.succeeded", { userId: authReq.auth.userId, businessId: business.id });
+        return res.status(201).json(business);
+      } catch (error) {
+        logger.error("admin.business.create.failed", { error });
+        return res.status(500).json({ message: "Failed to create business" });
+      }
+    });
+
     app.get("/admin/businesses", requireAuth, async (req, res) => {
       try {
         const authReq = req as AuthenticatedRequest;
@@ -290,21 +309,10 @@ function isValidUpdateBusinessSettingsRequest(
   return hasText(request.name) &&
     hasText(request.phone) &&
     hasText(request.email) &&
-    hasText(request.starterMessage) &&
-    hasText(request.endMessage) &&
-    hasText(request.escalationMessage) &&
+    isOptionalText(request.starterMessage) &&
+    isOptionalText(request.endMessage) &&
+    isOptionalText(request.escalationMessage) &&
     isOptionalText(request.language) &&
-    Array.isArray(request.parameters) &&
-    request.parameters.every((parameter) =>
-      parameter &&
-      typeof parameter === "object" &&
-      isOptionalNumber(parameter.id) &&
-      hasText(parameter.paramName) &&
-      isOptionalBoolean(parameter.use) &&
-      isOptionalText(parameter.paramValue) &&
-      isOptionalBusinessParameterType(parameter.paramType) &&
-      isOptionalBusinessParameterConfig(parameter.config)
-    ) &&
     isValidBusinessSettingsAction(request.action);
 }
 

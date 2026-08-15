@@ -11,6 +11,10 @@ import { AuthenticatedRequest, requireAuth, requirePlatformAdmin } from '../auth
 export function getAuthRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger, publicEntrypointRateLimiter: RequestHandler) {
     app.post("/auth/register", publicEntrypointRateLimiter, async (req, res) => {
       try {
+        const authReq = req as AuthenticatedRequest;
+        if (!requirePlatformAdmin(authReq, res)) {
+          return;
+        }
         const request = req.body as RegisterBusinessUserRequestDto;
         if (!request.email || !request.password || !request.business?.name || !request.business?.phone || !request.business?.email) {
           return res.status(400).json({ message: "email, password and business details are required" });

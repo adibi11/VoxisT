@@ -6,6 +6,13 @@ export type BusinessSummaryDto = {
   email: string;
 };
 
+export type AdminCreateBusinessRequestDto = {
+  name: string;
+  phone: string;
+  email: string;
+  language?: string;
+};
+
 export type BusinessResponseMetricsDto = {
   businessId: number;
   from: string;
@@ -58,9 +65,9 @@ export type BusinessSettingsDto = {
   name: string;
   phone: string;
   email: string;
-  starterMessage: string;
-  endMessage: string;
-  escalationMessage: string;
+  starterMessage: string | null;
+  endMessage: string | null;
+  escalationMessage: string | null;
   language: string;
   parameters: BusinessSettingsParameterDto[];
   action?: BusinessSettingsActionDto | null;
@@ -127,13 +134,15 @@ export type UpdateBusinessSettingsRequestDto = {
   name: string;
   phone: string;
   email: string;
-  starterMessage: string;
-  endMessage: string;
-  escalationMessage: string;
+  // undefined keeps the stored value; null clears it.
+  starterMessage?: string | null;
+  endMessage?: string | null;
+  escalationMessage?: string | null;
   language?: string;
-  parameters: UpdateBusinessSettingsParameterDto[];
   action?: BusinessSettingsActionDto | null;
 };
+
+export type UpsertBusinessParameterRequestDto = UpdateBusinessSettingsParameterDto;
 
 export type BusinessContextProfileDto = {
   name: string;

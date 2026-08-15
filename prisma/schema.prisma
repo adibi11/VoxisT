@@ -61,10 +61,10 @@ model Business {
   businessName           String
   businessPhone          String
   businessEmail          String
-  enderMessage           String
-  escalationMessage      String
+  enderMessage           String?
+  escalationMessage      String?
   language               String
-  starterMessage         String
+  starterMessage         String?
   parameters             BusinessParameter[]
   users                  BusinessUser[]
   conversations          Conversation[]
@@ -85,6 +85,9 @@ model Business {
   taskSchedules          TaskSchedule[]
   taskOccurrences        TaskOccurrence[]
   businessActivityEvents BusinessActivityEvent[]
+  cases                  Case[]
+  schemas                Schema[]
+  documentTypes          DocumentType[]
 }
 
 model MetaLeadFormSubscription {
@@ -146,6 +149,8 @@ model AppUser {
   businessActivityEvents   BusinessActivityEvent[] @relation("BusinessActivityActor")
   pushDevice               PushDevice[]
   takenOverConversations   Conversation[]
+  assignedCases            Case[]                  @relation("CaseAssignee")
+  uploadedDocuments        Document[]              @relation("DocumentUploader")
 }
 
 model PushDevice {
@@ -347,9 +352,118 @@ model Lead {
   externalLeads ExternalLead[]
   attributions  LeadAttribution[]
   tasks         Task[]
+  cases         Case[]
 
   @@unique([id, businessId])
   @@index([conversationId])
+}
+
+model Case {
+  id          Int        @id @default(autoincrement())
+  businessId  Int
+  leadId      Int
+  assigneeId  Int?
+  name        String
+  status      CaseStatus @default(IN_PROGRESS)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  completedAt DateTime?
+  archivedAt  DateTime?
+
+  business               Business                    @relation(fields: [businessId], references: [id])
+  lead                   Lead                        @relation(fields: [leadId], references: [id])
+  assignee               AppUser?                    @relation("CaseAssignee", fields: [assigneeId], references: [id])
+  documents              Document[]
+  documentSpecifications CaseDocumentSpecification[]
+
+  // The service layer must ensure the lead and assignee belong to businessId.
+  @@index([businessId, status, updatedAt])
+  @@index([leadId])
+  @@index([assigneeId])
+}
+
+model DocumentType {
+  id         Int      @id @default(autoincrement())
+  businessId Int?
+  name       String
+  category   String?
+  isCustom   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business  Business?  @relation(fields: [businessId], references: [id])
+  schemas   Schema[]
+  documents Document[]
+}
+
+model Schema {
+  id                Int      @id @default(autoincrement())
+  businessId        Int?
+  documentTypeId    Int
+  name              String
+  version           Int
+  requirementSchema Json
+  isCustom          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  business                   Business?                   @relation(fields: [businessId], references: [id])
+  documentType               DocumentType                @relation(fields: [documentTypeId], references: [id])
+  documents                  Document[]
+  caseDocumentSpecifications CaseDocumentSpecification[]
+
+  @@unique([businessId, documentTypeId, name, version])
+  @@index([documentTypeId])
+}
+
+model CaseDocumentSpecification {
+  id        Int      @id @default(autoincrement())
+  caseId    Int
+  schemaId  Int
+  required  Boolean  @default(true)
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case      Case       @relation(fields: [caseId], references: [id])
+  schema    Schema     @relation(fields: [schemaId], references: [id])
+  documents Document[]
+
+  @@index([caseId])
+  @@index([schemaId])
+}
+
+model Document {
+  id                          Int            @id @default(autoincrement())
+  caseId                      Int
+  documentTypeId              Int?
+  schemaId                    Int?
+  caseDocumentSpecificationId Int?
+  filename                    String
+  storageKey                  String         @unique
+  mimeType                    String
+  sizeBytes                   Int
+  requirementAnswer           Json?
+  status                      DocumentStatus @default(UPLOADED)
+  source                      DocumentSource @default(ADVISOR_UPLOAD)
+  uploadedById                Int?
+  createdAt                   DateTime       @default(now())
+  updatedAt                   DateTime       @updatedAt
+
+  case                      Case                       @relation(fields: [caseId], references: [id])
+  documentType              DocumentType?              @relation(fields: [documentTypeId], references: [id])
+  schema                    Schema?                    @relation(fields: [schemaId], references: [id])
+  caseDocumentSpecification CaseDocumentSpecification? @relation(fields: [caseDocumentSpecificationId], references: [id])
+  uploadedBy                AppUser?                   @relation("DocumentUploader", fields: [uploadedById], references: [id])
+
+  // When both are set, schema.documentTypeId must equal documentTypeId. The
+  // service/API layer must also ensure the schema and uploader belong to the
+  // case's business.
+  @@index([caseId, createdAt])
+  @@index([documentTypeId])
+  @@index([schemaId])
+  @@index([caseDocumentSpecificationId])
+  @@index([uploadedById])
 }
 
 model Task {
@@ -966,4 +1080,29 @@ enum InstagramCommentEventStatus {
   IGNORED
   PROCESSED
   FAILED
+}
+
+enum CaseStatus {
+  IN_PROGRESS
+  IN_REVIEW
+  NEEDS_ATTENTION
+  COMPLETED
+}
+
+enum DocumentStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  PROCESSING
+  EXTRACTED
+  NEEDS_REVIEW
+  VERIFIED
+  FAILED
+}
+
+enum DocumentSource {
+  ADVISOR_UPLOAD
+  CLIENT_PORTAL
+  EMAIL
+  WHATSAPP
+  SYSTEM
 }

@@ -20,6 +20,7 @@ import version from "../../versions/api.json";
 import { getBusinessContextRoutes } from "./routes/businesContextRoutes";
 import { getAuthRoutes } from "./routes/authRoutes";
 import { getBusinessRoutes } from "./routes/businessRoutes";
+import { getBusinessParameterRoutes } from "./routes/businessParameterRoutes";
 import { getClientRoutes } from "./routes/clientRoutes";
 import { getConversationRoutes } from "./routes/conversationRoutes";
 import { getLeadRoutes } from "./routes/leadRoutes";
@@ -27,6 +28,7 @@ import { getFollowUpRoutes } from "./routes/followUpRoutes";
 import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
 import { getIntegrationRoutes } from "./routes/integrationRoutes";
 import { getTaskRoutes } from "./routes/taskRoutes";
+import { getCaseRoutes } from "./routes/caseRoutes";
 import { getHumanTakeoverRoutes } from "./routes/humanTakeoverRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 import { createPublicEntrypointRateLimiter, createTaskEntrypointRateLimiter, getPublicEntrypointRateLimitConfig, getTaskEntrypointRateLimitConfig } from "./rateLimitMiddleware";
@@ -97,6 +99,7 @@ app.use(express.urlencoded({ extended: false, limit: httpSecurityConfig.formBody
 getBusinessContextRoutes(v1Router, sqlManager, appLogger);
 getAuthRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getBusinessRoutes(v1Router, sqlManager, appLogger);
+getBusinessParameterRoutes(v1Router, sqlManager, appLogger);
 getClientRoutes(v1Router, sqlManager, appLogger);
 getConversationRoutes(v1Router, sqlManager, appLogger);
 getLeadRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
@@ -105,6 +108,7 @@ getLeadIngestionRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimi
 getIntegrationRoutes(v1Router, sqlManager, appLogger);
 getInstagramCommentAutomationRoutes(v1Router, sqlManager, appLogger.child({ component: "InstagramCommentAutomation" }));
 getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
+getCaseRoutes(v1Router, sqlManager, appLogger);
 getHumanTakeoverRoutes(v1Router, sqlManager, cacheManager, queueManager, appLogger);
 
 
