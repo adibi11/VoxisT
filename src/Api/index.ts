@@ -29,6 +29,7 @@ import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
 import { getIntegrationRoutes } from "./routes/integrationRoutes";
 import { getTaskRoutes } from "./routes/taskRoutes";
 import { getCaseRoutes } from "./routes/caseRoutes";
+import { getDocumentRoutes } from "./routes/documentRoutes";
 import { getHumanTakeoverRoutes } from "./routes/humanTakeoverRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 import { createPublicEntrypointRateLimiter, createTaskEntrypointRateLimiter, getPublicEntrypointRateLimitConfig, getTaskEntrypointRateLimitConfig } from "./rateLimitMiddleware";
@@ -109,6 +110,7 @@ getIntegrationRoutes(v1Router, sqlManager, appLogger);
 getInstagramCommentAutomationRoutes(v1Router, sqlManager, appLogger.child({ component: "InstagramCommentAutomation" }));
 getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
 getCaseRoutes(v1Router, sqlManager, appLogger);
+getDocumentRoutes(v1Router, sqlManager, appLogger);
 getHumanTakeoverRoutes(v1Router, sqlManager, cacheManager, queueManager, appLogger);
 
 
@@ -283,3 +285,4 @@ function getAllowedOrigins(): string[] {
     .map((origin) => origin.trim())
     .filter(Boolean);
 }
+

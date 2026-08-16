@@ -134,3 +134,10 @@ export type DocumentUploadRequestResponseDto = {
   document: { id: number; filename: string; status: "PENDING_UPLOAD"; mimeType: string; sizeBytes: number };
   upload: { url: string; method: "PUT"; expiresInSeconds: number };
 };
+
+export type DocumentViewUrlResponseDto = {
+  url: string;
+  expiresInSeconds: number;
+  mimeType: string;
+  filename: string;
+};

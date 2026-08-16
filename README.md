@@ -30,3 +30,5 @@ The document upload-request endpoint uses the AWS SDK default credential provide
 - `DOCUMENT_UPLOAD_MAX_BYTES` (optional): maximum accepted upload size in bytes; defaults to 26214400 (25 MiB).
 
 Do not put AWS access keys in application configuration. Local development may use the standard AWS profile, while ECS should use a task role.
+The ECS Task Role must allow `s3:PutObject` and `s3:GetObject` for the private documents bucket object prefix.
+

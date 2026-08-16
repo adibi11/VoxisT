@@ -24,7 +24,9 @@
     "build": "tsc",
     "start:messageWorker": "node dist/Workers/MessageWorker/worker.js",
     "start:outbound": "node dist/Workers/OutboundMessageWorker/worker.js",
-    "start:followUp": "node dist/Workers/FollowUpSchedulerWorker/worker.js"
+    "start:followUp": "node dist/Workers/FollowUpSchedulerWorker/worker.js",
+    "s3-document-upload-worker": "ts-node src/Workers/S3DocumentUploadWorker/worker.ts",
+    "start:s3-document-upload-worker": "node dist/Workers/S3DocumentUploadWorker/worker.js"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -35,6 +37,7 @@
   "description": "",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1111.0",
+    "@aws-sdk/client-sqs": "^3.1111.0",
     "@aws-sdk/s3-request-presigner": "^3.1111.0",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^6.19.3",

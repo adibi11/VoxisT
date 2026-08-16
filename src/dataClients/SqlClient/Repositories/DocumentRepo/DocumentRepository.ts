@@ -1,5 +1,5 @@
 import { PrismaClient } from "../../../../generated/prisma/client";
-import { DocumentUploadContext, IDocumentRepository, PendingDocument, PendingDocumentInput } from "./IDocumentRepository";
+import { DocumentStorageRecord, DocumentUploadContext, IDocumentRepository, PendingDocument, PendingDocumentInput, ViewableDocument } from "./IDocumentRepository";
 
 export class DocumentRepository implements IDocumentRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -35,7 +35,26 @@ export class DocumentRepository implements IDocumentRepository {
     });
     return { ...document, status: "PENDING_UPLOAD" };
   }
+
+  async findByStorageKey(storageKey: string): Promise<DocumentStorageRecord | null> {
+    return this.prisma.document.findUnique({
+      where: { storageKey },
+      select: { id: true, status: true }
+    });
+  }
+
+  async markUploaded(documentId: number): Promise<boolean> {
+    const result = await this.prisma.document.updateMany({
+      where: { id: documentId, status: "PENDING_UPLOAD" },
+      data: { status: "UPLOADED" }
+    });
+    return result.count === 1;
+  }
+
+  async findViewableById(businessId: number, documentId: number): Promise<ViewableDocument | null> {
+    return this.prisma.document.findFirst({
+      where: { id: documentId, case: { businessId } },
+      select: { id: true, storageKey: true, filename: true, mimeType: true }
+    });
+  }
 }
-
-
-

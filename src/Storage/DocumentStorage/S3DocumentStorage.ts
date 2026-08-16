@@ -1,6 +1,6 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { CreateDocumentUploadUrlRequest, IDocumentStorage } from "./IDocumentStorage";
+import { CreateDocumentUploadUrlRequest, CreateDocumentViewUrlRequest, IDocumentStorage } from "./IDocumentStorage";
 
 export type S3DocumentStorageConfig = { bucketName: string; region: string };
 
@@ -14,6 +14,12 @@ export class S3DocumentStorage implements IDocumentStorage {
       Bucket: this.config.bucketName, Key: request.storageKey, ContentType: request.contentType
     }), { expiresIn: request.expiresInSeconds });
   }
+  async createViewUrl(request: CreateDocumentViewUrlRequest): Promise<string> {
+    return getSignedUrl(this.client, new GetObjectCommand({
+      Bucket: this.config.bucketName,
+      Key: request.storageKey
+    }), { expiresIn: request.expiresInSeconds });
+  }
 }
 
 export function documentStorageConfigFromEnv(env: NodeJS.ProcessEnv = process.env): S3DocumentStorageConfig {
@@ -22,3 +28,4 @@ export function documentStorageConfigFromEnv(env: NodeJS.ProcessEnv = process.en
   if (!bucketName || !region) throw new Error("DOCUMENTS_BUCKET_NAME and AWS_REGION are required");
   return { bucketName, region };
 }
+
