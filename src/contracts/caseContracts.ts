@@ -123,6 +123,22 @@ export type CreateCaseRequestDto = {
   }>;
 };
 
+export type CreateCaseCommentRequestDto = {
+  content: string;
+};
+
+export type CaseCommentDto = {
+  id: number;
+  caseId: number;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  author: {
+    id: number;
+    displayName: string | null;
+    email: string;
+  };
+};
 export type CreateDocumentUploadRequestDto = {
   caseDocumentSpecificationId: number;
   filename: string;

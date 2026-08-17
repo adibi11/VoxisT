@@ -1,11 +1,13 @@
 import { Prisma, PrismaClient } from "../../../../generated/prisma/client";
 import {
   CaseAssigneeDto,
+  CaseCommentDto,
   CaseClientDto,
   CaseDetailsDto,
   CaseDocumentDto,
   CaseDocumentSpecificationDto,
   CaseListItemDto,
+  CreateCaseCommentRequestDto,
   CreateCaseRequestDto,
   SchemaDto
 } from "../../../../contracts";
@@ -25,7 +27,7 @@ const caseDetailsInclude = {
     include: {
       documentType: true,
       schema: true,
-      uploadedBy: true
+      uploadedBy: true,
     },
     orderBy: { createdAt: "asc" }
   }
@@ -39,6 +41,11 @@ const caseListInclude = {
 
 type CaseDetailsRow = Prisma.CaseGetPayload<{ include: typeof caseDetailsInclude }>;
 type CaseListRow = Prisma.CaseGetPayload<{ include: typeof caseListInclude }>;
+const caseCommentInclude = {
+  author: { select: { id: true, displayName: true, email: true } }
+} satisfies Prisma.CaseCommentInclude;
+
+type CaseCommentRow = Prisma.CaseCommentGetPayload<{ include: typeof caseCommentInclude }>;
 
 export class CaseRepository implements ICaseRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -126,6 +133,51 @@ export class CaseRepository implements ICaseRepository {
     });
     return caseRow ? mapCaseDetails(caseRow) : null;
   }
+
+  async createComment(
+    businessId: number,
+    caseId: number,
+    authorUserId: number,
+    request: CreateCaseCommentRequestDto
+  ): Promise<CaseCommentDto | null> {
+    const accessibleCase = await this.prisma.case.findFirst({
+      where: { id: caseId, businessId },
+      select: { id: true }
+    });
+    if (!accessibleCase) return null;
+
+    const comment = await this.prisma.caseComment.create({
+      data: { caseId, authorUserId, content: request.content.trim() },
+      include: caseCommentInclude
+    });
+    return mapCaseComment(comment);
+  }
+
+  async getComments(businessId: number, caseId: number): Promise<CaseCommentDto[] | null> {
+    const accessibleCase = await this.prisma.case.findFirst({
+      where: { id: caseId, businessId },
+      select: { id: true }
+    });
+    if (!accessibleCase) return null;
+
+    const comments = await this.prisma.caseComment.findMany({
+      where: { caseId },
+      include: caseCommentInclude,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+    });
+    return comments.map(mapCaseComment);
+  }
+}
+
+function mapCaseComment(comment: CaseCommentRow): CaseCommentDto {
+  return {
+    id: comment.id,
+    caseId: comment.caseId,
+    content: comment.content,
+    createdAt: comment.createdAt.toISOString(),
+    updatedAt: comment.updatedAt.toISOString(),
+    author: comment.author
+  };
 }
 
 function mapCaseListItem(caseRow: CaseListRow): CaseListItemDto {

@@ -50,6 +50,8 @@ import { SchemaRepository } from "./Repositories/SchemaRepo/SchemaRepository";
 import { ISchemaRepository } from "./Repositories/SchemaRepo/ISchemaRepository";
 import { CaseRepository } from "./Repositories/CaseRepo/CaseRepository";
 import { ICaseRepository } from "./Repositories/CaseRepo/ICaseRepository";
+import { DocumentBundleRepository } from "./Repositories/DocumentBundleRepo/DocumentBundleRepository";
+import { IDocumentBundleRepository } from "./Repositories/DocumentBundleRepo/IDocumentBundleRepository";
 
 import { DocumentRepository } from "./Repositories/DocumentRepo/DocumentRepository";
 import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
@@ -105,6 +107,7 @@ export class SqlManager implements IDatabaseClient {
     readonly taskRepository: ITaskRepository;
     readonly schemaRepository: ISchemaRepository;
     readonly caseRepository: ICaseRepository;
+    readonly documentBundleRepository: IDocumentBundleRepository;
     
     readonly documentRepository: IDocumentRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;
@@ -128,6 +131,7 @@ export class SqlManager implements IDatabaseClient {
         this.taskRepository = new TaskRepository(this.prisma);
         this.schemaRepository = new SchemaRepository(this.prisma);
         this.caseRepository = new CaseRepository(this.prisma);
+        this.documentBundleRepository = new DocumentBundleRepository(this.prisma);
         
         this.documentRepository = new DocumentRepository(this.prisma);
         this.pushDeviceRepository = new PushDeviceRepository(this.prisma);

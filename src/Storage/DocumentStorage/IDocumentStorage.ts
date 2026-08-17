@@ -12,5 +12,6 @@ export type CreateDocumentViewUrlRequest = {
 export interface IDocumentStorage {
   createUploadUrl(request: CreateDocumentUploadUrlRequest): Promise<string>;
   createViewUrl(request: CreateDocumentViewUrlRequest): Promise<string>;
+  getDocument(storageKey: string): Promise<Uint8Array>;
 }
 

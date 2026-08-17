@@ -29,6 +29,7 @@ import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
 import { getIntegrationRoutes } from "./routes/integrationRoutes";
 import { getTaskRoutes } from "./routes/taskRoutes";
 import { getCaseRoutes } from "./routes/caseRoutes";
+import { getDocumentBundleRoutes } from "./routes/documentBundleRoutes";
 import { getDocumentRoutes } from "./routes/documentRoutes";
 import { getHumanTakeoverRoutes } from "./routes/humanTakeoverRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
@@ -109,6 +110,7 @@ getLeadIngestionRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimi
 getIntegrationRoutes(v1Router, sqlManager, appLogger);
 getInstagramCommentAutomationRoutes(v1Router, sqlManager, appLogger.child({ component: "InstagramCommentAutomation" }));
 getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
+getDocumentBundleRoutes(v1Router, sqlManager, appLogger);
 getCaseRoutes(v1Router, sqlManager, appLogger);
 getDocumentRoutes(v1Router, sqlManager, appLogger);
 getHumanTakeoverRoutes(v1Router, sqlManager, cacheManager, queueManager, appLogger);

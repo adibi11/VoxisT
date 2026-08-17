@@ -2,6 +2,7 @@ import express from "express";
 import {
   CreateBusinessDocumentTypeRequestDto,
   CreateBusinessSchemaRequestDto,
+  CreateCaseCommentRequestDto,
   CreateCaseRequestDto,
   CreateDocumentUploadRequestDto
 } from "../../contracts";
@@ -208,6 +209,9 @@ export function getCaseRoutes(
       return res.status(500).json({ message: "Failed to prepare document upload" });
     }
   });
+
+  app.post("/cases/:caseId/comments", requireAuth, createCaseCommentHandler(sql, logger));
+  app.get("/cases/:caseId/comments", requireAuth, getCaseCommentsHandler(sql, logger));
   // Keep this parameter route after all static /cases/* routes.
   app.get("/cases/:caseId", requireAuth, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -228,6 +232,83 @@ export function getCaseRoutes(
       return res.status(500).json({ message: "Failed to fetch Case" });
     }
   });
+}
+
+export function createCaseCommentHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = authenticatedBusinessId(authReq, res);
+    const caseId = Number(req.params.caseId);
+    if (!businessId) return;
+    if (!positiveId(caseId)) {
+      res.status(400).json({ code: "VALIDATION_ERROR", message: "Invalid caseId" });
+      return;
+    }
+
+    const request = req.body as Partial<CreateCaseCommentRequestDto> | undefined;
+    if (!isValidCreateCaseCommentRequest(request)) {
+      res.status(400).json({ code: "VALIDATION_ERROR", message: "Invalid Case comment request" });
+      return;
+    }
+
+    try {
+      const comment = await sql.caseRepository.createComment(
+        businessId,
+        caseId,
+        authReq.auth.userId,
+        { content: request.content.trim() }
+      );
+      if (!comment) {
+        res.status(404).json({ code: "NOT_FOUND", message: "Case not found" });
+        return;
+      }
+      logger.info("case.comment.create.succeeded", {
+        userId: authReq.auth.userId, businessId, caseId, commentId: comment.id
+      });
+      res.status(201).json(comment);
+    } catch (error) {
+      logger.error("case.comment.create.failed", { error, businessId, caseId });
+      res.status(500).json({ message: "Failed to create Case comment" });
+    }
+  };
+}
+
+export function getCaseCommentsHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = authenticatedBusinessId(authReq, res);
+    const caseId = Number(req.params.caseId);
+    if (!businessId) return;
+    if (!positiveId(caseId)) {
+      res.status(400).json({ code: "VALIDATION_ERROR", message: "Invalid caseId" });
+      return;
+    }
+
+    try {
+      const comments = await sql.caseRepository.getComments(businessId, caseId);
+      if (!comments) {
+        res.status(404).json({ code: "NOT_FOUND", message: "Case not found" });
+        return;
+      }
+      res.status(200).json(comments);
+    } catch (error) {
+      logger.error("case.comment.list.failed", { error, businessId, caseId });
+      res.status(500).json({ message: "Failed to list Case comments" });
+    }
+  };
+}
+
+export const CASE_COMMENT_MAX_LENGTH = 5000;
+
+export function isValidCreateCaseCommentRequest(
+  request: Partial<CreateCaseCommentRequestDto> | undefined
+): request is CreateCaseCommentRequestDto {
+  return Boolean(
+    request
+    && typeof request.content === "string"
+    && request.content.trim().length > 0
+    && request.content.trim().length <= CASE_COMMENT_MAX_LENGTH
+  );
 }
 
 export function isValidCreateCaseRequest(

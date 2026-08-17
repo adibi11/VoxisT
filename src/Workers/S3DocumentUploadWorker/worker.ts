@@ -1,15 +1,26 @@
 import "dotenv/config";
 import { S3DocumentUploadEventProcessor } from "../../Documents/S3DocumentUploadEventProcessor";
+import { DocumentProcessingService } from "../../Documents/DocumentProcessingService";
+import { OpenAIDocumentVisionClient } from "../../Documents/Vision/OpenAIDocumentVisionClient";
 import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
 import { logger } from "../../logging/logger";
 import { AwsSqsClient, S3_DOCUMENT_QUEUE_NAME } from "../../QueueClient/Sqs/AwsSqsClient";
+import { documentStorageConfigFromEnv, S3DocumentStorage } from "../../Storage/DocumentStorage/S3DocumentStorage";
 
 const workerLogger = logger.child({ component: "S3DocumentUploadWorker", queueName: S3_DOCUMENT_QUEUE_NAME });
 const sql = new SqlManager(workerLogger.child({ component: "SqlManager" }));
+const documentStorage = new S3DocumentStorage(documentStorageConfigFromEnv());
+const documentProcessing = new DocumentProcessingService(
+  sql.documentRepository,
+  documentStorage,
+  new OpenAIDocumentVisionClient(workerLogger.child({ component: "OpenAIDocumentVisionClient" })),
+  workerLogger.child({ component: "DocumentProcessingService" })
+);
 const processor = new S3DocumentUploadEventProcessor(
   AwsSqsClient.fromEnvironment(),
   sql.documentRepository,
-  workerLogger.child({ component: "S3DocumentUploadEventProcessor" })
+  workerLogger.child({ component: "S3DocumentUploadEventProcessor" }),
+  documentProcessing
 );
 let stopping = false;
 
@@ -42,3 +53,4 @@ void poll().catch((error) => {
 });
 process.once("SIGINT", () => shutdown("SIGINT"));
 process.once("SIGTERM", () => shutdown("SIGTERM"));
+

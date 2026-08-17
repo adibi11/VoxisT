@@ -35,6 +35,7 @@ import { IPushDeviceRepository } from "./Repositories/PushDeviceRepo/IPushDevice
 import { ITaskRepository } from "./Repositories/TaskRepo/ITaskRepository";
 import { ISchemaRepository } from "./Repositories/SchemaRepo/ISchemaRepository";
 import { ICaseRepository } from "./Repositories/CaseRepo/ICaseRepository";
+import { IDocumentBundleRepository } from "./Repositories/DocumentBundleRepo/IDocumentBundleRepository";
 
 import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
 import { IInstagramRepository } from "../../InstagramCommentAutomation/instagramTypes";
@@ -59,6 +60,7 @@ export interface IDatabaseClient {
     readonly taskRepository: ITaskRepository;
     readonly schemaRepository: ISchemaRepository;
     readonly caseRepository: ICaseRepository;
+    readonly documentBundleRepository: IDocumentBundleRepository;
     
     readonly documentRepository: IDocumentRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;

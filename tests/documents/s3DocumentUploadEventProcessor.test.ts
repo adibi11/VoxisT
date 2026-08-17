@@ -8,7 +8,11 @@ function s3Body(...keys: string[]): string {
 
 const DEFAULT_BODY = Symbol("default-body");
 
-function setup(body: string | null | undefined | typeof DEFAULT_BODY = DEFAULT_BODY, status = "PENDING_UPLOAD") {
+function setup(
+  body: string | null | undefined | typeof DEFAULT_BODY = DEFAULT_BODY,
+  status = "PENDING_UPLOAD",
+  documentProcessor?: { process(documentId: number): Promise<unknown> }
+) {
   const messageBody = body === DEFAULT_BODY ? s3Body("businesses/7/cases/20/documents/50/file.pdf") : body ?? undefined;
   const sqs = {
     receiveMessages: vi.fn().mockResolvedValue([{ messageId: "m-1", receiptHandle: "receipt-1", body: messageBody }]),
@@ -18,7 +22,7 @@ function setup(body: string | null | undefined | typeof DEFAULT_BODY = DEFAULT_B
     findByStorageKey: vi.fn().mockResolvedValue({ id: 50, status }),
     markUploaded: vi.fn().mockResolvedValue(true)
   };
-  return { sqs, documents, processor: new S3DocumentUploadEventProcessor(sqs, documents as any, new NullLogger()) };
+  return { sqs, documents, processor: new S3DocumentUploadEventProcessor(sqs, documents as any, new NullLogger(), documentProcessor as any) };
 }
 
 describe("S3DocumentUploadEventProcessor", () => {
@@ -30,6 +34,16 @@ describe("S3DocumentUploadEventProcessor", () => {
     expect(sqs.deleteMessage).toHaveBeenCalledWith("receipt-1");
   });
 
+  it("triggers separate document processing after marking the upload complete", async () => {
+    const documentProcessor = { process: vi.fn().mockResolvedValue({ outcome: "extracted", documentId: 50 }) };
+    const { processor, documents, sqs } = setup(DEFAULT_BODY, "PENDING_UPLOAD", documentProcessor);
+    await processor.pollOnce();
+    expect(documents.markUploaded).toHaveBeenCalledWith(50);
+    expect(documentProcessor.process).toHaveBeenCalledWith(50);
+    expect(documentProcessor.process.mock.invocationCallOrder[0]).toBeLessThan(
+      sqs.deleteMessage.mock.invocationCallOrder[0]
+    );
+  });
   it("decodes URL-encoded S3 keys", async () => {
     const { processor, documents } = setup(s3Body("businesses%2F7%2Fsalary+slip.pdf"));
     await processor.pollOnce();
@@ -87,3 +101,4 @@ describe("S3DocumentUploadEventProcessor", () => {
     expect(sqs.deleteMessage).not.toHaveBeenCalled();
   });
 });
+

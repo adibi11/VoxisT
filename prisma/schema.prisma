@@ -88,6 +88,7 @@ model Business {
   cases                  Case[]
   schemas                Schema[]
   documentTypes          DocumentType[]
+  documentBundles        DocumentBundle[]
 }
 
 model MetaLeadFormSubscription {
@@ -150,6 +151,7 @@ model AppUser {
   pushDevice               PushDevice[]
   takenOverConversations   Conversation[]
   assignedCases            Case[]                  @relation("CaseAssignee")
+  authoredCaseComments     CaseComment[]           @relation("CaseCommentAuthor")
   uploadedDocuments        Document[]              @relation("DocumentUploader")
 }
 
@@ -375,11 +377,27 @@ model Case {
   assignee               AppUser?                    @relation("CaseAssignee", fields: [assigneeId], references: [id])
   documents              Document[]
   documentSpecifications CaseDocumentSpecification[]
+  comments               CaseComment[]
 
   // The service layer must ensure the lead and assignee belong to businessId.
   @@index([businessId, status, updatedAt])
   @@index([leadId])
   @@index([assigneeId])
+}
+
+model CaseComment {
+  id           Int      @id @default(autoincrement())
+  caseId       Int
+  authorUserId Int
+  content      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  case   Case    @relation(fields: [caseId], references: [id])
+  author AppUser @relation("CaseCommentAuthor", fields: [authorUserId], references: [id])
+
+  @@index([caseId, createdAt, id])
+  @@index([authorUserId])
 }
 
 model DocumentType {
@@ -411,9 +429,41 @@ model Schema {
   documentType               DocumentType                @relation(fields: [documentTypeId], references: [id])
   documents                  Document[]
   caseDocumentSpecifications CaseDocumentSpecification[]
+  documentBundleItems        DocumentBundleItem[]
 
   @@unique([businessId, documentTypeId, name, version])
   @@index([documentTypeId])
+}
+
+model DocumentBundle {
+  id          Int      @id @default(autoincrement())
+  businessId  Int
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business             @relation(fields: [businessId], references: [id])
+  items    DocumentBundleItem[]
+
+  @@index([businessId, name, id])
+}
+
+model DocumentBundleItem {
+  id       Int     @id @default(autoincrement())
+  bundleId Int
+  schemaId Int
+  required Boolean @default(true)
+  quantity Int     @default(1)
+  label    String?
+  position Int
+
+  bundle DocumentBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  schema Schema         @relation(fields: [schemaId], references: [id])
+
+  @@unique([bundleId, schemaId])
+  @@index([bundleId, position, id])
+  @@index([schemaId])
 }
 
 model CaseDocumentSpecification {

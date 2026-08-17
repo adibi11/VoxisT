@@ -1,6 +1,7 @@
 import { IDocumentRepository } from "../dataClients/SqlClient/Repositories/DocumentRepo/IDocumentRepository";
 import { ILogger } from "../logging/logger";
 import { ISqsClient, SqsMessage } from "../QueueClient/Sqs/ISqsClient";
+import { IDocumentProcessor } from "./DocumentProcessingService";
 
 export type S3DocumentPollResult = { received: number; acknowledged: number; failed: number };
 
@@ -10,7 +11,8 @@ export class S3DocumentUploadEventProcessor {
   constructor(
     private readonly sqs: ISqsClient,
     private readonly documents: IDocumentRepository,
-    private readonly logger: ILogger
+    private readonly logger: ILogger,
+    private readonly documentProcessor?: IDocumentProcessor
   ) {}
 
   async pollOnce(): Promise<S3DocumentPollResult> {
@@ -50,6 +52,7 @@ export class S3DocumentUploadEventProcessor {
         const transitioned = await this.documents.markUploaded(document.id);
         if (transitioned) {
           this.logger.info("documentUploadEvent.document.uploaded", { documentId: document.id });
+          await this.documentProcessor?.process(document.id);
         } else {
           this.logger.info("documentUploadEvent.document.already_processed", { documentId: document.id });
         }
@@ -85,3 +88,4 @@ export function parseStorageKeys(body: string | undefined): string[] | null {
     return null;
   }
 }
+

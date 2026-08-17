@@ -20,6 +20,14 @@ export class S3DocumentStorage implements IDocumentStorage {
       Key: request.storageKey
     }), { expiresIn: request.expiresInSeconds });
   }
+  async getDocument(storageKey: string): Promise<Uint8Array> {
+    const response = await this.client.send(new GetObjectCommand({
+      Bucket: this.config.bucketName,
+      Key: storageKey
+    }));
+    if (!response.Body) throw new Error("S3 document body is missing");
+    return response.Body.transformToByteArray();
+  }
 }
 
 export function documentStorageConfigFromEnv(env: NodeJS.ProcessEnv = process.env): S3DocumentStorageConfig {

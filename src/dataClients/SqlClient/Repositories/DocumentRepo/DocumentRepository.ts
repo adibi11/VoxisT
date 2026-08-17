@@ -1,5 +1,6 @@
-import { PrismaClient } from "../../../../generated/prisma/client";
-import { DocumentStorageRecord, DocumentUploadContext, IDocumentRepository, PendingDocument, PendingDocumentInput, ViewableDocument } from "./IDocumentRepository";
+import { Prisma, PrismaClient } from "../../../../generated/prisma/client";
+import { DocumentRequirementAnswer } from "../../../../Documents/documentProcessingTypes";
+import { DocumentStorageRecord, DocumentUploadContext, IDocumentRepository, PendingDocument, PendingDocumentInput, ProcessingDocument, ViewableDocument } from "./IDocumentRepository";
 
 export class DocumentRepository implements IDocumentRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -57,4 +58,64 @@ export class DocumentRepository implements IDocumentRepository {
       select: { id: true, storageKey: true, filename: true, mimeType: true }
     });
   }
+
+  async claimForProcessing(documentId: number): Promise<ProcessingDocument | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.document.updateMany({
+        where: { id: documentId, status: "UPLOADED" },
+        data: { status: "PROCESSING" }
+      });
+      if (claimed.count !== 1) return null;
+      const document = await tx.document.findUnique({
+        where: { id: documentId },
+        select: {
+          id: true,
+          storageKey: true,
+          filename: true,
+          mimeType: true,
+          schema: {
+            select: {
+              name: true,
+              requirementSchema: true,
+              documentType: { select: { name: true } }
+            }
+          }
+        }
+      });
+      if (!document?.schema) throw new Error("Processing Document has no Schema");
+      return {
+        id: document.id,
+        storageKey: document.storageKey,
+        filename: document.filename,
+        mimeType: document.mimeType,
+        schemaName: document.schema.name,
+        documentTypeName: document.schema.documentType.name,
+        requirementSchema: document.schema.requirementSchema
+      };
+    });
+  }
+
+  async completeProcessing(
+    documentId: number,
+    answer: DocumentRequirementAnswer,
+    status: "EXTRACTED" | "NEEDS_REVIEW"
+  ): Promise<boolean> {
+    const result = await this.prisma.document.updateMany({
+      where: { id: documentId, status: "PROCESSING" },
+      data: {
+        requirementAnswer: JSON.parse(JSON.stringify(answer)) as Prisma.InputJsonValue,
+        status
+      }
+    });
+    return result.count === 1;
+  }
+
+  async markProcessingFailed(documentId: number): Promise<boolean> {
+    const result = await this.prisma.document.updateMany({
+      where: { id: documentId, status: "PROCESSING" },
+      data: { status: "FAILED" }
+    });
+    return result.count === 1;
+  }
 }
+

@@ -1,4 +1,10 @@
-import { CaseDetailsDto, CaseListItemDto, CreateCaseRequestDto } from "../../../../contracts";
+import {
+  CaseCommentDto,
+  CaseDetailsDto,
+  CaseListItemDto,
+  CreateCaseCommentRequestDto,
+  CreateCaseRequestDto
+} from "../../../../contracts";
 
 export type CreateCaseResult =
   | { outcome: "created"; case: CaseDetailsDto }
@@ -10,4 +16,11 @@ export interface ICaseRepository {
   createCase(businessId: number, request: CreateCaseRequestDto): Promise<CreateCaseResult>;
   listCases(businessId: number): Promise<CaseListItemDto[]>;
   getCaseDetails(businessId: number, caseId: number): Promise<CaseDetailsDto | null>;
+  createComment(
+    businessId: number,
+    caseId: number,
+    authorUserId: number,
+    request: CreateCaseCommentRequestDto
+  ): Promise<CaseCommentDto | null>;
+  getComments(businessId: number, caseId: number): Promise<CaseCommentDto[] | null>;
 }
