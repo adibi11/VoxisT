@@ -31,6 +31,7 @@ import { getTaskRoutes } from "./routes/taskRoutes";
 import { getCaseRoutes } from "./routes/caseRoutes";
 import { getDocumentBundleRoutes } from "./routes/documentBundleRoutes";
 import { getDocumentRoutes } from "./routes/documentRoutes";
+import { getPortalRoutes } from "./routes/portalRoutes";
 import { getHumanTakeoverRoutes } from "./routes/humanTakeoverRoutes";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 import { createPublicEntrypointRateLimiter, createTaskEntrypointRateLimiter, getPublicEntrypointRateLimitConfig, getTaskEntrypointRateLimitConfig } from "./rateLimitMiddleware";
@@ -113,6 +114,7 @@ getTaskRoutes(v1Router, sqlManager, appLogger, taskEntrypointRateLimiter);
 getDocumentBundleRoutes(v1Router, sqlManager, appLogger);
 getCaseRoutes(v1Router, sqlManager, appLogger);
 getDocumentRoutes(v1Router, sqlManager, appLogger);
+getPortalRoutes(v1Router, sqlManager, appLogger, publicEntrypointRateLimiter);
 getHumanTakeoverRoutes(v1Router, sqlManager, cacheManager, queueManager, appLogger);
 
 

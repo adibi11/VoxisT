@@ -4,7 +4,7 @@ export type DocumentUploadContext = { caseId: number; schemaId: number; document
 export type PendingDocumentInput = DocumentUploadContext & {
   id: number;
   caseDocumentSpecificationId: number; filename: string; storageKey: string;
-  mimeType: string; sizeBytes: number; uploadedById: number;
+  mimeType: string; sizeBytes: number; uploadedById: number | null; source: "ADVISOR_UPLOAD" | "CLIENT_PORTAL";
 };
 export type PendingDocument = {
   id: number; filename: string; status: "PENDING_UPLOAD"; mimeType: string; sizeBytes: number;
@@ -27,13 +27,15 @@ export type ProcessingDocument = {
   schemaName: string;
   documentTypeName: string;
   requirementSchema: unknown;
-};export interface IDocumentRepository {
+};
+export interface IDocumentRepository {
   reserveDocumentId(): Promise<number>;
   getUploadContext(businessId: number, caseId: number, specificationId: number): Promise<DocumentUploadContext | null>;
   createPendingDocument(input: PendingDocumentInput): Promise<PendingDocument>;
   findByStorageKey(storageKey: string): Promise<DocumentStorageRecord | null>;
   markUploaded(documentId: number): Promise<boolean>;
   findViewableById(businessId: number, documentId: number): Promise<ViewableDocument | null>;
+  findViewableByCaseId(caseId: number, documentId: number): Promise<ViewableDocument | null>;
   claimForProcessing(documentId: number): Promise<ProcessingDocument | null>;
   completeProcessing(
     documentId: number,
@@ -42,4 +44,3 @@ export type ProcessingDocument = {
   ): Promise<boolean>;
   markProcessingFailed(documentId: number): Promise<boolean>;
 }
-

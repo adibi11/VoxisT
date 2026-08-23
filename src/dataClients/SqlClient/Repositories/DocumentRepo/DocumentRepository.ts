@@ -31,7 +31,7 @@ export class DocumentRepository implements IDocumentRepository {
         mimeType: input.mimeType, 
         sizeBytes: input.sizeBytes,
         status: "PENDING_UPLOAD", 
-        source: "ADVISOR_UPLOAD", uploadedById: input.uploadedById },
+        source: input.source, uploadedById: input.uploadedById },
       select: { id: true, filename: true, status: true, mimeType: true, sizeBytes: true }
     });
     return { ...document, status: "PENDING_UPLOAD" };
@@ -55,6 +55,13 @@ export class DocumentRepository implements IDocumentRepository {
   async findViewableById(businessId: number, documentId: number): Promise<ViewableDocument | null> {
     return this.prisma.document.findFirst({
       where: { id: documentId, case: { businessId } },
+      select: { id: true, storageKey: true, filename: true, mimeType: true }
+    });
+  }
+
+  async findViewableByCaseId(caseId: number, documentId: number): Promise<ViewableDocument | null> {
+    return this.prisma.document.findFirst({
+      where: { id: documentId, caseId },
       select: { id: true, storageKey: true, filename: true, mimeType: true }
     });
   }

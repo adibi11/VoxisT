@@ -378,11 +378,27 @@ model Case {
   documents              Document[]
   documentSpecifications CaseDocumentSpecification[]
   comments               CaseComment[]
+  portalAccesses         CasePortalAccess[]
 
   // The service layer must ensure the lead and assignee belong to businessId.
   @@index([businessId, status, updatedAt])
   @@index([leadId])
   @@index([assigneeId])
+}
+
+model CasePortalAccess {
+  id             Int       @id @default(autoincrement())
+  caseId         Int
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  lastAccessedAt DateTime?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, revokedAt])
+  @@index([expiresAt])
 }
 
 model CaseComment {

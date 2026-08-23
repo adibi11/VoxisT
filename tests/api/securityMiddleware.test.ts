@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBodyParserErrorHandler, getHttpSecurityConfig } from "../../src/Api/securityMiddleware";
+import { createBodyParserErrorHandler, getHttpSecurityConfig, redactCredentialPath } from "../../src/Api/securityMiddleware";
 
 describe("HTTP security configuration", () => {
   beforeEach(() => {
@@ -26,6 +26,15 @@ describe("HTTP security configuration", () => {
 
     expect(config.trustProxyHops).toBe(0);
     expect(config.enableHsts).toBe(false);
+  });
+});
+
+describe("portal credential redaction", () => {
+  it("removes raw portal tokens from logged paths", () => {
+    const token = "a".repeat(43);
+    const redacted = redactCredentialPath(`/v1/portal/${token}/requirements/req_safe/upload-request`);
+    expect(redacted).toBe("/v1/portal/[REDACTED]/requirements/req_safe/upload-request");
+    expect(redacted).not.toContain(token);
   });
 });
 

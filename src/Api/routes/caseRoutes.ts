@@ -196,7 +196,7 @@ export function getCaseRoutes(
     try {
       const storage = documentStorage ?? new S3DocumentStorage(documentStorageConfigFromEnv());
       const result = await new DocumentUploadService(sql.documentRepository, storage)
-        .prepareUpload(businessId, caseId, authReq.auth.userId, request);
+        .prepareUpload(businessId, caseId, { source: "ADVISOR_UPLOAD", uploadedById: authReq.auth.userId }, request);
       if (result.outcome === "not_found") {
         return res.status(404).json({ code: "NOT_FOUND", message: "Case or document specification not found" });
       }

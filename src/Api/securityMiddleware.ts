@@ -32,7 +32,10 @@ export function createSecurityHeaders(config: HttpSecurityConfig): RequestHandle
     res.setHeader("Content-Security-Policy", "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
 
     // Access and refresh tokens must never be retained by browser or intermediary caches.
-    if (req.path.startsWith("/v1/auth/") || req.path === "/v1/me") {
+    if (req.path.startsWith("/v1/auth/")
+      || req.path === "/v1/me"
+      || req.path.startsWith("/v1/portal/")
+      || /^\/v1\/cases\/[^/]+\/portal-access$/.test(req.path)) {
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("Pragma", "no-cache");
     }
@@ -54,7 +57,7 @@ export function createBodyParserErrorHandler(logger: ILogger): ErrorRequestHandl
     if (status === 413 || parserError?.type === "entity.too.large") {
       logger.warn("http.request.body.too_large", {
         method: req.method,
-        path: req.originalUrl,
+        path: redactCredentialPath(req.originalUrl),
         contentType: req.headers["content-type"],
         contentLength: req.headers["content-length"]
       });
@@ -64,7 +67,7 @@ export function createBodyParserErrorHandler(logger: ILogger): ErrorRequestHandl
     if (status === 400 || parserError?.type === "entity.parse.failed") {
       logger.warn("http.request.body.invalid", {
         method: req.method,
-        path: req.originalUrl,
+        path: redactCredentialPath(req.originalUrl),
         contentType: req.headers["content-type"]
       });
       return res.status(400).json({ message: "Invalid request body" });
@@ -72,6 +75,10 @@ export function createBodyParserErrorHandler(logger: ILogger): ErrorRequestHandl
 
     return next(error);
   };
+}
+
+export function redactCredentialPath(path: string): string {
+  return path.replace(/(\/v1\/portal\/)[^/?]+/g, "$1[REDACTED]");
 }
 
 function getBodyLimit(name: string, fallback: string): string {

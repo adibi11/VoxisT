@@ -32,6 +32,7 @@ import { BusinessParamConfig, BusinessParamDefinition, BusinessParamType } from 
 import { BusinessContext, Client, ConversationCacheState, ConversationEntity } from "../../src/dataClients/Types/messageTypes";
 import { ConversationState } from "../../src/dataClients/Types/stateMachineTypes";
 import { ILeadRepository } from "../../src/dataClients/SqlClient/Repositories/LeadRepo/ILeadRepository";
+import { ICasePortalAccessRepository } from "../../src/dataClients/SqlClient/Repositories/CasePortalAccessRepo/ICasePortalAccessRepository";
 import { DueConversationFollowUpCandidate, IFollowUpRepository, OpenConversationPolicyCandidate } from "../../src/dataClients/SqlClient/Repositories/FollowUpRepo/IFollowUpRepository";
 import { IBusinessChannelRepository, ResolvedBusinessChannel } from "../../src/dataClients/SqlClient/Repositories/BusinessChannelRepo/IBusinessChannelRepository";
 import { normalizePhoneDigits } from "../../src/dataClients/Types/phoneNumber";
@@ -125,6 +126,7 @@ type SavedConversationFollowUp = {
 export class FakeSqlManager implements IDatabaseClient {
   readonly leadRepository: ILeadRepository = this;
   readonly followUpRepository: IFollowUpRepository = this;
+  readonly casePortalAccessRepository: ICasePortalAccessRepository = undefined as any;
   readonly businessChannelRepository: IBusinessChannelRepository = this;
 
   public clientsByPhone = new Map<string, Client>();
