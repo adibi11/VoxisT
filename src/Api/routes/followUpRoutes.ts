@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  BusinessFollowUpPolicyDto,
   CreateConversationFollowUpRequestDto,
   FollowUpStatusDto,
   UpdateConversationFollowUpRequestDto,
@@ -19,17 +20,13 @@ const FOLLOW_UP_STATUSES = new Set<FollowUpStatusDto>([
   "CANCELED"
 ]);
 
-export function getFollowUpRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger) {
-  app.get("/businesses/:businessId/follow-up/policy", requireAuth, async (req, res) => {
+export function createGetFollowUpPolicyHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const businessId = parseId(req.params.businessId);
-      if (!businessId) {
-        return res.status(400).json({ message: "Invalid businessId" });
-      }
-      if (!requireBusinessOwner(authReq, res, businessId)) {
-        return;
-      }
+      if (!businessId) return res.status(400).json({ message: "Invalid businessId" });
+      if (!requireBusinessOwner(authReq, res, businessId)) return;
 
       const policy = await sql.followUpRepository.getBusinessFollowUpPolicy(businessId);
       logger.info("follow_up.policy.fetch.succeeded", {
@@ -37,29 +34,30 @@ export function getFollowUpRoutes(app: express.Router, sql: IDatabaseClient, log
         businessId,
         found: Boolean(policy)
       });
-
       return res.status(200).json(policy);
     } catch (error) {
       logger.error("follow_up.policy.fetch.failed", { error });
       return res.status(500).json({ message: "Failed to fetch follow-up policy" });
     }
-  });
+  };
+}
 
-  app.put("/businesses/:businessId/follow-up/policy", requireAuth, async (req, res) => {
+export function createUpdateFollowUpPolicyHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
     try {
       const authReq = req as AuthenticatedRequest;
       const businessId = parseId(req.params.businessId);
-      if (!businessId) {
-        return res.status(400).json({ message: "Invalid businessId" });
-      }
-      if (!requireBusinessOwner(authReq, res, businessId)) {
-        return;
-      }
+      if (!businessId) return res.status(400).json({ message: "Invalid businessId" });
+      if (!requireBusinessOwner(authReq, res, businessId)) return;
 
       const request = req.body as UpsertBusinessFollowUpPolicyRequestDto;
       if (!isValidPolicyRequest(request)) {
         return res.status(400).json({ message: "Invalid follow-up policy request" });
       }
+
+      const currentPolicy = await sql.followUpRepository.getBusinessFollowUpPolicy(businessId);
+      const casePolicyError = validateCaseDocumentFollowUpPolicy(request, currentPolicy);
+      if (casePolicyError) return res.status(400).json({ message: casePolicyError });
 
       const policy = await sql.followUpRepository.upsertBusinessFollowUpPolicy(businessId, request);
       logger.info("follow_up.policy.upsert.succeeded", {
@@ -67,13 +65,25 @@ export function getFollowUpRoutes(app: express.Router, sql: IDatabaseClient, log
         businessId,
         policyId: policy.id
       });
-
       return res.status(200).json(policy);
     } catch (error) {
       logger.error("follow_up.policy.upsert.failed", { error });
       return res.status(500).json({ message: "Failed to save follow-up policy" });
     }
-  });
+  };
+}
+
+export function getFollowUpRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger) {
+  app.get(
+    "/businesses/:businessId/follow-up/policy",
+    requireAuth,
+    createGetFollowUpPolicyHandler(sql, logger)
+  );
+  app.put(
+    "/businesses/:businessId/follow-up/policy",
+    requireAuth,
+    createUpdateFollowUpPolicyHandler(sql, logger)
+  );
 
   app.get("/businesses/:businessId/follow-up/conversations", requireAuth, async (req, res) => {
     try {
@@ -306,12 +316,36 @@ function isValidPolicyRequest(request: Partial<UpsertBusinessFollowUpPolicyReque
   }
 
   return isValidOptionalBoolean(request.enabled) &&
-    isValidOptionalString(request.timezone) &&
+    isValidOptionalTimeZone(request.timezone) &&
     isValidOptionalNonNegativeNumber(request.delayMinutes) &&
     isValidOptionalHour(request.allowedStartHour) &&
     isValidOptionalHour(request.allowedEndHour) &&
     isValidOptionalNonNegativeNumber(request.maxFollowUps) &&
-    isValidOptionalNullableString(request.messageTemplate);
+    isValidOptionalNullableString(request.messageTemplate) &&
+    isValidOptionalBoolean(request.caseDocumentFollowUpEnabled) &&
+    isValidOptionalHour(request.caseDocumentFollowUpHour);
+}
+
+export function validateCaseDocumentFollowUpPolicy(
+  request: UpsertBusinessFollowUpPolicyRequestDto,
+  currentPolicy: BusinessFollowUpPolicyDto | null
+): string | null {
+  const timezone = request.timezone?.trim() || currentPolicy?.timezone || "UTC";
+  if (!isValidTimeZone(timezone)) {
+    return "Invalid IANA timezone";
+  }
+
+  const enabled = request.caseDocumentFollowUpEnabled
+    ?? currentPolicy?.caseDocumentFollowUpEnabled
+    ?? false;
+  const hour = request.caseDocumentFollowUpHour === undefined
+    ? currentPolicy?.caseDocumentFollowUpHour ?? null
+    : request.caseDocumentFollowUpHour;
+
+  if (enabled && hour === null) {
+    return "caseDocumentFollowUpHour is required when Case document follow-ups are enabled";
+  }
+  return null;
 }
 
 function isValidConversationFollowUpStateRequest(
@@ -371,8 +405,18 @@ function isValidOptionalBoolean(value?: boolean): boolean {
   return value === undefined || typeof value === "boolean";
 }
 
-function isValidOptionalString(value?: string): boolean {
-  return value === undefined || typeof value === "string";
+function isValidOptionalTimeZone(value?: string): boolean {
+  return value === undefined || (typeof value === "string" && isValidTimeZone(value.trim()));
+}
+
+export function isValidTimeZone(value: string): boolean {
+  if (!value) return false;
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isValidOptionalNullableString(value?: string | null): boolean {

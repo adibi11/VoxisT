@@ -52,7 +52,7 @@ export function getHumanTakeoverRoutes(
 
       const channel = conversation.channel as CommunicationChannel;
       const provider = conversation.provider as MessageProvider;
-      const from = await resolveFromAddress(sql, businessId, provider);
+      const from = await resolveFromAddress(sql, businessId, channel, provider);
 
       // Set the cancellation key before anything else so a bot reply that's
       // already in the outbound queue gets dropped rather than racing this.
@@ -155,7 +155,7 @@ export function getHumanTakeoverRoutes(
 
       const channel = CommunicationChannel.Whatsapp;
       const provider = MessageProvider.Twilio;
-      const from = await resolveFromAddress(sql, businessId, provider);
+      const from = await resolveFromAddress(sql, businessId, channel, provider);
 
       const conversation = await sql.createHumanConversation(client.id, businessId, authReq.auth.userId, channel, provider);
       await cache.setActiveConversationId(client.id, businessId, conversation.id);
@@ -202,8 +202,8 @@ function getMessageIdempotencyKey(req: express.Request, conversationId: number):
   return `business-member-${conversationId}-${requestKey}`;
 }
 
-async function resolveFromAddress(sql: IDatabaseClient, businessId: number, provider: MessageProvider): Promise<string> {
-  const resolved = await sql.businessChannelRepository.GetChannelForOutbound(businessId, provider);
+async function resolveFromAddress(sql: IDatabaseClient, businessId: number, channel: CommunicationChannel, provider: MessageProvider): Promise<string> {
+  const resolved = await sql.businessChannelRepository.GetChannelForOutbound(businessId, channel, provider);
   const from = resolved?.channel.externalPhoneNumberId;
   if (!from) {
     throw new Error(`No outbound channel configured for business ${businessId} provider ${provider}`);

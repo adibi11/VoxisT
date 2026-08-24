@@ -16,7 +16,7 @@ describe("CasePortalAccessRepository", () => {
       $transaction: async (operation: any) => operation(tx)
     } as any);
 
-    const result = await repository.createAccess(7, 20, "hashed-token", new Date(now.getTime() + 60_000), now);
+    const result = await repository.createAccess(7, 20, "hashed-token", "encrypted-token", new Date(now.getTime() + 60_000), now);
 
     expect(result.outcome).toBe("created");
     expect(tx.case.findFirst).toHaveBeenCalledWith({ where: { id: 20, businessId: 7 }, select: { id: true } });
@@ -25,7 +25,7 @@ describe("CasePortalAccessRepository", () => {
       data: { revokedAt: now }
     });
     expect(tx.casePortalAccess.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ caseId: 20, tokenHash: "hashed-token" })
+      data: expect.objectContaining({ caseId: 20, tokenHash: "hashed-token", tokenEncrypted: "encrypted-token" })
     }));
   });
 

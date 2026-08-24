@@ -16,6 +16,20 @@ type TwilioSendResponse = {
   error_message?: string | null;
 };
 
+export class TwilioProviderRejectedError extends Error {
+  constructor(readonly status: number, readonly providerCode?: string) {
+    super("Twilio rejected the message request");
+    this.name = "TwilioProviderRejectedError";
+  }
+}
+
+export class TwilioSendOutcomeUnknownError extends Error {
+  constructor() {
+    super("Twilio message submission outcome is unknown");
+    this.name = "TwilioSendOutcomeUnknownError";
+  }
+}
+
 export class TwilioMessageSender implements IMessageSender {
   private readonly accountSid: string;
   private readonly authToken: string;
@@ -38,13 +52,6 @@ export class TwilioMessageSender implements IMessageSender {
 
     const from = this.formatAddress(message.channel, message.from);
     const to = this.formatAddress(message.channel, message.to);
-    console.log({
-      accountSid: this.accountSid,
-      authTokenLength: this.authToken.length,
-      authTokenStart: this.authToken.slice(0, 4),
-      authTokenEnd: this.authToken.slice(-4),
-    });
-
     this.logger.info("twilio.message.send.requested", {
       channel: message.channel,
       provider: message.provider,
@@ -52,24 +59,27 @@ export class TwilioMessageSender implements IMessageSender {
       clientId: message.clientId,
       conversationId: message.conversationId,
       messageId: message.messageId,
-      from,
-      to,
       bodyLength: message.body.length
     });
 
 
-    const response = await fetch(this.messagesUrl(), {
-      method: "POST",
-      headers: {
-        Authorization: this.authHeader(),
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        From: from,
-        To: to,
-        Body: message.body
-      })
-    });
+    let response: Response;
+    try {
+      response = await fetch(this.messagesUrl(), {
+        method: "POST",
+        headers: {
+          Authorization: this.authHeader(),
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          From: from,
+          To: to,
+          Body: message.body
+        })
+      });
+    } catch {
+      throw new TwilioSendOutcomeUnknownError();
+    }
 
     const responseText = await response.text();
     const responseBody = this.parseResponse(responseText);
@@ -81,12 +91,14 @@ export class TwilioMessageSender implements IMessageSender {
         channel: message.channel,
         conversationId: message.conversationId,
         messageId: message.messageId,
-        twilioErrorCode: responseBody.error_code,
-        twilioErrorMessage: responseBody.error_message,
-        responseBody: responseText.slice(0, 1000)
+        twilioErrorCode: responseBody.error_code
       });
 
-      throw new Error(`Twilio message send failed with status ${response.status}`);
+      throw new TwilioProviderRejectedError(response.status, responseBody.error_code || undefined);
+    }
+
+    if (!responseBody.sid) {
+      throw new TwilioSendOutcomeUnknownError();
     }
 
     this.logger.info("twilio.message.send.succeeded", {

@@ -35,6 +35,17 @@ export type ResolvedPortalAccess = {
   case: PortalCaseRecord;
 };
 
+export type RecoverablePortalAccessRecord = {
+  id: number;
+  tokenHash: string;
+  tokenEncrypted: string | null;
+  expiresAt: Date;
+};
+
+export type FindActivePortalAccessResult =
+  | { outcome: "found"; access: RecoverablePortalAccessRecord | null }
+  | { outcome: "case_not_found" };
+
 export type CreatePortalAccessResult =
   | { outcome: "created"; access: { id: number; expiresAt: Date } }
   | { outcome: "case_not_found" };
@@ -44,7 +55,8 @@ export type RevokePortalAccessResult =
   | { outcome: "case_not_found" };
 
 export interface ICasePortalAccessRepository {
-  createAccess(businessId: number, caseId: number, tokenHash: string, expiresAt: Date, now: Date): Promise<CreatePortalAccessResult>;
+  createAccess(businessId: number, caseId: number, tokenHash: string, tokenEncrypted: string, expiresAt: Date, now: Date): Promise<CreatePortalAccessResult>;
+  findActiveAccessForCase(businessId: number, caseId: number, now: Date): Promise<FindActivePortalAccessResult>;
   resolveActiveAccess(tokenHash: string, now: Date): Promise<ResolvedPortalAccess | null>;
   revokeAccess(businessId: number, caseId: number, now: Date): Promise<RevokePortalAccessResult>;
 }

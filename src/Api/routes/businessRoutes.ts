@@ -5,7 +5,9 @@ import {
   BusinessChannelOnboardingTypeDto,
   BusinessChannelStatusDto,
   BusinessParameterTypeDto,
+  SmsSettingsDto,
   UpdateBusinessSettingsRequestDto,
+  UpdateSmsSettingsRequestDto,
   UpsertBusinessChannelRequestDto
 } from '../../contracts';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
@@ -43,6 +45,8 @@ const BUSINESS_PARAMETER_TYPES = new Set<BusinessParameterTypeDto>([
 ]);
 
 export function getBusinessRoutes(app:express.Router, sql: IDatabaseClient, logger: ILogger) {
+    app.get("/businesses/:businessId/sms-settings", requireAuth, createGetSmsSettingsHandler(sql, logger));
+    app.put("/businesses/:businessId/sms-settings", requireAuth, createUpdateSmsSettingsHandler(sql, logger));
     app.get("/businesses/:businessId/metrics/response-time", requireAuth, async (req, res) => {
       try {
         const authReq = req as AuthenticatedRequest;
@@ -245,6 +249,63 @@ export function getBusinessRoutes(app:express.Router, sql: IDatabaseClient, logg
       }
     });
     
+}
+
+export function createGetSmsSettingsHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = positiveBusinessId(req.params.businessId);
+    if (!businessId) return res.status(400).json({ message: "Invalid businessId" });
+    if (!requireBusinessOwner(authReq, res, businessId)) return;
+    try {
+      const settings: SmsSettingsDto = await sql.businessChannelRepository.GetSmsSettings(businessId);
+      logger.info("business.sms_settings.fetch.succeeded", { userId: authReq.auth.userId, businessId });
+      return res.status(200).json(settings);
+    } catch (error) {
+      logger.error("business.sms_settings.fetch.failed", { error, businessId });
+      return res.status(500).json({ message: "Failed to fetch SMS settings" });
+    }
+  };
+}
+
+export function createUpdateSmsSettingsHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = positiveBusinessId(req.params.businessId);
+    if (!businessId) return res.status(400).json({ message: "Invalid businessId" });
+    if (!requireBusinessOwner(authReq, res, businessId)) return;
+    const request = req.body as Partial<UpdateSmsSettingsRequestDto> | undefined;
+    if (!isValidSmsSettingsRequest(request)) {
+      return res.status(400).json({ message: "Invalid SMS settings request" });
+    }
+    try {
+      const settings = await sql.businessChannelRepository.UpdateSmsSettings(businessId, request);
+      logger.info("business.sms_settings.update.succeeded", {
+        userId: authReq.auth.userId,
+        businessId,
+        enabled: settings.enabled
+      });
+      return res.status(200).json(settings);
+    } catch (error) {
+      logger.error("business.sms_settings.update.failed", { error, businessId });
+      return res.status(500).json({ message: "Failed to update SMS settings" });
+    }
+  };
+}
+
+export function isValidSmsSettingsRequest(
+  request: Partial<UpdateSmsSettingsRequestDto> | undefined
+): request is UpdateSmsSettingsRequestDto {
+  if (!request || typeof request.enabled !== "boolean") return false;
+  if (request.senderId !== null && typeof request.senderId !== "string") return false;
+  const senderId = request.senderId?.trim() || null;
+  if (request.enabled && !senderId) return false;
+  return senderId === null || /^[A-Za-z][A-Za-z0-9]{2,10}$/.test(senderId);
+}
+
+function positiveBusinessId(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function parseOptionalDateQuery(value: unknown): Date | null {

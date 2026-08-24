@@ -284,7 +284,7 @@ function isValidTwilioMessage(event: Partial<twillioMessage> | undefined): event
 
 
 function getAllowedOrigins(): string[] {
-  return (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8081,https://voxistudio.com,https://www.voxistudio.com")
+  return (process.env.CORS_ORIGINS || "http://localhost:3003,http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8081,https://voxistudio.com,https://www.voxistudio.com")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);

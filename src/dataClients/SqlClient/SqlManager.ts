@@ -54,6 +54,8 @@ import { DocumentBundleRepository } from "./Repositories/DocumentBundleRepo/Docu
 import { IDocumentBundleRepository } from "./Repositories/DocumentBundleRepo/IDocumentBundleRepository";
 import { CasePortalAccessRepository } from "./Repositories/CasePortalAccessRepo/CasePortalAccessRepository";
 import { ICasePortalAccessRepository } from "./Repositories/CasePortalAccessRepo/ICasePortalAccessRepository";
+import { CaseFollowUpRepository } from "./Repositories/CaseFollowUpRepo/CaseFollowUpRepository";
+import { ICaseFollowUpRepository } from "./Repositories/CaseFollowUpRepo/ICaseFollowUpRepository";
 
 import { DocumentRepository } from "./Repositories/DocumentRepo/DocumentRepository";
 import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
@@ -110,6 +112,7 @@ export class SqlManager implements IDatabaseClient {
     readonly schemaRepository: ISchemaRepository;
     readonly caseRepository: ICaseRepository;
     readonly casePortalAccessRepository: ICasePortalAccessRepository;
+    readonly caseFollowUpRepository: ICaseFollowUpRepository;
     readonly documentBundleRepository: IDocumentBundleRepository;
     
     readonly documentRepository: IDocumentRepository;
@@ -135,6 +138,7 @@ export class SqlManager implements IDatabaseClient {
         this.schemaRepository = new SchemaRepository(this.prisma);
         this.caseRepository = new CaseRepository(this.prisma);
         this.casePortalAccessRepository = new CasePortalAccessRepository(this.prisma);
+        this.caseFollowUpRepository = new CaseFollowUpRepository(this.prisma);
         this.documentBundleRepository = new DocumentBundleRepository(this.prisma);
         
         this.documentRepository = new DocumentRepository(this.prisma);

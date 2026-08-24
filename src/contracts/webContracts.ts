@@ -121,6 +121,13 @@ export type UpsertBusinessChannelRequestDto = {
   credentials?: BusinessChannelCredentialsDto | null;
 };
 
+export type SmsSettingsDto = {
+  enabled: boolean;
+  senderId: string | null;
+};
+
+export type UpdateSmsSettingsRequestDto = SmsSettingsDto;
+
 export type UpdateBusinessSettingsParameterDto = {
   id?: number;
   paramName: string;
@@ -348,6 +355,8 @@ export type BusinessFollowUpPolicyDto = {
   allowedEndHour?: number | null;
   maxFollowUps: number;
   messageTemplate?: string | null;
+  caseDocumentFollowUpEnabled: boolean;
+  caseDocumentFollowUpHour: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -360,6 +369,8 @@ export type UpsertBusinessFollowUpPolicyRequestDto = {
   allowedEndHour?: number | null;
   maxFollowUps?: number;
   messageTemplate?: string | null;
+  caseDocumentFollowUpEnabled?: boolean;
+  caseDocumentFollowUpHour?: number | null;
 };
 
 export type ConversationFollowUpStateDto = {

@@ -1,6 +1,8 @@
 import {
     BusinessChannelCredentialsDto,
     BusinessChannelDto,
+    SmsSettingsDto,
+    UpdateSmsSettingsRequestDto,
     UpsertBusinessChannelRequestDto
 } from "../../../../contracts";
 
@@ -15,13 +17,15 @@ export type ResolvedBusinessChannel = {
 export interface IBusinessChannelRepository {
     GetChannelsByBusinessId(businessId: number): Promise<BusinessChannelDto[]>;
     UpsertChannelByBusinessId(businessId: number, channelDto: UpsertBusinessChannelRequestDto): Promise<BusinessChannelDto>;
+    GetSmsSettings(businessId: number): Promise<SmsSettingsDto>;
+    UpdateSmsSettings(businessId: number, settings: UpdateSmsSettingsRequestDto): Promise<SmsSettingsDto>;
     // Inbound: match the webhook's receiving address ("To") to a channel to
     // learn which business the message belongs to and which auth secret
     // signs the request. provider is optional because the address alone is
     // globally unique per provider network.
     GetChannelForInbound(provider: string, receivingAddress: string): Promise<ResolvedBusinessChannel | null>;
-    // Outbound: pick the sending credentials for a business+provider,
-    // preferring the channel whose number matches the "from" address, then
+    // Outbound: pick the sending credentials for a business+channel+provider.
+    // SMS must be active. For usable candidates, prefer the channel whose number matches the "from" address, then
     // the default channel, then the first usable one.
-    GetChannelForOutbound(businessId: number, provider: string, fromAddress?: string): Promise<ResolvedBusinessChannel | null>;
+    GetChannelForOutbound(businessId: number, channel: string, provider: string, fromAddress?: string): Promise<ResolvedBusinessChannel | null>;
 }

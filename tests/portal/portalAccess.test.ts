@@ -6,6 +6,7 @@ import {
 } from "../../src/Api/routes/portalRoutes";
 import {
   CreatePortalAccessResult,
+  FindActivePortalAccessResult,
   ICasePortalAccessRepository,
   PortalCaseRecord,
   ResolvedPortalAccess,
@@ -20,6 +21,10 @@ const TOKEN_A = "a".repeat(43);
 const TOKEN_B = "b".repeat(43);
 const HASH_A = hashPortalAccessToken(TOKEN_A);
 const HASH_B = hashPortalAccessToken(TOKEN_B);
+const TEST_CIPHER = {
+  encrypt: (token: string) => Buffer.from(token).toString("base64"),
+  decrypt: (value: string) => Buffer.from(value, "base64").toString()
+};
 
 function portalCase(caseId: number, requirementId: number, documentId: number): PortalCaseRecord {
   return {
@@ -63,16 +68,21 @@ function portalCase(caseId: number, requirementId: number, documentId: number): 
 
 class MemoryPortalRepository implements ICasePortalAccessRepository {
   readonly accesses = new Map<string, ResolvedPortalAccess & { revokedAt: Date | null }>();
-  createInput: { tokenHash: string; caseId: number } | null = null;
+  createInput: { tokenHash: string; tokenEncrypted: string; caseId: number } | null = null;
 
   async createAccess(
     _businessId: number,
     caseId: number,
     tokenHash: string,
+    tokenEncrypted: string,
     expiresAt: Date
   ): Promise<CreatePortalAccessResult> {
-    this.createInput = { tokenHash, caseId };
+    this.createInput = { tokenHash, tokenEncrypted, caseId };
     return { outcome: "created", access: { id: 1, expiresAt } };
+  }
+
+  async findActiveAccessForCase(_businessId: number, _caseId: number, _now: Date): Promise<FindActivePortalAccessResult> {
+    return { outcome: "found", access: null };
   }
 
   async resolveActiveAccess(tokenHash: string, now: Date): Promise<ResolvedPortalAccess | null> {
@@ -112,10 +122,10 @@ function response() {
 describe("portal access lifecycle", () => {
   it("stores only the token hash and resolves the correct Case", async () => {
     const repository = new MemoryPortalRepository();
-    const service = new PortalAccessService(repository, () => NOW, () => TOKEN_A);
+    const service = new PortalAccessService(repository, () => NOW, () => TOKEN_A, TEST_CIPHER);
     const created = await service.createAccess(7, 20);
     expect(created?.accessToken).toBe(TOKEN_A);
-    expect(repository.createInput).toEqual({ tokenHash: HASH_A, caseId: 20 });
+    expect(repository.createInput).toEqual({ tokenHash: HASH_A, tokenEncrypted: TEST_CIPHER.encrypt(TOKEN_A), caseId: 20 });
     expect(JSON.stringify(repository.createInput)).not.toContain(TOKEN_A);
 
     repository.accesses.set(HASH_A, accessFor(HASH_A, portalCase(20, 101, 501)));

@@ -89,6 +89,7 @@ model Business {
   schemas                Schema[]
   documentTypes          DocumentType[]
   documentBundles        DocumentBundle[]
+  caseFollowUps          CaseFollowUp[]
 }
 
 model MetaLeadFormSubscription {
@@ -288,8 +289,10 @@ model BusinessFollowUpPolicy {
   delayMinutes     Int      @default(1440)
   allowedStartHour Int?
   allowedEndHour   Int?
-  maxFollowUps     Int      @default(1)
-  messageTemplate  String?
+  maxFollowUps                Int      @default(1)
+  messageTemplate             String?
+  caseDocumentFollowUpEnabled Boolean  @default(false)
+  caseDocumentFollowUpHour    Int?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   business         Business @relation(fields: [businessId], references: [id])
@@ -379,6 +382,7 @@ model Case {
   documentSpecifications CaseDocumentSpecification[]
   comments               CaseComment[]
   portalAccesses         CasePortalAccess[]
+  followUps              CaseFollowUp[]
 
   // The service layer must ensure the lead and assignee belong to businessId.
   @@index([businessId, status, updatedAt])
@@ -390,6 +394,7 @@ model CasePortalAccess {
   id             Int       @id @default(autoincrement())
   caseId         Int
   tokenHash      String    @unique
+  tokenEncrypted String?
   expiresAt      DateTime
   revokedAt      DateTime?
   createdAt      DateTime  @default(now())
@@ -399,6 +404,29 @@ model CasePortalAccess {
 
   @@index([caseId, revokedAt])
   @@index([expiresAt])
+}
+
+model CaseFollowUp {
+  id                Int                @id @default(autoincrement())
+  businessId        Int
+  caseId            Int
+  status            CaseFollowUpStatus @default(PENDING)
+  scheduledFor      DateTime
+  attemptCount      Int                @default(0)
+  providerMessageId String?
+  acceptedAt        DateTime?
+  failureCode       String?
+  failureReason     String?
+  cadenceKey        String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id])
+  case     Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, cadenceKey])
+  @@index([businessId, status, scheduledFor])
+  @@index([caseId, createdAt])
 }
 
 model CaseComment {
@@ -1153,6 +1181,14 @@ enum CaseStatus {
   IN_REVIEW
   NEEDS_ATTENTION
   COMPLETED
+}
+
+enum CaseFollowUpStatus {
+  PENDING
+  PROCESSING
+  ACCEPTED
+  FAILED
+  SKIPPED
 }
 
 enum DocumentStatus {

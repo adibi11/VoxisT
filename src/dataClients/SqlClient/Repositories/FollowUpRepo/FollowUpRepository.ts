@@ -192,7 +192,9 @@ export class FollowUpRepository implements IFollowUpRepository {
                 allowedStartHour: data.allowedStartHour,
                 allowedEndHour: data.allowedEndHour,
                 maxFollowUps: data.maxFollowUps ?? 1,
-                messageTemplate: data.messageTemplate
+                messageTemplate: data.messageTemplate,
+                caseDocumentFollowUpEnabled: data.caseDocumentFollowUpEnabled ?? false,
+                caseDocumentFollowUpHour: data.caseDocumentFollowUpHour
             },
             update: data
         });
@@ -330,6 +332,8 @@ type PrismaPolicyForDto = {
     allowedEndHour: number | null;
     maxFollowUps: number;
     messageTemplate: string | null;
+    caseDocumentFollowUpEnabled: boolean;
+    caseDocumentFollowUpHour: number | null;
     createdAt: Date;
     updatedAt: Date;
 };
@@ -553,6 +557,8 @@ function mapPolicy(policy: PrismaPolicyForDto): BusinessFollowUpPolicyDto {
         allowedEndHour: policy.allowedEndHour,
         maxFollowUps: policy.maxFollowUps,
         messageTemplate: policy.messageTemplate,
+        caseDocumentFollowUpEnabled: policy.caseDocumentFollowUpEnabled,
+        caseDocumentFollowUpHour: policy.caseDocumentFollowUpHour,
         createdAt: policy.createdAt.toISOString(),
         updatedAt: policy.updatedAt.toISOString()
     };
@@ -600,6 +606,8 @@ type PolicyUpdateValues = {
     allowedEndHour?: number | null;
     maxFollowUps?: number;
     messageTemplate?: string | null;
+    caseDocumentFollowUpEnabled?: boolean;
+    caseDocumentFollowUpHour?: number | null;
 };
 
 function mapPolicyUpdateInput(request: UpsertBusinessFollowUpPolicyRequestDto): PolicyUpdateValues {
@@ -610,7 +618,11 @@ function mapPolicyUpdateInput(request: UpsertBusinessFollowUpPolicyRequestDto): 
         allowedStartHour: request.allowedStartHour === undefined ? undefined : request.allowedStartHour,
         allowedEndHour: request.allowedEndHour === undefined ? undefined : request.allowedEndHour,
         maxFollowUps: request.maxFollowUps,
-        messageTemplate: request.messageTemplate === undefined ? undefined : normalizeNullableString(request.messageTemplate)
+        messageTemplate: request.messageTemplate === undefined ? undefined : normalizeNullableString(request.messageTemplate),
+        caseDocumentFollowUpEnabled: request.caseDocumentFollowUpEnabled,
+        caseDocumentFollowUpHour: request.caseDocumentFollowUpHour === undefined
+            ? undefined
+            : request.caseDocumentFollowUpHour
     };
 }
 

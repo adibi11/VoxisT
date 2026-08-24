@@ -7,8 +7,8 @@ export type OutboundMessage = {
   to: string;
   body: string;
   businessId: number;
-  clientId: number;
-  conversationId: number;
+  clientId?: number;
+  conversationId?: number;
   messageId?: number;
 };
 

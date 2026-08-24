@@ -16,6 +16,7 @@ export function getBusinessParameterRoutes(app: express.Router, sql: IDatabaseCl
       }
       if (!requireBusinessOwner(authReq, res, businessId)) return;
 
+      
       const request = req.body as Partial<UpsertBusinessParameterRequestDto>;
       if (!isValidRequest(request)) {
         return res.status(400).json({ message: "Invalid business parameter request" });

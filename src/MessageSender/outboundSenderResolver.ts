@@ -23,6 +23,7 @@ export class OutboundSenderResolver {
   async resolveSender(message: OutboundMessage): Promise<IMessageSender> {
     const resolved = await this.channelRepository.GetChannelForOutbound(
       message.businessId,
+      message.channel,
       message.provider,
       message.from
     );

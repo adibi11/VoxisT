@@ -3,7 +3,9 @@ import {
     BusinessChannelCredentialsDto,
     BusinessChannelDto,
     BusinessChannelOnboardingTypeDto,
+    SmsSettingsDto,
     BusinessChannelStatusDto,
+    UpdateSmsSettingsRequestDto,
     UpsertBusinessChannelRequestDto
 } from "../../../../contracts";
 import { decryptIntegrationSecret, encryptIntegrationSecret } from "../../../../LeadIngestion/integrationSecret";
@@ -75,6 +77,22 @@ export class BusinessChannelRepository implements IBusinessChannelRepository {
         return mapPrismaBusinessChannelToDto(channel);
     }
 
+    async GetSmsSettings(businessId: number): Promise<SmsSettingsDto> {
+        const channel = await this.prisma.businessChannel.findUnique({
+            where: { businessId_channel_provider: { businessId, channel: "sms", provider: "twilio" } }
+        });
+        return { enabled: channel?.status === "active", senderId: channel?.externalPhoneNumberId ?? null };
+    }
+
+    async UpdateSmsSettings(businessId: number, settings: UpdateSmsSettingsRequestDto): Promise<SmsSettingsDto> {
+        const channel = await this.prisma.businessChannel.upsert({
+            where: { businessId_channel_provider: { businessId, channel: "sms", provider: "twilio" } },
+            create: { businessId, channel: "sms", provider: "twilio", status: settings.enabled ? "active" : "disabled", onboardingType: "manual", externalPhoneNumberId: normalizeNullableString(settings.senderId) },
+            update: { status: settings.enabled ? "active" : "disabled", externalPhoneNumberId: normalizeNullableString(settings.senderId) }
+        });
+        return { enabled: channel.status === "active", senderId: channel.externalPhoneNumberId };
+    }
+
     async GetChannelForInbound(provider: string, receivingAddress: string): Promise<ResolvedBusinessChannel | null> {
         const targetDigits = normalizePhoneDigits(receivingAddress);
         if (!targetDigits) {
@@ -99,14 +117,16 @@ export class BusinessChannelRepository implements IBusinessChannelRepository {
 
     async GetChannelForOutbound(
         businessId: number,
+        channel: string,
         provider: string,
         fromAddress?: string
     ): Promise<ResolvedBusinessChannel | null> {
         const candidates = await this.prisma.businessChannel.findMany({
             where: {
                 businessId,
+                channel,
                 provider,
-                status: { notIn: UNUSABLE_CHANNEL_STATUSES }
+                status: channel === "sms" ? "active" : { notIn: UNUSABLE_CHANNEL_STATUSES }
             },
             orderBy: { id: "asc" }
         });

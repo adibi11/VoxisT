@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from "../../../../generated/prisma/client";
 import {
   CreatePortalAccessResult,
   ICasePortalAccessRepository,
+  FindActivePortalAccessResult,
   PortalCaseRecord,
   ResolvedPortalAccess,
   RevokePortalAccessResult
@@ -35,6 +36,7 @@ export class CasePortalAccessRepository implements ICasePortalAccessRepository {
     businessId: number,
     caseId: number,
     tokenHash: string,
+    tokenEncrypted: string,
     expiresAt: Date,
     now: Date
   ): Promise<CreatePortalAccessResult> {
@@ -50,11 +52,30 @@ export class CasePortalAccessRepository implements ICasePortalAccessRepository {
         data: { revokedAt: now }
       });
       const access = await tx.casePortalAccess.create({
-        data: { caseId, tokenHash, expiresAt },
+        data: { caseId, tokenHash, tokenEncrypted, expiresAt },
         select: { id: true, expiresAt: true }
       });
       return { outcome: "created", access };
     });
+  }
+
+  async findActiveAccessForCase(
+    businessId: number,
+    caseId: number,
+    now: Date
+  ): Promise<FindActivePortalAccessResult> {
+    const accessibleCase = await this.prisma.case.findFirst({
+      where: { id: caseId, businessId },
+      select: { id: true }
+    });
+    if (!accessibleCase) return { outcome: "case_not_found" };
+
+    const access = await this.prisma.casePortalAccess.findFirst({
+      where: { caseId, revokedAt: null, expiresAt: { gt: now } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { id: true, tokenHash: true, tokenEncrypted: true, expiresAt: true }
+    });
+    return { outcome: "found", access };
   }
 
   async resolveActiveAccess(tokenHash: string, now: Date): Promise<ResolvedPortalAccess | null> {

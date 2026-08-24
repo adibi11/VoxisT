@@ -351,6 +351,23 @@ export class FakeSqlManager implements IDatabaseClient {
     return this.toBusinessChannelDto(channel);
   }
 
+  async GetSmsSettings(businessId: number) {
+    const channel = [...this.businessChannels.values()].find((item) =>
+      item.businessId === businessId && item.channel === "sms" && item.provider === "twilio"
+    );
+    return { enabled: channel?.status === "active", senderId: channel?.externalPhoneNumberId ?? null };
+  }
+
+  async UpdateSmsSettings(businessId: number, settings: { enabled: boolean; senderId: string | null }) {
+    await this.UpsertChannelByBusinessId(businessId, {
+      channel: "sms",
+      provider: "twilio",
+      status: settings.enabled ? "active" : "disabled",
+      externalPhoneNumberId: settings.senderId
+    });
+    return { enabled: settings.enabled, senderId: settings.senderId };
+  }
+
   async GetChannelForInbound(provider: string, receivingAddress: string): Promise<ResolvedBusinessChannel | null> {
     const targetDigits = normalizePhoneDigits(receivingAddress);
     if (!targetDigits) {
@@ -371,14 +388,16 @@ export class FakeSqlManager implements IDatabaseClient {
 
   async GetChannelForOutbound(
     businessId: number,
+    communicationChannel: string,
     provider: string,
     fromAddress?: string
   ): Promise<ResolvedBusinessChannel | null> {
     const candidates = [...this.businessChannels.values()]
       .filter((channel) =>
         channel.businessId === businessId &&
+        channel.channel === communicationChannel &&
         channel.provider === provider &&
-        !["disabled", "failed"].includes(channel.status)
+        (communicationChannel === "sms" ? channel.status === "active" : !["disabled", "failed"].includes(channel.status))
       )
       .sort((left, right) => left.id - right.id);
 
@@ -1080,6 +1099,10 @@ export class FakeSqlManager implements IDatabaseClient {
       allowedEndHour: request.allowedEndHour === undefined ? existingPolicy?.allowedEndHour ?? null : request.allowedEndHour,
       maxFollowUps: request.maxFollowUps ?? existingPolicy?.maxFollowUps ?? 1,
       messageTemplate: request.messageTemplate === undefined ? existingPolicy?.messageTemplate ?? null : this.normalizeNullableString(request.messageTemplate),
+      caseDocumentFollowUpEnabled: request.caseDocumentFollowUpEnabled ?? existingPolicy?.caseDocumentFollowUpEnabled ?? false,
+      caseDocumentFollowUpHour: request.caseDocumentFollowUpHour === undefined
+        ? existingPolicy?.caseDocumentFollowUpHour ?? null
+        : request.caseDocumentFollowUpHour,
       createdAt: existingPolicy?.createdAt || now,
       updatedAt: now
     };

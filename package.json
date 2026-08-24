@@ -26,7 +26,11 @@
     "start:outbound": "node dist/Workers/OutboundMessageWorker/worker.js",
     "start:followUp": "node dist/Workers/FollowUpSchedulerWorker/worker.js",
     "s3-document-upload-worker": "ts-node src/Workers/S3DocumentUploadWorker/worker.ts",
-    "start:s3-document-upload-worker": "node dist/Workers/S3DocumentUploadWorker/worker.js"
+    "start:s3-document-upload-worker": "node dist/Workers/S3DocumentUploadWorker/worker.js",
+    "case-follow-up-scheduler": "ts-node src/Workers/CaseFollowUpSchedulerWorker/worker.ts",
+    "start:case-follow-up-scheduler": "node dist/Workers/CaseFollowUpSchedulerWorker/worker.js",
+    "case-follow-up-worker": "ts-node src/Workers/CaseFollowUpWorker/worker.ts",
+    "start:case-follow-up-worker": "node dist/Workers/CaseFollowUpWorker/worker.js"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
