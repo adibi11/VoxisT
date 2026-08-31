@@ -1,11 +1,16 @@
 export type DocumentFieldType = "TEXT" | "NUMBER" | "CURRENCY" | "DATE" | "BOOLEAN";
 export type DocumentFieldStatus = "EXTRACTED" | "MISSING" | "NEEDS_REVIEW";
+export type DocumentFieldExample = string | number | boolean;
 
 export type DocumentExtractionField = {
   id: string;
   label: string;
   type: DocumentFieldType;
   required: boolean;
+  description?: string;
+  aliases?: string[];
+  formatHint?: string;
+  examples?: DocumentFieldExample[];
 };
 
 export type DocumentExtractionSchema = {
@@ -29,5 +34,6 @@ export type DocumentVisionInput = {
   bytes: Uint8Array;
   filename: string;
   mimeType: "application/pdf" | "image/jpeg" | "image/png";
+  language: import("./Vision/DocumentVisionPrompts").DocumentLanguage;
 };
 

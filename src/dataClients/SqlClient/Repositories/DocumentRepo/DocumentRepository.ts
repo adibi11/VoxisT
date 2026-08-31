@@ -80,6 +80,7 @@ export class DocumentRepository implements IDocumentRepository {
           storageKey: true,
           filename: true,
           mimeType: true,
+          case: { select: { business: { select: { language: true } } } },
           schema: {
             select: {
               name: true,
@@ -89,15 +90,16 @@ export class DocumentRepository implements IDocumentRepository {
           }
         }
       });
-      if (!document?.schema) throw new Error("Processing Document has no Schema");
+      if (!document) throw new Error("Claimed Document could not be loaded");
       return {
         id: document.id,
         storageKey: document.storageKey,
         filename: document.filename,
         mimeType: document.mimeType,
-        schemaName: document.schema.name,
-        documentTypeName: document.schema.documentType.name,
-        requirementSchema: document.schema.requirementSchema
+        businessLanguage: document.case.business.language,
+        schemaName: document.schema?.name ?? null,
+        documentTypeName: document.schema?.documentType.name ?? null,
+        requirementSchema: document.schema?.requirementSchema ?? null
       };
     });
   }
@@ -117,6 +119,11 @@ export class DocumentRepository implements IDocumentRepository {
     return result.count === 1;
   }
 
+  async completeUnknownProcessing(documentId: number): Promise<boolean> {
+    const result = await this.prisma.document.updateMany({ where: { id: documentId, status: "PROCESSING", schemaId: null, documentTypeId: null, caseDocumentSpecificationId: null }, data: { status: "NEEDS_REVIEW" } });
+    return result.count === 1;
+  }
+
   async markProcessingFailed(documentId: number): Promise<boolean> {
     const result = await this.prisma.document.updateMany({
       where: { id: documentId, status: "PROCESSING" },
@@ -124,5 +131,30 @@ export class DocumentRepository implements IDocumentRepository {
     });
     return result.count === 1;
   }
+
+  async verifyNeedsReviewDocument(
+    businessId: number,
+    caseId: number,
+    documentId: number
+  ): Promise<"verified" | "not_found" | "not_reviewable"> {
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, caseId, case: { businessId } },
+      select: { status: true }
+    });
+    if (!document) return "not_found";
+    if (document.status !== "NEEDS_REVIEW") return "not_reviewable";
+
+    const updated = await this.prisma.document.updateMany({
+      where: {
+        id: documentId,
+        caseId,
+        case: { businessId },
+        status: "NEEDS_REVIEW"
+      },
+      data: { status: "VERIFIED" }
+    });
+    return updated.count === 1 ? "verified" : "not_reviewable";
+  }
 }
+
 

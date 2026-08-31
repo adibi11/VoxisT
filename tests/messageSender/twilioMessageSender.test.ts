@@ -55,6 +55,30 @@ describe("TwilioMessageSender", () => {
     expect(logs).not.toContain("Open your secure portal");
   });
 
+  it("sends SMS through a Messaging Service without a From parameter", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, status: 201, statusText: "Created",
+      text: async () => JSON.stringify({ sid: "SM125", status: "queued" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const sender = new TwilioMessageSender({
+      accountSid: "AC123",
+      authToken: "token",
+      baseUrl: "https://twilio.test",
+      logger: new CaptureLogger()
+    });
+
+    await sender.sendMessage({
+      ...base,
+      channel: CommunicationChannel.Sms,
+      messagingServiceSid: "MG123",
+      to: "+972501234567"
+    });
+
+    const body = new URLSearchParams(fetchMock.mock.calls[0][1].body);
+    expect(body.get("MessagingServiceSid")).toBe("MG123");
+    expect(body.has("From")).toBe(false);
+  });
   it("preserves existing WhatsApp address formatting", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true, status: 201, statusText: "Created",

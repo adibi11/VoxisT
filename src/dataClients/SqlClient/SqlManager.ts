@@ -59,6 +59,8 @@ import { ICaseFollowUpRepository } from "./Repositories/CaseFollowUpRepo/ICaseFo
 
 import { DocumentRepository } from "./Repositories/DocumentRepo/DocumentRepository";
 import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
+import { InboundEmailRepository } from "./Repositories/InboundEmailRepo/InboundEmailRepository";
+import { IInboundEmailRepository } from "./Repositories/InboundEmailRepo/IInboundEmailRepository";
 import { ConversationState } from "../Types/stateMachineTypes";
 import { ILogger, logger } from "../../logging/logger";
 import {
@@ -116,6 +118,7 @@ export class SqlManager implements IDatabaseClient {
     readonly documentBundleRepository: IDocumentBundleRepository;
     
     readonly documentRepository: IDocumentRepository;
+    readonly inboundEmailRepository: IInboundEmailRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;
     readonly instagramRepository: IInstagramRepository;
 
@@ -142,6 +145,7 @@ export class SqlManager implements IDatabaseClient {
         this.documentBundleRepository = new DocumentBundleRepository(this.prisma);
         
         this.documentRepository = new DocumentRepository(this.prisma);
+        this.inboundEmailRepository = new InboundEmailRepository(this.prisma);
         this.pushDeviceRepository = new PushDeviceRepository(this.prisma);
         this.instagramRepository = new InstagramRepository(this.prisma);
     }   

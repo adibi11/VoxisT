@@ -11,7 +11,9 @@ import { ILogger } from "../../logging/logger";
 import { DocumentUploadService, isValidDocumentUploadRequest } from "../../Documents/DocumentUploadService";
 import { IDocumentStorage } from "../../Storage/DocumentStorage/IDocumentStorage";
 import { S3DocumentStorage, documentStorageConfigFromEnv } from "../../Storage/DocumentStorage/S3DocumentStorage";
-import { AuthenticatedRequest, requireAuth, requireBusinessAccess } from "../authMiddleware";
+import { CaseInboundEmailService } from "../../InboundEmail/CaseInboundEmailService";
+import { inboundEmailDomainFromEnv } from "../../InboundEmail/InboundEmailConfig";
+import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requirePlatformAdmin } from "../authMiddleware";
 
 export function getCaseRoutes(
   app: express.Router,
@@ -19,6 +21,53 @@ export function getCaseRoutes(
   logger: ILogger,
   documentStorage?: IDocumentStorage
 ) {
+  app.post("/admin/cases/document-types", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!requirePlatformAdmin(authReq, res)) return;
+    const request = req.body as Partial<CreateBusinessDocumentTypeRequestDto>;
+    if (!isValidCreateBusinessDocumentTypeRequest(request)) {
+      return res.status(400).json({ code: "VALIDATION_ERROR", message: "Invalid system document type request" });
+    }
+    try {
+      const documentType = await sql.schemaRepository.createSystemDocumentType({
+        name: request.name.trim(),
+        category: request.category?.trim() || null
+      });
+      logger.info("admin.case.document_type.create.succeeded", {
+        userId: authReq.auth.userId,
+        documentTypeId: documentType.id
+      });
+      return res.status(201).json(documentType);
+    } catch (error) {
+      logger.error("admin.case.document_type.create.failed", { error });
+      return res.status(500).json({ message: "Failed to create system document type" });
+    }
+  });
+
+  app.post("/admin/cases/schemas", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!requirePlatformAdmin(authReq, res)) return;
+    const request = req.body as Partial<CreateBusinessSchemaRequestDto>;
+    if (!isValidCreateBusinessSchemaRequest(request)) {
+      return res.status(400).json({ code: "VALIDATION_ERROR", message: "Invalid system schema request" });
+    }
+    try {
+      const schema = await sql.schemaRepository.createSystemSchema(request);
+      if (!schema) {
+        return res.status(404).json({ code: "NOT_FOUND", message: "System DocumentType not found" });
+      }
+      logger.info("admin.case.schema.create.succeeded", {
+        userId: authReq.auth.userId,
+        schemaId: schema.id,
+        documentTypeId: request.documentTypeId
+      });
+      return res.status(201).json(schema);
+    } catch (error) {
+      logger.error("admin.case.schema.create.failed", { error });
+      return res.status(500).json({ message: "Failed to create system schema" });
+    }
+  });
+
   app.post("/cases", requireAuth, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const businessId = authenticatedBusinessId(authReq, res);
@@ -177,6 +226,24 @@ export function getCaseRoutes(
     } catch (error) {
       logger.error("case.schema.create.failed", { error, businessId });
       return res.status(500).json({ message: "Failed to create custom schema" });
+    }
+  });
+
+  app.put("/cases/:caseId/inbound-email-address", requireAuth, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = authenticatedBusinessId(authReq, res);
+    const caseId = Number(req.params.caseId);
+    if (!businessId) return;
+    if (!positiveId(caseId)) return res.status(400).json({ code: "VALIDATION_ERROR", message: "Invalid caseId" });
+    try {
+      const service = new CaseInboundEmailService(sql.inboundEmailRepository, inboundEmailDomainFromEnv());
+      const emailAddress = await service.getOrCreateAddress(businessId, caseId);
+      if (!emailAddress) return res.status(404).json({ code: "NOT_FOUND", message: "Case not found" });
+      logger.info("case.inbound_email.created", { userId: authReq.auth.userId, businessId, caseId });
+      return res.status(200).json({ emailAddress });
+    } catch (error) {
+      logger.error("case.inbound_email.create.failed", { error, businessId, caseId });
+      return res.status(500).json({ message: "Failed to create inbound email address" });
     }
   });
 

@@ -50,7 +50,7 @@ export class TwilioMessageSender implements IMessageSender {
   async sendMessage(message: OutboundMessage): Promise<SendMessageResult> {
     this.validateMessage(message);
 
-    const from = this.formatAddress(message.channel, message.from);
+    const from = message.from ? this.formatAddress(message.channel, message.from) : undefined;
     const to = this.formatAddress(message.channel, message.to);
     this.logger.info("twilio.message.send.requested", {
       channel: message.channel,
@@ -72,7 +72,9 @@ export class TwilioMessageSender implements IMessageSender {
           "Content-Type": "application/x-www-form-urlencoded"
         },
         body: new URLSearchParams({
-          From: from,
+          ...(message.messagingServiceSid
+            ? { MessagingServiceSid: message.messagingServiceSid }
+            : { From: from! }),
           To: to,
           Body: message.body
         })
@@ -126,8 +128,17 @@ export class TwilioMessageSender implements IMessageSender {
       throw new Error(`TwilioMessageSender does not support channel ${message.channel}`);
     }
 
-    if (!message.from || !message.to || !message.body) {
-      throw new Error("TwilioMessageSender requires from, to, and body");
+    if (!message.to || !message.body) {
+      throw new Error("TwilioMessageSender requires to and body");
+    }
+    if (message.channel === CommunicationChannel.Whatsapp && !message.from) {
+      throw new Error("TwilioMessageSender requires from for WhatsApp");
+    }
+    if (message.channel === CommunicationChannel.Sms && !message.from && !message.messagingServiceSid) {
+      throw new Error("TwilioMessageSender requires from or messagingServiceSid for SMS");
+    }
+    if (message.from && message.messagingServiceSid) {
+      throw new Error("TwilioMessageSender accepts either from or messagingServiceSid, not both");
     }
   }
 

@@ -14,11 +14,26 @@ export type ResolvedBusinessChannel = {
     credentials: BusinessChannelCredentialsDto | null;
 };
 
+export type SmsProviderConfiguration = SmsSettingsDto & {
+    messagingServiceSid: string | null;
+    alphaSenderSid: string | null;
+};
+
+export type PersistSmsProviderResources = {
+    messagingServiceSid: string;
+    alphaSenderSid: string;
+};
+
 export interface IBusinessChannelRepository {
     GetChannelsByBusinessId(businessId: number): Promise<BusinessChannelDto[]>;
     UpsertChannelByBusinessId(businessId: number, channelDto: UpsertBusinessChannelRequestDto): Promise<BusinessChannelDto>;
     GetSmsSettings(businessId: number): Promise<SmsSettingsDto>;
-    UpdateSmsSettings(businessId: number, settings: UpdateSmsSettingsRequestDto): Promise<SmsSettingsDto>;
+    GetSmsProviderConfiguration(businessId: number): Promise<SmsProviderConfiguration>;
+    UpdateSmsSettings(
+        businessId: number,
+        settings: UpdateSmsSettingsRequestDto,
+        resources?: PersistSmsProviderResources
+    ): Promise<SmsSettingsDto>;
     // Inbound: match the webhook's receiving address ("To") to a channel to
     // learn which business the message belongs to and which auth secret
     // signs the request. provider is optional because the address alone is

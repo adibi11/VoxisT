@@ -7,6 +7,8 @@ import { connection, verifyRedisConnection } from "../../dataClients/CacheClient
 import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
 import { TwilioMessageSender } from "../../MessageSender/twilioMessageSender";
 import { PortalAccessService } from "../../Portal/PortalAccessService";
+import { CaseInboundEmailService } from "../../InboundEmail/CaseInboundEmailService";
+import { inboundEmailDomainFromEnv } from "../../InboundEmail/InboundEmailConfig";
 import {
   CaseFollowUpJobData
 } from "../../QueueClient/caseFollowUpQueue";
@@ -25,6 +27,7 @@ const processor = new CaseFollowUpWorker(
   sql.caseFollowUpRepository,
   sql.businessChannelRepository,
   new PortalAccessService(sql.casePortalAccessRepository),
+  new CaseInboundEmailService(sql.inboundEmailRepository, inboundEmailDomainFromEnv()),
   new TwilioMessageSender({
     logger: workerLogger.child({ component: "TwilioMessageSender" })
   }),

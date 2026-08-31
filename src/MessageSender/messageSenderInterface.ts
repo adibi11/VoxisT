@@ -3,7 +3,8 @@ import { CommunicationChannel, MessageProvider } from "../dataClients/Types/apiT
 export type OutboundMessage = {
   channel: CommunicationChannel;
   provider: MessageProvider;
-  from: string;
+  from?: string;
+  messagingServiceSid?: string;
   to: string;
   body: string;
   businessId: number;

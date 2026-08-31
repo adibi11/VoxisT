@@ -1,6 +1,6 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { CreateDocumentUploadUrlRequest, CreateDocumentViewUrlRequest, IDocumentStorage } from "./IDocumentStorage";
+import { CreateDocumentUploadUrlRequest, CreateDocumentViewUrlRequest, IDocumentStorage, PutDocumentRequest } from "./IDocumentStorage";
 
 export type S3DocumentStorageConfig = { bucketName: string; region: string };
 
@@ -19,6 +19,9 @@ export class S3DocumentStorage implements IDocumentStorage {
       Bucket: this.config.bucketName,
       Key: request.storageKey
     }), { expiresIn: request.expiresInSeconds });
+  }
+  async putDocument(request: PutDocumentRequest): Promise<void> {
+    await this.client.send(new PutObjectCommand({ Bucket: this.config.bucketName, Key: request.storageKey, Body: request.bytes, ContentType: request.contentType }));
   }
   async getDocument(storageKey: string): Promise<Uint8Array> {
     const response = await this.client.send(new GetObjectCommand({

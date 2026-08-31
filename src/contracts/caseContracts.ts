@@ -157,3 +157,10 @@ export type DocumentViewUrlResponseDto = {
   mimeType: string;
   filename: string;
 };
+
+export type VerifyDocumentResponseDto = {
+  id: number;
+  status: "VERIFIED";
+};
+
+export type CaseInboundEmailAddressDto = { emailAddress: string };

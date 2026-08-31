@@ -9,9 +9,12 @@ export type CreateDocumentViewUrlRequest = {
   expiresInSeconds: number;
 };
 
+export type PutDocumentRequest = { storageKey: string; contentType: string; bytes: Uint8Array };
+
 export interface IDocumentStorage {
   createUploadUrl(request: CreateDocumentUploadUrlRequest): Promise<string>;
   createViewUrl(request: CreateDocumentViewUrlRequest): Promise<string>;
   getDocument(storageKey: string): Promise<Uint8Array>;
+  putDocument(request: PutDocumentRequest): Promise<void>;
 }
 

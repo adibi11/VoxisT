@@ -12,6 +12,7 @@ export interface IDocumentBundleRepository {
     businessId: number,
     request: UpsertDocumentBundleRequestDto
   ): Promise<DocumentBundleMutationResult>;
+  createSystemBundle(request: UpsertDocumentBundleRequestDto): Promise<DocumentBundleMutationResult>;
   updateBundle(
     businessId: number,
     bundleId: number,

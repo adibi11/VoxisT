@@ -1,5 +1,5 @@
 import express from "express";
-import { DocumentViewUrlResponseDto } from "../../contracts";
+import { DocumentViewUrlResponseDto, VerifyDocumentResponseDto } from "../../contracts";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { IDocumentRepository } from "../../dataClients/SqlClient/Repositories/DocumentRepo/IDocumentRepository";
 import { ILogger } from "../../logging/logger";
@@ -20,6 +20,53 @@ export function getDocumentRoutes(
     requireAuth,
     createDocumentViewUrlHandler(sql.documentRepository, logger, documentStorage)
   );
+  app.post(
+    "/cases/:caseId/documents/:documentId/verify",
+    requireAuth,
+    verifyDocumentHandler(sql.documentRepository, logger)
+  );
+}
+
+export function verifyDocumentHandler(
+  documents: IDocumentRepository,
+  logger: ILogger
+): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = Number(req.header("X-Business-Id"));
+    if (!Number.isInteger(businessId) || businessId <= 0) {
+      return res.status(400).json({ code: "VALIDATION_ERROR", message: "X-Business-Id is required" });
+    }
+    if (!requireBusinessAccess(authReq, res, businessId)) return;
+
+    const caseId = Number(req.params.caseId);
+    const documentId = Number(req.params.documentId);
+    if (!Number.isInteger(caseId) || caseId <= 0 || !Number.isInteger(documentId) || documentId <= 0) {
+      return res.status(400).json({ code: "VALIDATION_ERROR", message: "Invalid caseId or documentId" });
+    }
+
+    try {
+      const result = await documents.verifyNeedsReviewDocument(businessId, caseId, documentId);
+      if (result === "not_found") {
+        return res.status(404).json({ code: "NOT_FOUND", message: "Case or document not found" });
+      }
+      if (result === "not_reviewable") {
+        return res.status(409).json({ code: "CONFLICT", message: "Document is not awaiting review" });
+      }
+
+      const response: VerifyDocumentResponseDto = { id: documentId, status: "VERIFIED" };
+      logger.info("document.verify.succeeded", {
+        userId: authReq.auth.userId,
+        businessId,
+        caseId,
+        documentId
+      });
+      return res.status(200).json(response);
+    } catch (error) {
+      logger.error("document.verify.failed", { error, businessId, caseId, documentId });
+      return res.status(500).json({ message: "Failed to verify document" });
+    }
+  };
 }
 
 export function createDocumentViewUrlHandler(

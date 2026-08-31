@@ -3,7 +3,7 @@ import { UpsertDocumentBundleRequestDto } from "../../contracts";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { DocumentBundleMutationResult } from "../../dataClients/SqlClient/Repositories/DocumentBundleRepo/IDocumentBundleRepository";
 import { ILogger } from "../../logging/logger";
-import { AuthenticatedRequest, requireAuth, requireBusinessAccess } from "../authMiddleware";
+import { AuthenticatedRequest, requireAuth, requireBusinessAccess, requirePlatformAdmin } from "../authMiddleware";
 
 export const DOCUMENT_BUNDLE_NAME_MAX_LENGTH = 120;
 export const DOCUMENT_BUNDLE_DESCRIPTION_MAX_LENGTH = 1000;
@@ -14,8 +14,29 @@ export function getDocumentBundleRoutes(app: express.Router, sql: IDatabaseClien
   app.get("/cases/bundles", requireAuth, listDocumentBundlesHandler(sql, logger));
   app.get("/cases/bundles/:bundleId", requireAuth, getDocumentBundleHandler(sql, logger));
   app.post("/cases/bundles", requireAuth, createDocumentBundleHandler(sql, logger));
+  app.post("/admin/cases/bundles", requireAuth, createSystemDocumentBundleHandler(sql, logger));
   app.put("/cases/bundles/:bundleId", requireAuth, updateDocumentBundleHandler(sql, logger));
   app.delete("/cases/bundles/:bundleId", requireAuth, deleteDocumentBundleHandler(sql, logger));
+}
+
+export function createSystemDocumentBundleHandler(
+  sql: IDatabaseClient,
+  logger: ILogger
+): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!requirePlatformAdmin(authReq, res)) return;
+    const request = req.body as Partial<UpsertDocumentBundleRequestDto> | undefined;
+    if (!isValidUpsertDocumentBundleRequest(request)) return invalidBundleRequest(res);
+    try {
+      const result = await sql.documentBundleRepository.createSystemBundle(normalizeRequest(request));
+      if (result.outcome === "success") return res.status(201).json(result.bundle);
+      return sendMutationFailure(res, result);
+    } catch (error) {
+      logger.error("admin.document_bundle.create.failed", { error });
+      return res.status(500).json({ message: "Failed to create system Document Bundle" });
+    }
+  };
 }
 
 export function listDocumentBundlesHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {

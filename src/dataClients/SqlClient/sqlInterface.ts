@@ -39,6 +39,7 @@ import { IDocumentBundleRepository } from "./Repositories/DocumentBundleRepo/IDo
 import { ICasePortalAccessRepository } from "./Repositories/CasePortalAccessRepo/ICasePortalAccessRepository";
 
 import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
+import { IInboundEmailRepository } from "./Repositories/InboundEmailRepo/IInboundEmailRepository";
 import { IInstagramRepository } from "../../InstagramCommentAutomation/instagramTypes";
 
 
@@ -65,6 +66,7 @@ export interface IDatabaseClient {
     readonly documentBundleRepository: IDocumentBundleRepository;
     
     readonly documentRepository: IDocumentRepository;
+    readonly inboundEmailRepository: IInboundEmailRepository;
     readonly pushDeviceRepository: IPushDeviceRepository;
     readonly instagramRepository: IInstagramRepository;
 

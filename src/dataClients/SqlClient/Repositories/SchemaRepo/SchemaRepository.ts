@@ -26,9 +26,16 @@ export class SchemaRepository implements ISchemaRepository {
       { businessId, createdAt: created.createdAt, id: created.id, isCustom: true, name: created.name, category: created.category, updatedAt: created.updatedAt }
     );
   }
+
+  async createSystemDocumentType(request: CreateBusinessDocumentTypeRequestDto): Promise<DocumentTypeDto> {
+    return mapDocumentType(await this.prisma.documentType.create({
+      data: { businessId: null, name: request.name, category: request.category ?? null, isCustom: false }
+    }));
+  }
+
   async getBusinessSchemas(businessId: number): Promise<SchemaDto[]> {
     const schemas = await this.prisma.schema.findMany({
-      where: { businessId: businessId, isCustom: true },
+      where: { OR: [{ businessId, isCustom: true }, { businessId: null, isCustom: false }] },
       include: { documentType: true }
     });
     return schemas.map(s => mapSchema({
@@ -37,14 +44,14 @@ export class SchemaRepository implements ISchemaRepository {
       name: s.name,
       version: s.version,
       requirementSchema: s.requirementSchema,
-      isCustom: true,
+      isCustom: s.isCustom,
       documentType: s.documentType
     }));
   }
 
   async getBusinessDocumentTypes(businessId: number): Promise<DocumentTypeDto[]> {
     const documentTypes = await this.prisma.documentType.findMany({
-      where: { businessId: businessId, isCustom: true },
+      where: { OR: [{ businessId, isCustom: true }, { businessId: null, isCustom: false }] },
       orderBy: [{ name: "asc" }, { id: "asc" }]
     });
     return documentTypes.map(t => mapDocumentType(t));
@@ -88,6 +95,25 @@ export class SchemaRepository implements ISchemaRepository {
       isCustom: true,
       documentType: schema.documentType
     });
+  }
+
+  async createSystemSchema(request: CreateBusinessSchemaRequestDto): Promise<SchemaDto | null> {
+    const documentType = await this.prisma.documentType.findFirst({
+      where: { id: request.documentTypeId, businessId: null, isCustom: false }
+    });
+    if (!documentType) return null;
+
+    const schema = await this.prisma.schema.create({
+      data: {
+        documentType: { connect: { id: documentType.id } },
+        name: request.name,
+        version: request.version,
+        requirementSchema: request.requirementSchema as Prisma.InputJsonObject,
+        isCustom: false
+      },
+      include: { documentType: true }
+    });
+    return mapSchema(schema);
   }
 }
 

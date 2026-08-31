@@ -12,6 +12,11 @@ import {
 } from '../../contracts';
 import { IDatabaseClient } from '../../dataClients/SqlClient/sqlInterface';
 import { ILogger } from '../../logging/logger';
+import {
+  ITwilioMessagingServiceProvisioner,
+  TwilioMessagingServiceProvisioner,
+  TwilioProvisioningError
+} from '../../MessageSender/twilioMessagingServiceProvisioner';
 import { requireAuth, AuthenticatedRequest, requireBusinessAccess, requireBusinessOwner, requirePlatformAdmin } from '../authMiddleware';
 
     
@@ -268,7 +273,11 @@ export function createGetSmsSettingsHandler(sql: IDatabaseClient, logger: ILogge
   };
 }
 
-export function createUpdateSmsSettingsHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+export function createUpdateSmsSettingsHandler(
+  sql: IDatabaseClient,
+  logger: ILogger,
+  provisioner?: ITwilioMessagingServiceProvisioner
+): express.RequestHandler {
   return async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     const businessId = positiveBusinessId(req.params.businessId);
@@ -278,16 +287,69 @@ export function createUpdateSmsSettingsHandler(sql: IDatabaseClient, logger: ILo
     if (!isValidSmsSettingsRequest(request)) {
       return res.status(400).json({ message: "Invalid SMS settings request" });
     }
+
+    let newlyProvisionedServiceSid: string | null = null;
+    let activeProvisioner: ITwilioMessagingServiceProvisioner | undefined = provisioner;
     try {
-      const settings = await sql.businessChannelRepository.UpdateSmsSettings(businessId, request);
+      if (!request.enabled) {
+        const settings = await sql.businessChannelRepository.UpdateSmsSettings(businessId, request);
+        return res.status(200).json(settings);
+      }
+
+      const senderId = request.senderId!.trim();
+      const current = await sql.businessChannelRepository.GetSmsProviderConfiguration(businessId);
+      if (current.messagingServiceSid && current.senderId === senderId) {
+        const settings = await sql.businessChannelRepository.UpdateSmsSettings(businessId, {
+          enabled: true,
+          senderId
+        });
+        return res.status(200).json(settings);
+      }
+
+      const twilioProvisioner = activeProvisioner || new TwilioMessagingServiceProvisioner({
+        logger: logger.child({ component: "TwilioMessagingServiceProvisioner" })
+      });
+      activeProvisioner = twilioProvisioner;
+      const resources = await twilioProvisioner.provisionBusinessSender(businessId, senderId);
+      newlyProvisionedServiceSid = resources.messagingServiceSid;
+      const settings = await sql.businessChannelRepository.UpdateSmsSettings(
+        businessId,
+        { enabled: true, senderId },
+        resources
+      );
+      newlyProvisionedServiceSid = null;
+
+      if (
+        current.messagingServiceSid &&
+        current.messagingServiceSid !== resources.messagingServiceSid
+      ) {
+        await twilioProvisioner.deleteMessagingService(current.messagingServiceSid);
+      }
+
       logger.info("business.sms_settings.update.succeeded", {
         userId: authReq.auth.userId,
         businessId,
-        enabled: settings.enabled
+        enabled: settings.enabled,
+        messagingServiceConfigured: settings.messagingServiceConfigured
       });
       return res.status(200).json(settings);
     } catch (error) {
-      logger.error("business.sms_settings.update.failed", { error, businessId });
+      if (newlyProvisionedServiceSid && activeProvisioner) {
+        await activeProvisioner.deleteMessagingService(newlyProvisionedServiceSid);
+      }
+      if (error instanceof TwilioProvisioningError) {
+        logger.error("business.sms_settings.provisioning.failed", {
+          businessId,
+          operation: error.operation,
+          providerStatus: error.status,
+          providerCode: error.providerCode
+        });
+        return res.status(502).json({
+          message: "Failed to configure SMS provider",
+          code: "SMS_PROVIDER_PROVISIONING_FAILED"
+        });
+      }
+      logger.error("business.sms_settings.update.failed", { businessId });
       return res.status(500).json({ message: "Failed to update SMS settings" });
     }
   };

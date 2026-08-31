@@ -7,6 +7,7 @@ import {
   DocumentVisionInput
 } from "../documentProcessingTypes";
 import { IDocumentVisionClient } from "./IDocumentVisionClient";
+import { EXTRACTION_PROMPT_VERSION, extractionInstructions } from "./DocumentVisionPrompts";
 
 const DOCUMENT_VISION_MODEL = "gpt-4.1-mini";
 
@@ -31,7 +32,11 @@ export class OpenAIDocumentVisionClient implements IDocumentVisionClient {
       model: DOCUMENT_VISION_MODEL,
       mimeType: document.mimeType,
       sizeBytes: document.bytes.byteLength,
-      fieldCount: schema.fields.length
+      language: document.language,
+      documentTypeName: schema.expectedDocumentType,
+      schemaName: schema.schemaName,
+      fieldIds: schema.fields.map((field) => field.id),
+      promptVersion: EXTRACTION_PROMPT_VERSION
     });
     const base64 = Buffer.from(document.bytes).toString("base64");
     const documentContent = document.mimeType === "application/pdf"
@@ -47,23 +52,13 @@ export class OpenAIDocumentVisionClient implements IDocumentVisionClient {
         };
     const response = await this.client.responses.create({
       model: DOCUMENT_VISION_MODEL,
-      instructions: [
-        "Extract only values visibly supported by the supplied document.",
-        "First decide whether it matches the expected document type.",
-        "If it does not match, do not fabricate values; return null/MISSING for every field.",
-        "Use numbers without currency symbols or grouping, ISO YYYY-MM-DD dates, and JSON booleans.",
-        "Do not invent fields or values.",
-        "Do not over interpert the values; if a field is not clearly present, return null/MISSING.",
-        "If a field is present but not clearly legible, return null/NEEDS_REVIEW.",
-        "Return exact values; do not normalize or transform them.",
-        "Return only valid JSON that conforms to the provided schema."
-      ].join(" "),
+      instructions: extractionInstructions(document.language),
       input: [{
         role: "user",
         content: [
           {
             type: "input_text",
-            text: `Expected document type: ${schema.expectedDocumentType}\nSchema: ${schema.schemaName}\nFields: ${JSON.stringify(schema.fields)}`
+            text: `Business language: ${document.language}\nExpected document type: ${schema.expectedDocumentType}\nSchema: ${schema.schemaName}\nFields: ${JSON.stringify(schema.fields)}`
           },
           documentContent
         ]
@@ -78,7 +73,12 @@ export class OpenAIDocumentVisionClient implements IDocumentVisionClient {
       }
     });
     if (!response.output_text) throw new Error("OpenAI returned no document extraction output");
-    this.logger.info("document.vision.succeeded", { model: DOCUMENT_VISION_MODEL });
+    this.logger.info("document.vision.succeeded", {
+      model: DOCUMENT_VISION_MODEL,
+      language: document.language,
+      promptVersion: EXTRACTION_PROMPT_VERSION,
+      providerRequestId: (response as { _request_id?: string })._request_id
+    });
     return JSON.parse(response.output_text) as DocumentRequirementAnswer;
   }
 }

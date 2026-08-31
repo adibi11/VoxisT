@@ -90,6 +90,7 @@ model Business {
   documentTypes          DocumentType[]
   documentBundles        DocumentBundle[]
   caseFollowUps          CaseFollowUp[]
+  inboundEmailReceipts   InboundEmailReceipt[]
 }
 
 model MetaLeadFormSubscription {
@@ -270,6 +271,8 @@ model BusinessChannel {
   config                Json?
   externalAccountId     String?
   externalPhoneNumberId String?
+  messagingServiceSid   String?  @unique
+  alphaSenderSid        String?
   webhookUrl            String?
   isDefault             Boolean  @default(false)
   createdAt             DateTime @default(now())
@@ -282,20 +285,20 @@ model BusinessChannel {
 }
 
 model BusinessFollowUpPolicy {
-  id               Int      @id @default(autoincrement())
-  businessId       Int      @unique
-  enabled          Boolean  @default(false)
-  timezone         String   @default("UTC")
-  delayMinutes     Int      @default(1440)
-  allowedStartHour Int?
-  allowedEndHour   Int?
+  id                          Int      @id @default(autoincrement())
+  businessId                  Int      @unique
+  enabled                     Boolean  @default(false)
+  timezone                    String   @default("UTC")
+  delayMinutes                Int      @default(1440)
+  allowedStartHour            Int?
+  allowedEndHour              Int?
   maxFollowUps                Int      @default(1)
   messageTemplate             String?
   caseDocumentFollowUpEnabled Boolean  @default(false)
   caseDocumentFollowUpHour    Int?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  business         Business @relation(fields: [businessId], references: [id])
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  business                    Business @relation(fields: [businessId], references: [id])
 }
 
 model ConversationFollowUp {
@@ -364,16 +367,17 @@ model Lead {
 }
 
 model Case {
-  id          Int        @id @default(autoincrement())
-  businessId  Int
-  leadId      Int
-  assigneeId  Int?
-  name        String
-  status      CaseStatus @default(IN_PROGRESS)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  completedAt DateTime?
-  archivedAt  DateTime?
+  id                Int        @id @default(autoincrement())
+  businessId        Int
+  leadId            Int
+  assigneeId        Int?
+  name              String
+  status            CaseStatus @default(IN_PROGRESS)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  completedAt       DateTime?
+  archivedAt        DateTime?
+  inboundEmailToken String?    @unique
 
   business               Business                    @relation(fields: [businessId], references: [id])
   lead                   Lead                        @relation(fields: [leadId], references: [id])
@@ -383,6 +387,7 @@ model Case {
   comments               CaseComment[]
   portalAccesses         CasePortalAccess[]
   followUps              CaseFollowUp[]
+  inboundEmailReceipts   InboundEmailReceipt[]
 
   // The service layer must ensure the lead and assignee belong to businessId.
   @@index([businessId, status, updatedAt])
@@ -481,13 +486,14 @@ model Schema {
 
 model DocumentBundle {
   id          Int      @id @default(autoincrement())
-  businessId  Int
+  businessId  Int?
   name        String
   description String?
+  isCustom    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  business Business             @relation(fields: [businessId], references: [id])
+  business Business?            @relation(fields: [businessId], references: [id])
   items    DocumentBundleItem[]
 
   @@index([businessId, name, id])
@@ -541,6 +547,8 @@ model Document {
   status                      DocumentStatus @default(UPLOADED)
   source                      DocumentSource @default(ADVISOR_UPLOAD)
   uploadedById                Int?
+  inboundEmailReceiptId       Int?
+  inboundAttachmentIndex      Int?
   createdAt                   DateTime       @default(now())
   updatedAt                   DateTime       @updatedAt
 
@@ -549,7 +557,9 @@ model Document {
   schema                    Schema?                    @relation(fields: [schemaId], references: [id])
   caseDocumentSpecification CaseDocumentSpecification? @relation(fields: [caseDocumentSpecificationId], references: [id])
   uploadedBy                AppUser?                   @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  inboundEmailReceipt       InboundEmailReceipt?       @relation(fields: [inboundEmailReceiptId], references: [id])
 
+  @@unique([inboundEmailReceiptId, inboundAttachmentIndex])
   // When both are set, schema.documentTypeId must equal documentTypeId. The
   // service/API layer must also ensure the schema and uploader belong to the
   // case's business.
@@ -558,6 +568,27 @@ model Document {
   @@index([schemaId])
   @@index([caseDocumentSpecificationId])
   @@index([uploadedById])
+  @@index([inboundEmailReceiptId])
+}
+
+model InboundEmailReceipt {
+  id                Int                       @id @default(autoincrement())
+  providerMessageId String                    @unique
+  rawStorageKey     String                    @unique
+  businessId        Int
+  caseId            Int
+  status            InboundEmailReceiptStatus @default(RECEIVED)
+  failureReason     String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  processedAt       DateTime?
+  business          Business                  @relation(fields: [businessId], references: [id])
+  case              Case                      @relation(fields: [caseId], references: [id])
+  documents         Document[]
+
+  @@index([businessId, createdAt])
+  @@index([caseId, createdAt])
+  @@index([status, updatedAt])
 }
 
 model Task {
@@ -1207,4 +1238,12 @@ enum DocumentSource {
   EMAIL
   WHATSAPP
   SYSTEM
+}
+
+enum InboundEmailReceiptStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  REJECTED
+  FAILED
 }

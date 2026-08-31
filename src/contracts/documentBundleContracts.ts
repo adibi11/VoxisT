@@ -25,6 +25,8 @@ export type DocumentBundleItemDto = {
 
 export type DocumentBundleDto = {
   id: number;
+  businessId: number | null;
+  isCustom: boolean;
   name: string;
   description: string | null;
   items: DocumentBundleItemDto[];

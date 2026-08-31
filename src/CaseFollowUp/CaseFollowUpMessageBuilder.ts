@@ -4,6 +4,7 @@ export type CaseFollowUpMessageInput = {
   clientName: string;
   businessName: string;
   portalUrl: string;
+  intakeEmailAddress: string;
   missingRequirements: MissingCaseRequirement[];
 };
 
@@ -17,6 +18,7 @@ export class CaseFollowUpMessageBuilder {
     const businessName = input.businessName.trim();
     if (!businessName) throw new Error("Business name is required");
     if (!input.portalUrl.trim()) throw new Error("Portal URL is required");
+    if (!input.intakeEmailAddress.trim()) throw new Error("Inbound email address is required");
 
     const requirements = input.missingRequirements
       .map((requirement) => `• ${requirement.label}`)
@@ -29,8 +31,11 @@ export class CaseFollowUpMessageBuilder {
       "",
       requirements,
       "",
-      "להעלאת המסמכים:",
+      "להעלאה דרך הפורטל:",
       input.portalUrl,
+      "",
+      "או שלחו את המסמכים כקבצים מצורפים למייל:",
+      input.intakeEmailAddress,
       "",
       businessName
     ].join("\n");

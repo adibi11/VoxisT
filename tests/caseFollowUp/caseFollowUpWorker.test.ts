@@ -77,9 +77,12 @@ function collaborators(item: CaseFollowUpWorkItem = workItem()) {
     markSkipped: vi.fn().mockResolvedValue(true)
   };
   const channelRepository = {
-    GetSmsSettings: vi.fn().mockResolvedValue({
+    GetSmsProviderConfiguration: vi.fn().mockResolvedValue({
       enabled: true,
-      senderId: "VOXIS"
+      senderId: "VOXIS",
+      messagingServiceConfigured: true,
+      messagingServiceSid: "MG123",
+      alphaSenderSid: "AI123"
     })
   };
   const portalAccess = {
@@ -88,6 +91,9 @@ function collaborators(item: CaseFollowUpWorkItem = workItem()) {
       expiresAt: new Date("2026-08-30T00:00:00.000Z"),
       portalUrl: "https://portal.example/c/raw-secret-token"
     })
+  };
+  const inboundEmail = {
+    getOrCreateAddress: vi.fn().mockResolvedValue("case-abc123@docs.example.com")
   };
   const sender = {
     sendMessage: vi.fn().mockResolvedValue({
@@ -100,31 +106,33 @@ function collaborators(item: CaseFollowUpWorkItem = workItem()) {
     repository as any,
     channelRepository as any,
     portalAccess as any,
+    inboundEmail as any,
     sender,
     new CaseMissingRequirementResolver(),
     new CaseFollowUpMessageBuilder(),
     logger,
     () => new Date("2026-08-23T10:00:00.000Z")
   );
-  return { repository, channelRepository, portalAccess, sender, logger, worker };
+  return { repository, channelRepository, portalAccess, inboundEmail, sender, logger, worker };
 }
 
 describe("CaseFollowUpWorker", () => {
   it("claims by CaseFollowUp ID, reloads trusted state, sends SMS, and persists acceptance", async () => {
-    const { repository, channelRepository, portalAccess, sender, logger, worker } = collaborators();
+    const { repository, channelRepository, portalAccess, inboundEmail, sender, logger, worker } = collaborators();
 
     await expect(worker.process(55)).resolves.toEqual({
       outcome: "accepted",
       providerMessageId: "SM123"
     });
     expect(repository.claimPending).toHaveBeenCalledWith(55);
-    expect(channelRepository.GetSmsSettings).toHaveBeenCalledWith(7);
+    expect(channelRepository.GetSmsProviderConfiguration).toHaveBeenCalledWith(7);
     expect(portalAccess.getOrCreateActiveAccess).toHaveBeenCalledWith(7, 20);
+    expect(inboundEmail.getOrCreateAddress).toHaveBeenCalledWith(7, 20);
     const outbound = sender.sendMessage.mock.calls[0][0];
     expect(outbound).toMatchObject({
       businessId: 7,
       clientId: 9,
-      from: "VOXIS",
+      messagingServiceSid: "MG123",
       to: "+972501234567",
       channel: CommunicationChannel.Sms,
       provider: MessageProvider.Twilio
@@ -132,6 +140,7 @@ describe("CaseFollowUpWorker", () => {
     expect(outbound).not.toHaveProperty("conversationId");
     expect(outbound.body).toContain("Payslip — May");
     expect(outbound.body).toContain("https://portal.example/c/raw-secret-token");
+    expect(outbound.body).toContain("case-abc123@docs.example.com");
     expect(sender.sendMessage).toHaveBeenCalledWith(outbound);
     expect(repository.markAccepted).toHaveBeenCalledWith(
       55,
@@ -142,6 +151,7 @@ describe("CaseFollowUpWorker", () => {
     const logs = JSON.stringify(logger.entries);
     expect(logs).not.toContain("+972501234567");
     expect(logs).not.toContain("raw-secret-token");
+    expect(logs).not.toContain("case-abc123@docs.example.com");
     expect(logs).not.toContain("Payslip — May");
     expect(logs).not.toContain("עדיין חסרים");
   });
@@ -188,7 +198,7 @@ describe("CaseFollowUpWorker", () => {
       "TENANT_MISMATCH",
       expect.any(String)
     );
-    expect(deps.channelRepository.GetSmsSettings).not.toHaveBeenCalled();
+    expect(deps.channelRepository.GetSmsProviderConfiguration).not.toHaveBeenCalled();
     expect(deps.sender.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -200,12 +210,27 @@ describe("CaseFollowUpWorker", () => {
 
   it("fails safely when Business SMS configuration is unavailable", async () => {
     const deps = collaborators();
-    deps.channelRepository.GetSmsSettings.mockResolvedValue({ enabled: false, senderId: null });
+    deps.channelRepository.GetSmsProviderConfiguration.mockResolvedValue({ enabled: false, senderId: null, messagingServiceConfigured: false, messagingServiceSid: null, alphaSenderSid: null });
     await expect(deps.worker.process(55)).resolves.toEqual({
       outcome: "failed",
       code: "SMS_NOT_CONFIGURED"
     });
     expect(deps.portalAccess.getOrCreateActiveAccess).not.toHaveBeenCalled();
+    expect(deps.sender.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("fails safely when the Case inbound email address is unavailable", async () => {
+    const deps = collaborators();
+    deps.inboundEmail.getOrCreateAddress.mockResolvedValue(null);
+    await expect(deps.worker.process(55)).resolves.toEqual({
+      outcome: "failed",
+      code: "INBOUND_EMAIL_UNAVAILABLE"
+    });
+    expect(deps.repository.markFailed).toHaveBeenCalledWith(
+      55,
+      "INBOUND_EMAIL_UNAVAILABLE",
+      expect.any(String)
+    );
     expect(deps.sender.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -246,7 +271,7 @@ describe("CaseFollowUpWorker", () => {
       outcome: "skipped",
       code: "POLICY_DISABLED"
     });
-    expect(deps.channelRepository.GetSmsSettings).not.toHaveBeenCalled();
+    expect(deps.channelRepository.GetSmsProviderConfiguration).not.toHaveBeenCalled();
     expect(deps.sender.sendMessage).not.toHaveBeenCalled();
   });
 

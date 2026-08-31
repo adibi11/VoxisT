@@ -88,6 +88,7 @@ export type BusinessChannelDto = {
   config?: unknown;
   externalAccountId?: string | null;
   externalPhoneNumberId?: string | null;
+  messagingServiceConfigured?: boolean;
   webhookUrl?: string | null;
   isDefault: boolean;
   hasCredentials: boolean;
@@ -124,9 +125,13 @@ export type UpsertBusinessChannelRequestDto = {
 export type SmsSettingsDto = {
   enabled: boolean;
   senderId: string | null;
+  messagingServiceConfigured: boolean;
 };
 
-export type UpdateSmsSettingsRequestDto = SmsSettingsDto;
+export type UpdateSmsSettingsRequestDto = {
+  enabled: boolean;
+  senderId: string | null;
+};
 
 export type UpdateBusinessSettingsParameterDto = {
   id?: number;

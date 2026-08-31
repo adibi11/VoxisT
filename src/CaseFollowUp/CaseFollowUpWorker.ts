@@ -8,6 +8,7 @@ import {
 } from "../MessageSender/twilioMessageSender";
 import { ILogger, logger } from "../logging/logger";
 import { PortalAccessService } from "../Portal/PortalAccessService";
+import { CaseInboundEmailService } from "../InboundEmail/CaseInboundEmailService";
 import { CaseMissingRequirementResolver } from "./CaseMissingRequirementResolver";
 import { CaseFollowUpMessageBuilder } from "./CaseFollowUpMessageBuilder";
 import {
@@ -28,6 +29,7 @@ export class CaseFollowUpWorker {
     private readonly repository: ICaseFollowUpRepository,
     private readonly channelRepository: IBusinessChannelRepository,
     private readonly portalAccessService: Pick<PortalAccessService, "getOrCreateActiveAccess">,
+    private readonly inboundEmailService: Pick<CaseInboundEmailService, "getOrCreateAddress">,
     private readonly smsSender: IMessageSender,
     private readonly missingResolver: CaseMissingRequirementResolver,
     private readonly messageBuilder: CaseFollowUpMessageBuilder,
@@ -82,10 +84,14 @@ export class CaseFollowUpWorker {
         return await this.fail(followUp.id, "RECIPIENT_UNAVAILABLE", "No usable client phone is configured");
       }
 
-      const smsSettings = await this.channelRepository.GetSmsSettings(followUp.businessId);
-      const senderId = smsSettings.senderId?.trim();
-      if (!smsSettings.enabled || !senderId) {
-        return await this.fail(followUp.id, "SMS_NOT_CONFIGURED", "Business SMS is disabled or unconfigured");
+      const smsSettings = await this.channelRepository.GetSmsProviderConfiguration(followUp.businessId);
+      const messagingServiceSid = smsSettings.messagingServiceSid?.trim();
+      if (!smsSettings.enabled || !messagingServiceSid) {
+        return await this.fail(
+          followUp.id,
+          "SMS_NOT_CONFIGURED",
+          "Business SMS is disabled or its Messaging Service is unconfigured"
+        );
       }
 
       const portalAccess = await this.portalAccessService.getOrCreateActiveAccess(
@@ -96,16 +102,25 @@ export class CaseFollowUpWorker {
         return await this.fail(followUp.id, "PORTAL_URL_UNAVAILABLE", "Client Portal URL is unavailable");
       }
 
+      const intakeEmailAddress = await this.inboundEmailService.getOrCreateAddress(
+        followUp.businessId,
+        followUp.caseId
+      );
+      if (!intakeEmailAddress) {
+        return await this.fail(followUp.id, "INBOUND_EMAIL_UNAVAILABLE", "Case inbound email address is unavailable");
+      }
+
       const body = this.messageBuilder.build({
         clientName: followUp.case.clientName,
         businessName: followUp.case.businessName,
         portalUrl: portalAccess.portalUrl,
+        intakeEmailAddress,
         missingRequirements: missing
       });
       const outboundMessage: OutboundMessage = {
         channel: CommunicationChannel.Sms,
         provider: MessageProvider.Twilio,
-        from: senderId,
+        messagingServiceSid,
         to: recipient,
         body,
         businessId: followUp.businessId,

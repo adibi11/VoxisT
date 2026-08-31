@@ -101,6 +101,8 @@ type SavedBusinessChannel = {
   config?: unknown;
   externalAccountId?: string | null;
   externalPhoneNumberId?: string | null;
+  messagingServiceSid?: string | null;
+  alphaSenderSid?: string | null;
   webhookUrl?: string | null;
   isDefault: boolean;
   credentialsEncrypted?: string | null;
@@ -352,20 +354,50 @@ export class FakeSqlManager implements IDatabaseClient {
   }
 
   async GetSmsSettings(businessId: number) {
+    const configuration = await this.GetSmsProviderConfiguration(businessId);
+    return {
+      enabled: configuration.enabled,
+      senderId: configuration.senderId,
+      messagingServiceConfigured: Boolean(configuration.messagingServiceSid)
+    };
+  }
+
+  async GetSmsProviderConfiguration(businessId: number) {
     const channel = [...this.businessChannels.values()].find((item) =>
       item.businessId === businessId && item.channel === "sms" && item.provider === "twilio"
     );
-    return { enabled: channel?.status === "active", senderId: channel?.externalPhoneNumberId ?? null };
+    return {
+      enabled: channel?.status === "active",
+      senderId: channel?.externalPhoneNumberId ?? null,
+      messagingServiceConfigured: Boolean(channel?.messagingServiceSid),
+      messagingServiceSid: channel?.messagingServiceSid ?? null,
+      alphaSenderSid: channel?.alphaSenderSid ?? null
+    };
   }
 
-  async UpdateSmsSettings(businessId: number, settings: { enabled: boolean; senderId: string | null }) {
+  async UpdateSmsSettings(
+    businessId: number,
+    settings: { enabled: boolean; senderId: string | null },
+    resources?: { messagingServiceSid: string; alphaSenderSid: string }
+  ) {
     await this.UpsertChannelByBusinessId(businessId, {
       channel: "sms",
       provider: "twilio",
       status: settings.enabled ? "active" : "disabled",
       externalPhoneNumberId: settings.senderId
     });
-    return { enabled: settings.enabled, senderId: settings.senderId };
+    const channel = [...this.businessChannels.values()].find((item) =>
+      item.businessId === businessId && item.channel === "sms" && item.provider === "twilio"
+    );
+    if (channel && resources) {
+      channel.messagingServiceSid = resources.messagingServiceSid;
+      channel.alphaSenderSid = resources.alphaSenderSid;
+    }
+    return {
+      enabled: settings.enabled,
+      senderId: settings.senderId,
+      messagingServiceConfigured: Boolean(channel?.messagingServiceSid)
+    };
   }
 
   async GetChannelForInbound(provider: string, receivingAddress: string): Promise<ResolvedBusinessChannel | null> {
@@ -1270,6 +1302,7 @@ export class FakeSqlManager implements IDatabaseClient {
       config: channel.config,
       externalAccountId: channel.externalAccountId ?? null,
       externalPhoneNumberId: channel.externalPhoneNumberId ?? null,
+      messagingServiceConfigured: Boolean(channel.messagingServiceSid),
       webhookUrl: channel.webhookUrl ?? null,
       isDefault: channel.isDefault,
       hasCredentials: Boolean(channel.credentialsEncrypted),

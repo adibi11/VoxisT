@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createDocumentBundleHandler,
+  createSystemDocumentBundleHandler,
   getDocumentBundleHandler,
   isValidUpsertDocumentBundleRequest,
   updateDocumentBundleHandler
@@ -37,6 +38,7 @@ function bundleRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 30,
     businessId: 7,
+    isCustom: true,
     name: "Employee",
     description: "Employment documents",
     createdAt: now,
@@ -100,9 +102,13 @@ describe("DocumentBundleRepository", () => {
     };
     const result = await transactionalRepository(tx).createBundle(7, requestBody());
 
-    expect(schemaWhere).toEqual({ id: { in: [10, 14] }, businessId: 7, isCustom: true });
+    expect(schemaWhere).toEqual({
+      id: { in: [10, 14] },
+      OR: [{ businessId: 7, isCustom: true }, { businessId: null, isCustom: false }]
+    });
     expect(createData).toMatchObject({
       businessId: 7,
+      isCustom: true,
       name: "Employee",
       description: "Employment documents",
       items: { create: [
@@ -144,9 +150,12 @@ describe("DocumentBundleRepository", () => {
 
     const result = await repository.listBundles(7);
 
-    expect(args.where).toEqual({ businessId: 7 });
+    expect(args.where).toEqual({
+      OR: [{ businessId: 7, isCustom: true }, { businessId: null, isCustom: false }]
+    });
     expect(args.include.items.orderBy).toEqual([{ position: "asc" }, { id: "asc" }]);
     expect(result[0].items[0].quantity).toBe(3);
+    expect(result[0]).toMatchObject({ businessId: 7, isCustom: true });
     expect(result[0].items[0].schema).toEqual({
       id: 10,
       businessId: 7,
@@ -166,7 +175,10 @@ describe("DocumentBundleRepository", () => {
 
     const result = await repository.getBundle(7, 30);
 
-    expect(where).toEqual({ id: 30, businessId: 7 });
+    expect(where).toEqual({
+      id: 30,
+      OR: [{ businessId: 7, isCustom: true }, { businessId: null, isCustom: false }]
+    });
     expect(result?.items).toHaveLength(2);
     expect(result?.items[1].schema.documentType.name).toBe("Type 14");
   });
@@ -278,6 +290,41 @@ describe("DocumentBundleRepository", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("creates a system Bundle using only system Schemas", async () => {
+    let schemaWhere: any;
+    let createData: any;
+    const tx = {
+      schema: { findMany: async ({ where }: any) => { schemaWhere = where; return [{ id: 10 }, { id: 14 }]; } },
+      documentBundle: {
+        create: async ({ data }: any) => {
+          createData = data;
+          return bundleRow({ businessId: null, isCustom: false });
+        }
+      }
+    };
+
+    const result = await transactionalRepository(tx).createSystemBundle(requestBody());
+
+    expect(schemaWhere).toEqual({
+      id: { in: [10, 14] },
+      businessId: null,
+      isCustom: false
+    });
+    expect(createData).toMatchObject({ businessId: null, isCustom: false });
+    expect(result.outcome === "success" && result.bundle).toMatchObject({ businessId: null, isCustom: false });
+  });
+
+  it("rejects business-owned Schemas in a system Bundle", async () => {
+    const create = vi.fn();
+    const result = await transactionalRepository({
+      schema: { findMany: vi.fn().mockResolvedValue([{ id: 10 }]) },
+      documentBundle: { create }
+    }).createSystemBundle(requestBody());
+
+    expect(result).toEqual({ outcome: "schemas_not_found", schemaIds: [14] });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("prevents reading another Business's Bundle", async () => {
     const repository = new DocumentBundleRepository({
       documentBundle: { findFirst: vi.fn().mockResolvedValue(null) }
@@ -310,6 +357,27 @@ describe("DocumentBundleRepository", () => {
 });
 
 describe("Document Bundle API conventions and validation", () => {
+  it("allows only platform admins to create system Bundles", async () => {
+    const createSystemBundle = vi.fn().mockResolvedValue({
+      outcome: "success",
+      bundle: { id: 30, businessId: null, isCustom: false }
+    });
+    const sql = { documentBundleRepository: { createSystemBundle } } as any;
+    const denied = response();
+    await createSystemDocumentBundleHandler(sql, new NullLogger())(request(), denied, vi.fn());
+    expect(denied.statusCode).toBe(403);
+    expect(createSystemBundle).not.toHaveBeenCalled();
+
+    const allowed = response();
+    await createSystemDocumentBundleHandler(sql, new NullLogger())(
+      request({ auth: { userId: 1, platformRole: "admin", businessIds: [], businessMemberships: [] } }),
+      allowed,
+      vi.fn()
+    );
+    expect(allowed.statusCode).toBe(201);
+    expect(createSystemBundle).toHaveBeenCalledOnce();
+  });
+
   it("returns the existing 404 convention for a nonexistent Bundle", async () => {
     const res = response();
     await getDocumentBundleHandler({

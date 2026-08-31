@@ -38,11 +38,13 @@ function collaborators(answer: DocumentRequirementAnswer = matchingAnswer) {
       storageKey: "businesses/7/cases/20/documents/50/salary.pdf",
       filename: "salary.pdf",
       mimeType: "application/pdf",
+      businessLanguage: "en",
       schemaName: schema.schemaName,
       documentTypeName: schema.expectedDocumentType,
       requirementSchema: { fields: schema.fields }
     }),
     completeProcessing: vi.fn().mockResolvedValue(true),
+    completeUnknownProcessing: vi.fn().mockResolvedValue(true),
     markProcessingFailed: vi.fn().mockResolvedValue(true)
   };
   const storage = { getDocument: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])) };
@@ -52,6 +54,15 @@ function collaborators(answer: DocumentRequirementAnswer = matchingAnswer) {
 }
 
 describe("DocumentProcessingService", () => {
+  it("routes an unknown document to NEEDS_REVIEW without storage or Vision", async () => {
+    const { documents, storage, vision, service } = collaborators();
+    documents.claimForProcessing.mockResolvedValue({ id: 50, storageKey: "unknown.pdf", filename: "unknown.pdf", mimeType: "application/pdf", schemaName: null, documentTypeName: null, requirementSchema: null });
+    await expect(service.process(50)).resolves.toEqual({ outcome: "needs_review", documentId: 50 });
+    expect(documents.completeUnknownProcessing).toHaveBeenCalledWith(50);
+    expect(storage.getDocument).not.toHaveBeenCalled();
+    expect(vision.extract).not.toHaveBeenCalled();
+  });
+
   it("transitions a matching document through PROCESSING to EXTRACTED", async () => {
     const { documents, storage, vision, service } = collaborators();
     await expect(service.process(50)).resolves.toEqual({ outcome: "extracted", documentId: 50 });
@@ -61,6 +72,30 @@ describe("DocumentProcessingService", () => {
       filename: "salary.pdf", mimeType: "application/pdf"
     }), schema);
     expect(documents.completeProcessing).toHaveBeenCalledWith(50, matchingAnswer, "EXTRACTED");
+  });
+
+  it("marks a missing required field as NEEDS_REVIEW", async () => {
+    const answer = structuredClone(matchingAnswer);
+    answer.fields.net_salary = { value: null, status: "MISSING" };
+    const { documents, service } = collaborators(answer);
+    await expect(service.process(50)).resolves.toEqual({ outcome: "needs_review", documentId: 50 });
+    expect(documents.completeProcessing.mock.calls[0][2]).toBe("NEEDS_REVIEW");
+  });
+
+  it("allows an optional field to be MISSING while remaining EXTRACTED", async () => {
+    const answer = structuredClone(matchingAnswer);
+    answer.fields.is_final = { value: null, status: "MISSING" };
+    const { documents, service } = collaborators(answer);
+    await expect(service.process(50)).resolves.toEqual({ outcome: "extracted", documentId: 50 });
+    expect(documents.completeProcessing.mock.calls[0][2]).toBe("EXTRACTED");
+  });
+
+  it("marks any field requiring review as NEEDS_REVIEW", async () => {
+    const answer = structuredClone(matchingAnswer);
+    answer.fields.is_final = { value: null, status: "NEEDS_REVIEW" };
+    const { documents, service } = collaborators(answer);
+    await expect(service.process(50)).resolves.toEqual({ outcome: "needs_review", documentId: 50 });
+    expect(documents.completeProcessing.mock.calls[0][2]).toBe("NEEDS_REVIEW");
   });
 
   it("ends a wrong document type as NEEDS_REVIEW without fabricated values", async () => {
@@ -135,8 +170,30 @@ describe("DocumentProcessingService", () => {
 });
 
 describe("document extraction schema", () => {
-  it("parses only supported Voxis field definitions", () => {
+  it("parses existing minimal field definitions backward-compatibly", () => {
     expect(parseExtractionSchema(schema.schemaName, schema.expectedDocumentType, { fields: schema.fields })).toEqual(schema);
+  });
+
+  it("preserves optional semantic metadata for Vision", () => {
+    const richField = {
+      id: "net_salary", label: "שכר נטו", type: "CURRENCY", required: true,
+      description: "Employee net salary after deductions",
+      aliases: ["נטו", "לתשלום", "סכום נטו"],
+      formatHint: "Israeli shekels",
+      examples: [14500, "14,500.00"]
+    };
+    expect(parseExtractionSchema("תלוש V1", "תלוש שכר", { fields: [richField] }).fields[0]).toEqual(richField);
+  });
+
+  it("rejects invalid optional semantic metadata", () => {
+    expect(() => parseExtractionSchema("Schema", "Type", { fields: [{ ...schema.fields[0], aliases: [""] }] })).toThrow("aliases");
+    expect(() => parseExtractionSchema("Schema", "Type", { fields: [{ ...schema.fields[0], examples: [{}] }] })).toThrow("examples");
+  });
+
+  it.each(["2026-99-99", "2026-02-31", "not-a-date"])("rejects impossible normalized date %s", (value) => {
+    const answer = structuredClone(matchingAnswer);
+    answer.fields.pay_date = { value, status: "EXTRACTED" };
+    expect(() => normalizeRequirementAnswer(answer, schema)).toThrow("Invalid DATE");
   });
 
   it("builds strict Structured Output properties from exact Schema IDs and value types", () => {

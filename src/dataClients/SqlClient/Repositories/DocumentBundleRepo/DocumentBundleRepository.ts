@@ -24,7 +24,7 @@ export class DocumentBundleRepository implements IDocumentBundleRepository {
 
   async listBundles(businessId: number): Promise<DocumentBundleDto[]> {
     const bundles = await this.prisma.documentBundle.findMany({
-      where: { businessId },
+      where: { OR: [{ businessId, isCustom: true }, { businessId: null, isCustom: false }] },
       include: bundleInclude,
       orderBy: [{ name: "asc" }, { id: "asc" }]
     });
@@ -33,7 +33,7 @@ export class DocumentBundleRepository implements IDocumentBundleRepository {
 
   async getBundle(businessId: number, bundleId: number): Promise<DocumentBundleDto | null> {
     const bundle = await this.prisma.documentBundle.findFirst({
-      where: { id: bundleId, businessId },
+      where: { id: bundleId, OR: [{ businessId, isCustom: true }, { businessId: null, isCustom: false }] },
       include: bundleInclude
     });
     return bundle ? mapBundle(bundle) : null;
@@ -52,6 +52,27 @@ export class DocumentBundleRepository implements IDocumentBundleRepository {
       const bundle = await tx.documentBundle.create({
         data: {
           businessId,
+          isCustom: true,
+          name: request.name.trim(),
+          description: normalizedNullableText(request.description),
+          items: { create: itemCreateData(request) }
+        },
+        include: bundleInclude
+      });
+      return { outcome: "success", bundle: mapBundle(bundle) };
+    });
+  }
+
+
+  async createSystemBundle(request: UpsertDocumentBundleRequestDto): Promise<DocumentBundleMutationResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const missingSchemaIds = await findMissingSystemSchemaIds(tx, request);
+      if (missingSchemaIds.length > 0) return { outcome: "schemas_not_found", schemaIds: missingSchemaIds };
+
+      const bundle = await tx.documentBundle.create({
+        data: {
+          businessId: null,
+          isCustom: false,
           name: request.name.trim(),
           description: normalizedNullableText(request.description),
           items: { create: itemCreateData(request) }
@@ -109,7 +130,24 @@ async function findMissingSchemaIds(
   const requestedIds = [...new Set(request.items.map((item) => item.schemaId))];
   if (requestedIds.length === 0) return [];
   const schemas = await db.schema.findMany({
-    where: { id: { in: requestedIds }, businessId, isCustom: true },
+    where: {
+      id: { in: requestedIds },
+      OR: [{ businessId, isCustom: true }, { businessId: null, isCustom: false }]
+    },
+    select: { id: true }
+  });
+  const foundIds = new Set(schemas.map((schema) => schema.id));
+  return requestedIds.filter((schemaId) => !foundIds.has(schemaId));
+}
+
+async function findMissingSystemSchemaIds(
+  db: DbClient,
+  request: UpsertDocumentBundleRequestDto
+): Promise<number[]> {
+  const requestedIds = [...new Set(request.items.map((item) => item.schemaId))];
+  if (requestedIds.length === 0) return [];
+  const schemas = await db.schema.findMany({
+    where: { id: { in: requestedIds }, businessId: null, isCustom: false },
     select: { id: true }
   });
   const foundIds = new Set(schemas.map((schema) => schema.id));
@@ -129,6 +167,8 @@ function itemCreateData(request: UpsertDocumentBundleRequestDto) {
 function mapBundle(bundle: BundleRow): DocumentBundleDto {
   return {
     id: bundle.id,
+    businessId: bundle.businessId,
+    isCustom: bundle.isCustom,
     name: bundle.name,
     description: bundle.description,
     items: bundle.items.map((item) => ({

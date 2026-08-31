@@ -30,7 +30,9 @@
     "case-follow-up-scheduler": "ts-node src/Workers/CaseFollowUpSchedulerWorker/worker.ts",
     "start:case-follow-up-scheduler": "node dist/Workers/CaseFollowUpSchedulerWorker/worker.js",
     "case-follow-up-worker": "ts-node src/Workers/CaseFollowUpWorker/worker.ts",
-    "start:case-follow-up-worker": "node dist/Workers/CaseFollowUpWorker/worker.js"
+    "start:case-follow-up-worker": "node dist/Workers/CaseFollowUpWorker/worker.js",
+    "inbound-email-worker": "ts-node src/Workers/InboundEmailWorker/worker.ts",
+    "start:inbound-email-worker": "node dist/Workers/InboundEmailWorker/worker.js"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -50,6 +52,7 @@
     "expo-server-sdk": "^6.1.0",
     "express": "^5.2.1",
     "ioredis": "^5.10.1",
+    "mailparser": "^3.9.16",
     "openai": "^6.34.0",
     "pg": "^8.20.0",
     "rrule": "^2.8.1",
@@ -58,6 +61,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^25.9.4",
     "@types/ws": "^8.18.1",
     "dotenv": "^17.4.2",
