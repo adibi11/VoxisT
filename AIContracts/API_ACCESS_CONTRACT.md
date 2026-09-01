@@ -6,7 +6,7 @@ All API endpoints are served below `/v1`. JWTs contain `platformRole`, `business
 
 | Resource | Platform admin | Business owner | Business member |
 | --- | --- | --- | --- |
-| Leads, clients, conversations | All businesses | Own businesses | Own businesses |
+| Leads and cases | All businesses | Own businesses | Own businesses |
 | Response metrics | All businesses | Own businesses | Own businesses |
 | Business settings and channels | All businesses | Own businesses | Blocked |
 | Business context | All businesses | Own businesses | Blocked |

@@ -16,8 +16,7 @@ const base = {
   provider: MessageProvider.Twilio,
   body: "Open your secure portal",
   businessId: 7,
-  clientId: 9,
-  conversationId: 11
+  clientId: 9
 };
 
 describe("TwilioMessageSender", () => {
@@ -78,28 +77,6 @@ describe("TwilioMessageSender", () => {
     const body = new URLSearchParams(fetchMock.mock.calls[0][1].body);
     expect(body.get("MessagingServiceSid")).toBe("MG123");
     expect(body.has("From")).toBe(false);
-  });
-  it("preserves existing WhatsApp address formatting", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 201, statusText: "Created",
-      text: async () => JSON.stringify({ sid: "SM124", status: "queued" })
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const sender = new TwilioMessageSender({
-      accountSid: "AC123",
-      authToken: "token",
-      baseUrl: "https://twilio.test",
-      logger: new CaptureLogger()
-    });
-    await sender.sendMessage({
-      ...base,
-      channel: CommunicationChannel.Whatsapp,
-      from: "+15550000001",
-      to: "whatsapp:+15550000002"
-    });
-    const body = new URLSearchParams(fetchMock.mock.calls[0][1].body);
-    expect(body.get("From")).toBe("whatsapp:+15550000001");
-    expect(body.get("To")).toBe("whatsapp:+15550000002");
   });
   it("classifies a network failure as an ambiguous outcome without logging the request", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("socket timeout")));

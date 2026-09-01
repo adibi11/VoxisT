@@ -63,24 +63,8 @@ export class LeadCreationService {
     });
   }
 
-  async createConversationLead(input: { businessId: number; clientId: number; conversationId: number; score: number; name?: string | null; phoneNumber?: string | null; summary: string }) {
-    return this.prisma.$transaction(async (tx) => {
-      const conversation = await tx.conversation.findFirst({ where: { id: input.conversationId, businessId: input.businessId, clientId: input.clientId }, select: { id: true } });
-      if (!conversation) throw new Error(`Conversation ${input.conversationId} not found for business ${input.businessId}`);
-      return this.createLeadWithEvent(tx, {
-        businessId: input.businessId, clientId: input.clientId, conversationId: conversation.id, status: "QUALIFIED", source: "WHATSAPP", origin: "CONVERSATION",
-        score: input.score, name: optionalText(input.name), phoneNumber: optionalText(input.phoneNumber), summary: input.summary
-      });
-    });
-  }
-
   private async createLeadWithEvent(tx: Prisma.TransactionClient, data: Prisma.LeadUncheckedCreateInput) {
-    const lead = await tx.lead.create({ data });
-    await tx.businessActivityEvent.create({ data: {
-      businessId: lead.businessId, aggregateType: "LEAD", aggregateId: lead.id, eventType: "LEAD_CREATED",
-      dedupeKey: `lead:${lead.id}:created`
-    } });
-    return lead;
+    return tx.lead.create({ data });
   }
 
   private async resolveClient(tx: Prisma.TransactionClient, clientId?: number | null, phoneNumber?: string, name?: string) {

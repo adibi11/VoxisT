@@ -1,7 +1,5 @@
 import { IIngestionOutboxRepository } from "../dataClients/SqlClient/Repositories/IngestionOutboxRepo/IIngestionOutboxRepository";
 import { ILogger, logger as rootLogger } from "../logging/logger";
-import { ILeadIngestionQueue } from "../QueueClient/leadIngestionQueue";
-import { LeadIngestionService } from "./LeadIngestionService";
 import { CampaignLeadProcessor } from "./LeadProcessor";
 
 const LEAD_INGESTION_REQUESTED = "lead.ingestion.requested";
@@ -9,7 +7,6 @@ const LEAD_INGESTION_REQUESTED = "lead.ingestion.requested";
 export class LeadOutboxPublisher {
     constructor(
         private readonly outboxRepository: IIngestionOutboxRepository,
-        //private readonly queue: ILeadIngestionQueue,
         private readonly logger: ILogger = rootLogger.child({ component: "LeadOutboxPublisher" }),
         private readonly leadProcessor: CampaignLeadProcessor
     ) {}

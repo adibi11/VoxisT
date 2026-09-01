@@ -1,5 +1,6 @@
-import { LeadIngestionJobData } from "../QueueClient/leadIngestionQueue";
 import { ILeadProcessingRepository } from "../dataClients/SqlClient/Repositories/LeadProcessingRepo/ILeadProcessingRepository";
+
+export type LeadIngestionJobData = { incomingLeadId: number; businessId: number };
 
 /**
  * CRM lead creation is intentionally deferred to the next milestone. The worker

@@ -5,7 +5,8 @@ describe("Lead email storage", () => {
   it("normalizes email before persisting it", async () => {
     let createdLeadData: any;
     const now = new Date();
-    const repository = new LeadRepository({
+    const prisma = {
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma),
       client: {
         findUnique: async () => null,
         create: async ({ data }: any) => ({ id: 7, name: data.name || null, phoneNumber: data.phoneNumber })
@@ -34,7 +35,8 @@ describe("Lead email storage", () => {
           };
         }
       }
-    } as any);
+    };
+    const repository = new LeadRepository(prisma as any);
 
     const lead = await repository.createManualLead(2, {
       phoneNumber: "+15550000000",

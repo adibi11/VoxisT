@@ -6,7 +6,7 @@ Only a business owner (or platform admin) can create a landing-page integration.
 The UI calls `POST /v1/businesses/:businessId/integrations` with:
 
 ```json
-{ "provider": "landing_page", "integrationType": "LANDING_PAGE", "displayName": "Website quote form", "formName": "Quote request" }
+{ "provider": "landing_page", "integrationType": "LANDING_PAGE", "displayName": "Website quote form", "config": { "formName": "Quote request" } }
 ```
 
 The response contains the connection, a submission endpoint, and an
@@ -22,16 +22,8 @@ the connection.
 ## Submission endpoint behavior
 
 `POST /v1/lead-submissions/:connectionToken` is a single generic lead
-submission endpoint. After resolving the connection token, Voxis applies that
-connection's authentication policy before running the shared ingestion flow:
-
-- `LANDING_PAGE`: `X-Voxis-Integration-Secret` for server-to-server form
-  submission.
-- Internal/direct connections: existing Bearer authentication and business
-  access checks.
-
-Meta does not use this endpoint because its webhook contains a provider event
-notification rather than a complete lead payload.
+submission endpoint. `FORM`, `LANDING_PAGE`, and `CUSTOM_API` producers all use
+the one-time `X-Voxis-Integration-Secret` for server-to-server submission.
 
 ## Developer handoff
 

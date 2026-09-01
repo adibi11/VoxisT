@@ -50,15 +50,13 @@ export class TwilioMessageSender implements IMessageSender {
   async sendMessage(message: OutboundMessage): Promise<SendMessageResult> {
     this.validateMessage(message);
 
-    const from = message.from ? this.formatAddress(message.channel, message.from) : undefined;
-    const to = this.formatAddress(message.channel, message.to);
+    const from = message.from;
+    const to = message.to;
     this.logger.info("twilio.message.send.requested", {
       channel: message.channel,
       provider: message.provider,
       businessId: message.businessId,
       clientId: message.clientId,
-      conversationId: message.conversationId,
-      messageId: message.messageId,
       bodyLength: message.body.length
     });
 
@@ -91,8 +89,6 @@ export class TwilioMessageSender implements IMessageSender {
         status: response.status,
         statusText: response.statusText,
         channel: message.channel,
-        conversationId: message.conversationId,
-        messageId: message.messageId,
         twilioErrorCode: responseBody.error_code
       });
 
@@ -107,8 +103,6 @@ export class TwilioMessageSender implements IMessageSender {
       channel: message.channel,
       businessId: message.businessId,
       clientId: message.clientId,
-      conversationId: message.conversationId,
-      messageId: message.messageId,
       providerMessageId: responseBody.sid,
       providerStatus: responseBody.status
     });
@@ -124,30 +118,19 @@ export class TwilioMessageSender implements IMessageSender {
       throw new Error(`TwilioMessageSender cannot send provider ${message.provider}`);
     }
 
-    if (message.channel !== CommunicationChannel.Whatsapp && message.channel !== CommunicationChannel.Sms) {
+    if (message.channel !== CommunicationChannel.Sms) {
       throw new Error(`TwilioMessageSender does not support channel ${message.channel}`);
     }
 
     if (!message.to || !message.body) {
       throw new Error("TwilioMessageSender requires to and body");
     }
-    if (message.channel === CommunicationChannel.Whatsapp && !message.from) {
-      throw new Error("TwilioMessageSender requires from for WhatsApp");
-    }
-    if (message.channel === CommunicationChannel.Sms && !message.from && !message.messagingServiceSid) {
+    if (!message.from && !message.messagingServiceSid) {
       throw new Error("TwilioMessageSender requires from or messagingServiceSid for SMS");
     }
     if (message.from && message.messagingServiceSid) {
       throw new Error("TwilioMessageSender accepts either from or messagingServiceSid, not both");
     }
-  }
-
-  private formatAddress(channel: CommunicationChannel, address: string): string {
-    if (channel !== CommunicationChannel.Whatsapp) {
-      return address;
-    }
-
-    return address.startsWith("whatsapp:") ? address : `whatsapp:${address}`;
   }
 
   private messagesUrl(): string {

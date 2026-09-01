@@ -1,21 +1,21 @@
 import "dotenv/config";
 import { SqlManager } from "../../dataClients/SqlClient/SqlManager";
-import { verifyRedisConnection } from "../../dataClients/CacheClient/redis";
 import { LeadOutboxPublisher } from "../../LeadIngestion/LeadOutboxPublisher";
 import { logger } from "../../logging/logger";
-import { LeadIngestionQueue } from "../../QueueClient/leadIngestionQueue";
 import { CampaignLeadProcessor } from "../../LeadIngestion/LeadProcessor";
 
 const workerLogger = logger.child({ component: "LeadOutboxPublisherWorker" });
 const sql = new SqlManager(workerLogger.child({ component: "SqlManager" }));
 const processor = new CampaignLeadProcessor(sql.leadProcessingRepository);
-//const queue = new LeadIngestionQueue(workerLogger.child({ component: "LeadIngestionQueue" }));
-const publisher = new LeadOutboxPublisher(sql.ingestionOutboxRepository, /*queue,*/ workerLogger.child({ component: "LeadOutboxPublisher" }),processor);
+const publisher = new LeadOutboxPublisher(
+    sql.ingestionOutboxRepository,
+    workerLogger.child({ component: "LeadOutboxPublisher" }),
+    processor
+);
 const pollIntervalMilliseconds = getPositiveInteger("LEAD_OUTBOX_PUBLISH_INTERVAL_MS", 2_000);
 let stopping = false;
 
 async function start(): Promise<void> {
-    //await verifyRedisConnection(workerLogger);
     workerLogger.info("leadOutboxPublisher.started", { pollIntervalMilliseconds });
     await poll();
 }

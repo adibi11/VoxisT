@@ -1,53 +1,59 @@
-This project is called VoxisAI.
+# Voxis
 
-The idea of he project is to provide an AI assitant to small to meduim  businesses, that minimize lead lost and to get crucial
-information before even calling to the client.
+Voxis is a multi-tenant case and document workflow backend.
 
-The design of the business logic was followed by the onbaording ida, and the businesses mangement.
+## Runtime components
 
-Each business can list in the application few featuers that seems to him crucial and the AI assitant needs to try
-and extract theem from the client while keeping on conversational features such as 'pacing', 'leading', 'reflecting'.
+- Express API: authentication, businesses, leads, cases, document requirements, bundles, uploads, verification, and client portal access.
+- Lead outbox publisher: converts canonical form/API submissions into CRM leads.
+- Inbound email worker: reads SES raw-email S3 events from SQS and stores validated attachments as case documents.
+- S3 document worker: classifies and extracts uploaded documents.
+- Case follow-up scheduler and worker: schedules and sends missing-document SMS reminders.
 
-Therefore in order to get a client message we must have a business that associates with the particular number and business ID.
-From there cam the idea of the database design which can be showed in prisma/schema.prisma in this project.
+PostgreSQL is the system of record. Redis supports rate limiting and the retained BullMQ case-follow-up queue. S3 stores documents and raw inbound email; SQS delivers S3 events.
 
-The conversation it self is statefull, but the worker that handle messages is not.
-We manage the conversation state in redis based on collected parameters from the AI assistant, by a state machine that is loaded and managed in the worker.
-In each message and generated response, we update both the state in redis and in the DB in case of redis evacuation or collapses.
-That way the system can regenerate the state from the DB. There for in each message we are updating the DB. Later it can be showed on the UI side.
+## Development
 
-We also hold keys for conversations to take care of concurrency
+```bash
+npm run build
+TMPDIR=/tmp npm test
+npm run dev
+```
 
+Local PostgreSQL and Redis are available through `docker-compose.yml`.
 
+## Document storage
 
+Required configuration:
 
-### Document upload configuration
+- `DATABASE_URL`
+- `DOCUMENTS_BUCKET_NAME`
+- `AWS_REGION`
+- `DOCUMENT_UPLOAD_MAX_BYTES` (optional; defaults to 25 MiB)
+- `OPENAI_API_KEY` for document classification and extraction
 
-The document upload-request endpoint uses the AWS SDK default credential provider chain. Configure only:
+AWS credentials use the default SDK credential chain. ECS deployments should use task roles.
 
-- `DOCUMENTS_BUCKET_NAME`: private S3 bucket used for document objects.
-- `AWS_REGION`: AWS region containing the bucket.
-- `DOCUMENT_UPLOAD_MAX_BYTES` (optional): maximum accepted upload size in bytes; defaults to 26214400 (25 MiB).
+## Inbound case email
 
-Do not put AWS access keys in application configuration. Local development may use the standard AWS profile, while ECS should use a task role.
-The ECS Task Role must allow `s3:PutObject` and `s3:GetObject` for the private documents bucket object prefix.
+The inbound-email worker additionally requires:
 
+- `INBOUND_EMAIL_DOMAIN`
+- `INBOUND_EMAIL_QUEUE_NAME`
+- `INBOUND_EMAIL_RAW_BUCKET_NAME`
 
-### Inbound Case email configuration
+SES stores raw MIME messages in the raw bucket. S3 sends object-created events to the inbound SQS queue. Valid attachments are copied to the canonical document bucket and then processed by the S3 document worker.
 
-Inbound AWS infrastructure is managed manually in the AWS Console. This repository does not provision or deploy SES, S3, SQS, IAM, or ECS resources for inbound email.
+## Generic lead ingestion
 
-The inbound worker requires these inbound-specific environment variables and fails at startup if any is missing:
+Owners create a `FORM`, `LANDING_PAGE`, or `CUSTOM_API` integration through:
 
-- `AWS_REGION=eu-central-1`
-- `INBOUND_EMAIL_DOMAIN=docs.voxistudio.com`
-- `INBOUND_EMAIL_QUEUE_NAME=<the manually created inbound queue name>`
-- `INBOUND_EMAIL_RAW_BUCKET_NAME=<the manually created raw-email bucket name>`
+```http
+POST /v1/businesses/:businessId/integrations
+```
 
-There is deliberately no fallback from `INBOUND_EMAIL_RAW_BUCKET_NAME` to the canonical document bucket. Existing shared worker dependencies remain required, including `DOCUMENTS_BUCKET_NAME`, database configuration, and the canonical document-processing configuration.
+The response returns a one-time integration secret and canonical submission endpoint. Producers submit leads server-to-server with `X-Voxis-Integration-Secret` and a stable external event ID.
 
-Before starting the worker, manually configure one SES receipt rule for `docs.voxistudio.com` to store raw MIME messages in the selected raw bucket. Configure that bucket's `s3:ObjectCreated:*` notification to send direct S3 event messages to the selected standard SQS queue. Use the same AWS region for SES, S3, SQS, and the worker.
+## SMS reminders
 
-The worker task role must allow `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, and `sqs:DeleteMessage` on the exact inbound queue; `s3:GetObject` on the exact raw-email bucket/prefix; and `s3:PutObject` on the existing canonical document bucket's `businesses/*` prefix. The SQS resource policy must allow the raw bucket to call `sqs:SendMessage`, and the raw bucket policy must allow SES to call `s3:PutObject`. Continue using the AWS SDK default credential chain; do not configure access keys in application environment variables.
-
-The worker ignores email bodies and validates every attachment against the canonical PDF/JPEG/PNG and size policy. For each attachment, it uses OpenAI Vision only to classify against the receiving case’s currently unoccupied requirement type/label candidates. A server-validated `HIGH` match is linked to that requirement and its schema before canonical S3 upload; ambiguous, unmatched, invalid, or unavailable classifications create an unassigned `EMAIL` Document. The existing canonical S3 worker remains the only stage that extracts schema field values, and unassigned documents stop at `NEEDS_REVIEW`.
+Case document reminders use Twilio Messaging Services and require `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`. Businesses configure an SMS sender through the SMS settings endpoints.

@@ -9,7 +9,7 @@ export type CanonicalLeadSubmission = {
     schemaVersion: 1;
     source: {
         provider: string;
-        integrationType: "LEAD_ADS" | "FORM" | "LANDING_PAGE" | "CUSTOM_API" | "MESSAGING";
+        integrationType: "FORM" | "LANDING_PAGE" | "CUSTOM_API";
         eventType: string;
         externalEventId?: string;
         externalLeadId?: string;

@@ -9,8 +9,6 @@ export type OutboundMessage = {
   body: string;
   businessId: number;
   clientId?: number;
-  conversationId?: number;
-  messageId?: number;
 };
 
 export type SendMessageResult = {

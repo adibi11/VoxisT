@@ -88,7 +88,7 @@ user.platformRole === "admin"
 Examples:
 
 - global businesses dashboard
-- all conversations dashboard
+- all cases dashboard
 - internal analytics
 - future platform user management
 
@@ -108,9 +108,9 @@ user.businessIds.includes(businessId)
 
 Examples:
 
-- business conversations
+- business cases
 - clients
-- conversation details
+- case details
 
 ### Business Management Pages
 

@@ -5,7 +5,6 @@ import { CanonicalLeadSubmission } from "../../LeadIngestion/canonicalLeadSubmis
 import { decryptIntegrationSecret } from "../../LeadIngestion/integrationSecret";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { ILogger } from "../../logging/logger";
-import { AuthenticatedRequest, requireAuth, requireBusinessAccess } from "../authMiddleware";
 
 type DirectLeadSubmissionRequest = {
     externalEventId: string;
@@ -28,23 +27,14 @@ export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient
             return res.status(404).json({ message: "Active lead integration connection not found" });
         }
 
-        if (connection.integrationType === "INSTAGRAM_COMMENT_AUTOMATION") {
-            return res.status(404).json({ message: "Active lead integration connection not found" });
-        }
-
-        if (connection.integrationType === "LANDING_PAGE") {
-            const providedSecret = req.header("X-Voxis-Integration-Secret");
-            const encryptedSecret = await sql.integrationConnectionRepository.getWebhookSecretEncryptedByConnectionToken(connectionToken);
-            try {
-                if (!providedSecret || !encryptedSecret || !safeEquals(providedSecret, decryptIntegrationSecret(encryptedSecret)))
-                    return res.status(401).json({ message: "Invalid landing page integration secret" });
-            } catch {
-                return res.status(401).json({ message: "Invalid landing page integration secret" });
+        const providedSecret = req.header("X-Voxis-Integration-Secret");
+        const encryptedSecret = await sql.integrationConnectionRepository.getWebhookSecretEncryptedByConnectionToken(connectionToken);
+        try {
+            if (!providedSecret || !encryptedSecret || !safeEquals(providedSecret, decryptIntegrationSecret(encryptedSecret))) {
+                return res.status(401).json({ message: "Invalid integration secret" });
             }
-        } else {
-            let authenticated = false;
-            requireAuth(req, res, () => { authenticated = true; });
-            if (!authenticated || !requireBusinessAccess(req as unknown as AuthenticatedRequest, res, connection.businessId)) return;
+        } catch {
+            return res.status(401).json({ message: "Invalid integration secret" });
         }
 
         return ingestSubmission(req, res, connection as Parameters<typeof ingestSubmission>[2], ingestionService, logger);

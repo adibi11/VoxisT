@@ -2,23 +2,23 @@ import { describe, expect, it } from "vitest";
 import { LeadOutboxPublisher } from "../../src/LeadIngestion/LeadOutboxPublisher";
 import { IIngestionOutboxRepository } from "../../src/dataClients/SqlClient/Repositories/IngestionOutboxRepo/IIngestionOutboxRepository";
 import { CreateIngestionOutboxInput, IngestionOutboxDto } from "../../src/dataClients/Types/leadIngestionTypes";
-import { ILeadIngestionQueue, LeadIngestionJobData } from "../../src/QueueClient/leadIngestionQueue";
+import { LeadIngestionJobData } from "../../src/LeadIngestion/LeadProcessor";
 
 describe("LeadOutboxPublisher", () => {
     it("publishes a pending lead-ingestion outbox event with deterministic job data", async () => {
         const outbox = new FakeOutboxRepository();
-        const queue = new FakeLeadQueue();
-        const publisher = new LeadOutboxPublisher(outbox, queue);
+        const processor = new FakeLeadProcessor();
+        const publisher = new LeadOutboxPublisher(outbox, { info() {}, warn() {}, error() {}, child() { return this; } }, processor as any);
 
         await expect(publisher.publishPending()).resolves.toEqual({ published: 1, failed: 0 });
-        expect(queue.jobs).toEqual([{ incomingLeadId: 41, businessId: 7 }]);
+        expect(processor.jobs).toEqual([{ incomingLeadId: 41, businessId: 7 }]);
         expect(outbox.published).toEqual([1]);
     });
 });
 
-class FakeLeadQueue implements ILeadIngestionQueue {
+class FakeLeadProcessor {
     jobs: LeadIngestionJobData[] = [];
-    async enqueue(data: LeadIngestionJobData): Promise<void> { this.jobs.push(data); }
+    async process(data: LeadIngestionJobData): Promise<void> { this.jobs.push(data); }
 }
 
 class FakeOutboxRepository implements IIngestionOutboxRepository {
