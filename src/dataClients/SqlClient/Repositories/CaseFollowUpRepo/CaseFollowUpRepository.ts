@@ -34,6 +34,17 @@ const workItemInclude = {
       documentSpecifications: {
         include: requirementInclude,
         orderBy: { id: "asc" }
+      },
+      followUps: {
+        where: { status: "ACCEPTED", acceptedAt: { not: null } },
+        select: { acceptedAt: true },
+        orderBy: { acceptedAt: "asc" },
+        take: 1
+      },
+      voiceInteractions: {
+        where: { status: { in: ["SUBMITTING", "UNKNOWN"] } },
+        select: { id: true },
+        take: 1
       }
     }
   }
@@ -53,6 +64,84 @@ export class CaseFollowUpRepository implements ICaseFollowUpRepository {
       take: limit
     });
     return followUps.map((followUp) => followUp.id);
+  }
+
+  async recoverAbandoned(now: Date, limit: number) {
+    const ambiguous = await this.prisma.caseFollowUp.findMany({
+      where: {
+        status: "PROCESSING",
+        leaseExpiresAt: { lt: now },
+        dispatchStartedAt: { not: null }
+      },
+      select: { id: true, businessId: true },
+      orderBy: [{ leaseExpiresAt: "asc" }, { id: "asc" }],
+      take: limit
+    });
+    for (const candidate of ambiguous) {
+      await this.prisma.$transaction(async (tx) => {
+        const failed = await tx.caseFollowUp.updateMany({
+          where: {
+            id: candidate.id,
+            status: "PROCESSING",
+            leaseExpiresAt: { lt: now },
+            dispatchStartedAt: { not: null }
+          },
+          data: {
+            status: "FAILED",
+            processingLeaseId: null,
+            leaseExpiresAt: null,
+            failureCode: "PROVIDER_RESULT_UNKNOWN",
+            failureReason: "Worker lease expired after provider dispatch began; automatic retry is unsafe"
+          }
+        });
+        if (failed.count === 1) {
+          await tx.voiceInteraction.updateMany({
+            where: { caseFollowUpId: candidate.id, businessId: candidate.businessId, status: "SUBMITTING" },
+            data: { status: "UNKNOWN", failureCode: "PROVIDER_RESULT_UNKNOWN" }
+          });
+        }
+      });
+    }
+    const candidates = await this.prisma.caseFollowUp.findMany({
+      where: {
+        status: "PROCESSING",
+        leaseExpiresAt: { lt: now },
+        dispatchStartedAt: null
+      },
+      select: { id: true, businessId: true, attemptCount: true },
+      orderBy: [{ leaseExpiresAt: "asc" }, { id: "asc" }],
+      take: limit
+    });
+    const recovered: Array<{ id: number; attemptCount: number }> = [];
+    for (const candidate of candidates) {
+      const wasRecovered = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.caseFollowUp.updateMany({
+          where: {
+            id: candidate.id,
+            status: "PROCESSING",
+            leaseExpiresAt: { lt: now },
+            dispatchStartedAt: null
+          },
+          data: {
+            status: "PENDING",
+            processingLeaseId: null,
+            leaseExpiresAt: null,
+            dispatchChannel: null,
+            dispatchProvider: null,
+            failureCode: null,
+            failureReason: null
+          }
+        });
+        if (updated.count !== 1) return false;
+        await tx.voiceInteraction.updateMany({
+          where: { caseFollowUpId: candidate.id, businessId: candidate.businessId, status: "SUBMITTING" },
+          data: { status: "PENDING", failureCode: null }
+        });
+        return true;
+      });
+      if (wasRecovered) recovered.push(candidate);
+    }
+    return recovered;
   }
 
   async listSchedulerCandidates(
@@ -144,10 +233,16 @@ export class CaseFollowUpRepository implements ICaseFollowUpRepository {
     }
   }
 
-  async claimPending(id: number): Promise<CaseFollowUpWorkItem | null> {
+  async claimPending(id: number, leaseId: string, leaseExpiresAt: Date): Promise<CaseFollowUpWorkItem | null> {
     const claimed = await this.prisma.caseFollowUp.updateMany({
       where: { id, status: "PENDING" },
-      data: { status: "PROCESSING", attemptCount: { increment: 1 } }
+      data: {
+        status: "PROCESSING",
+        attemptCount: { increment: 1 },
+        processingLeaseId: leaseId,
+        leaseExpiresAt,
+        dispatchStartedAt: null
+      }
     });
     if (claimed.count !== 1) return null;
 
@@ -159,13 +254,62 @@ export class CaseFollowUpRepository implements ICaseFollowUpRepository {
     return mapWorkItem(followUp);
   }
 
-  async markAccepted(id: number, providerMessageId: string, acceptedAt: Date): Promise<boolean> {
+  async reloadClaimed(id: number, leaseId: string, now: Date): Promise<CaseFollowUpWorkItem | null> {
+    const followUp = await this.prisma.caseFollowUp.findFirst({
+      where: {
+        id,
+        status: "PROCESSING",
+        processingLeaseId: leaseId,
+        leaseExpiresAt: { gt: now },
+        dispatchStartedAt: null
+      },
+      include: workItemInclude
+    });
+    return followUp ? mapWorkItem(followUp) : null;
+  }
+
+  async markDispatchStarted(id: number, leaseId: string, startedAt: Date): Promise<boolean> {
     const updated = await this.prisma.caseFollowUp.updateMany({
-      where: { id, status: "PROCESSING" },
+      where: {
+        id,
+        status: "PROCESSING",
+        processingLeaseId: leaseId,
+        leaseExpiresAt: { gt: startedAt },
+        dispatchStartedAt: null
+      },
+      data: { dispatchStartedAt: startedAt }
+    });
+    return updated.count === 1;
+  }
+
+  async selectDispatchPath(
+    id: number,
+    leaseId: string,
+    channel: "sms" | "voice",
+    provider: string
+  ): Promise<boolean> {
+    const updated = await this.prisma.caseFollowUp.updateMany({
+      where: {
+        id,
+        status: "PROCESSING",
+        processingLeaseId: leaseId,
+        dispatchChannel: null,
+        dispatchStartedAt: null
+      },
+      data: { dispatchChannel: channel, dispatchProvider: provider }
+    });
+    return updated.count === 1;
+  }
+
+  async markAccepted(id: number, leaseId: string, providerMessageId: string, acceptedAt: Date): Promise<boolean> {
+    const updated = await this.prisma.caseFollowUp.updateMany({
+      where: { id, status: "PROCESSING", processingLeaseId: leaseId },
       data: {
         status: "ACCEPTED",
         providerMessageId,
         acceptedAt,
+        processingLeaseId: null,
+        leaseExpiresAt: null,
         failureCode: null,
         failureReason: null
       }
@@ -173,21 +317,30 @@ export class CaseFollowUpRepository implements ICaseFollowUpRepository {
     return updated.count === 1;
   }
 
-  async markFailed(id: number, failureCode: string, failureReason: string): Promise<boolean> {
+  async markFailed(id: number, leaseId: string, failureCode: string, failureReason: string): Promise<boolean> {
     const updated = await this.prisma.caseFollowUp.updateMany({
-      where: { id, status: "PROCESSING" },
-      data: { status: "FAILED", failureCode, failureReason }
+      where: { id, status: "PROCESSING", processingLeaseId: leaseId },
+      data: {
+        status: "FAILED",
+        processingLeaseId: null,
+        leaseExpiresAt: null,
+        failureCode,
+        failureReason
+      }
     });
     return updated.count === 1;
   }
 
-  async defer(id: number, scheduledFor: Date): Promise<boolean> {
+  async defer(id: number, leaseId: string, scheduledFor: Date): Promise<boolean> {
     const updated = await this.prisma.caseFollowUp.updateMany({
-      where: { id, status: "PROCESSING" },
+      where: { id, status: "PROCESSING", processingLeaseId: leaseId },
       data: {
         status: "PENDING",
         scheduledFor,
         attemptCount: { decrement: 1 },
+        processingLeaseId: null,
+        leaseExpiresAt: null,
+        dispatchStartedAt: null,
         failureCode: null,
         failureReason: null
       }
@@ -195,10 +348,16 @@ export class CaseFollowUpRepository implements ICaseFollowUpRepository {
     return updated.count === 1;
   }
 
-  async markSkipped(id: number, reasonCode: string, reason: string): Promise<boolean> {
+  async markSkipped(id: number, leaseId: string, reasonCode: string, reason: string): Promise<boolean> {
     const updated = await this.prisma.caseFollowUp.updateMany({
-      where: { id, status: "PROCESSING" },
-      data: { status: "SKIPPED", failureCode: reasonCode, failureReason: reason }
+      where: { id, status: "PROCESSING", processingLeaseId: leaseId },
+      data: {
+        status: "SKIPPED",
+        processingLeaseId: null,
+        leaseExpiresAt: null,
+        failureCode: reasonCode,
+        failureReason: reason
+      }
     });
     return updated.count === 1;
   }
@@ -230,6 +389,9 @@ function mapWorkItem(followUp: WorkItemRow): CaseFollowUpWorkItem {
       businessId: followUp.case.businessId,
       status: followUp.case.status,
       archivedAt: followUp.case.archivedAt,
+      lastBorrowerInteractionAt: followUp.case.lastBorrowerInteractionAt,
+      firstSuccessfulFollowUpAt: followUp.case.followUps[0]?.acceptedAt ?? null,
+      voiceSubmissionUnresolved: followUp.case.voiceInteractions.length > 0,
       businessName: followUp.case.business.businessName,
       clientId: lead.clientId,
       clientName: lead.client?.name?.trim() || lead.name?.trim() || "לקוח/ה",

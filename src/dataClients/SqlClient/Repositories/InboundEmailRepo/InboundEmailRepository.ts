@@ -131,7 +131,24 @@ export class InboundEmailRepository implements IInboundEmailRepository {
   }
 
   async markReceiptProcessed(receiptId: number): Promise<void> {
-    await this.prisma.inboundEmailReceipt.updateMany({ where: { id: receiptId, status: "PROCESSING" }, data: { status: "PROCESSED", processedAt: new Date() } });
+    await this.prisma.$transaction(async (tx) => {
+      const processedAt = new Date();
+      const receipt = await tx.inboundEmailReceipt.findFirst({
+        where: { id: receiptId, status: "PROCESSING" },
+        select: { caseId: true, businessId: true }
+      });
+      if (!receipt) return;
+      const updated = await tx.inboundEmailReceipt.updateMany({
+        where: { id: receiptId, status: "PROCESSING" },
+        data: { status: "PROCESSED", processedAt }
+      });
+      if (updated.count === 1) {
+        await tx.case.updateMany({
+          where: { id: receipt.caseId, businessId: receipt.businessId },
+          data: { lastBorrowerInteractionAt: processedAt }
+        });
+      }
+    });
   }
   async markReceiptRejected(receiptId: number, reason: string): Promise<void> {
     await this.prisma.inboundEmailReceipt.updateMany({ where: { id: receiptId, status: "PROCESSING" }, data: { status: "REJECTED", failureReason: reason, processedAt: new Date() } });

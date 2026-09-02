@@ -7,8 +7,6 @@
     "test:watch": "vitest",
     "start": "node dist/Api/index.js",
     "dev": "nodemon --watch src --exec ts-node src/Api/index.ts",
-    "lead-outbox-publisher": "ts-node src/Workers/LeadOutboxPublisherWorker/worker.ts",
-    "start:lead-outbox-publisher": "node dist/Workers/LeadOutboxPublisherWorker/worker.js",
     "db:seed": "ts-node src/dataClients/SqlClient/seed.ts",
     "build": "tsc",
     "s3-document-upload-worker": "ts-node src/Workers/S3DocumentUploadWorker/worker.ts",

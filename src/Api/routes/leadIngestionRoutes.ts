@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import express, { RequestHandler } from "express";
-import { LeadIngestionService } from "../../LeadIngestion/LeadIngestionService";
+import { LeadCreationService } from "../../Lead/LeadCreationService";
 import { CanonicalLeadSubmission } from "../../LeadIngestion/canonicalLeadSubmission";
 import { decryptIntegrationSecret } from "../../LeadIngestion/integrationSecret";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
@@ -17,7 +17,7 @@ type DirectLeadSubmissionRequest = {
 
 
 export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger,publicEntrypointRateLimiter: RequestHandler): void {
-    const ingestionService = new LeadIngestionService(sql.leadIngestionRepository, logger.child({ component: "LeadIngestionService" }));
+    const leadCreation = new LeadCreationService(sql.getPrismaClient());
 
     app.post("/lead-submissions/:connectionToken",publicEntrypointRateLimiter, async (req, res) => {
         const connectionToken = connectionTokenFrom(req.params.connectionToken);
@@ -37,24 +37,17 @@ export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient
             return res.status(401).json({ message: "Invalid integration secret" });
         }
 
-        return ingestSubmission(req, res, connection as Parameters<typeof ingestSubmission>[2], ingestionService, logger);
+        return ingestSubmission(req, res, connection as Parameters<typeof ingestSubmission>[2], leadCreation, logger);
     });
 
-    async function ingestSubmission(req: express.Request, res: express.Response, connection: { id: number; businessId: number; provider: string; integrationType: CanonicalLeadSubmission["source"]["integrationType"] }, service: LeadIngestionService, requestLogger: ILogger) {
+    async function ingestSubmission(req: express.Request, res: express.Response, connection: { id: number; businessId: number; provider: string; integrationType: CanonicalLeadSubmission["source"]["integrationType"] }, service: LeadCreationService, requestLogger: ILogger) {
         const request = req.body as Partial<DirectLeadSubmissionRequest>;
         if (!isValidDirectLeadSubmission(request)) {
             return res.status(400).json({ message: "Invalid lead submission" });
         }
 
         try {
-            const result = await service.ingest({
-                connection: {
-                    connectionId: connection.id,
-                    businessId: connection.businessId,
-                    provider: connection.provider,
-                    integrationType: connection.integrationType
-                },
-                submission: {
+            const result = await service.createIntegratedLead(connection, {
                     schemaVersion: 1,
                     source: {
                         provider: connection.provider,
@@ -68,17 +61,15 @@ export function getLeadIngestionRoutes(app: express.Router, sql: IDatabaseClient
                     attribution: request.attribution,
                     consent: request.consent,
                     metadata: request.metadata
-                },
-                rawPayload: req.body
             });
 
             requestLogger.info("lead.directSubmission.accepted", {
                 businessId: connection.businessId,
                 connectionId: connection.id,
-                incomingLeadId: result.incomingLeadId,
+                leadId: result.leadId,
                 outcome: result.outcome
             });
-            return res.status(202).json({ incomingLeadId: result.incomingLeadId, duplicate: result.outcome === "duplicate" });
+            return res.status(result.outcome === "created" ? 201 : 200).json({ leadId: result.leadId, duplicate: result.outcome === "duplicate" });
         } catch (error) {
             requestLogger.error("lead.directSubmission.failed", { businessId: connection.businessId, connectionId: connection.id, error });
             return res.status(400).json({ message: error instanceof Error ? error.message : "Invalid lead submission" });

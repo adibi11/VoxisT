@@ -45,11 +45,24 @@ export class DocumentRepository implements IDocumentRepository {
   }
 
   async markUploaded(documentId: number): Promise<boolean> {
-    const result = await this.prisma.document.updateMany({
-      where: { id: documentId, status: "PENDING_UPLOAD" },
-      data: { status: "UPLOADED" }
+    return this.prisma.$transaction(async (tx) => {
+      const document = await tx.document.findUnique({
+        where: { id: documentId },
+        select: { caseId: true, source: true }
+      });
+      if (!document) return false;
+      const result = await tx.document.updateMany({
+        where: { id: documentId, status: "PENDING_UPLOAD" },
+        data: { status: "UPLOADED" }
+      });
+      if (result.count === 1 && document.source === "CLIENT_PORTAL") {
+        await tx.case.update({
+          where: { id: document.caseId },
+          data: { lastBorrowerInteractionAt: new Date() }
+        });
+      }
+      return result.count === 1;
     });
-    return result.count === 1;
   }
 
   async findViewableById(businessId: number, documentId: number): Promise<ViewableDocument | null> {

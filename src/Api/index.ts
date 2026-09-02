@@ -13,6 +13,7 @@ import { getIntegrationRoutes } from "./routes/integrationRoutes";
 import { getLeadIngestionRoutes } from "./routes/leadIngestionRoutes";
 import { getLeadRoutes } from "./routes/leadRoutes";
 import { getPortalRoutes } from "./routes/portalRoutes";
+import { getPublicFormRoutes } from "./routes/publicFormRoutes";
 import { createPublicEntrypointRateLimiter, getPublicEntrypointRateLimitConfig } from "./rateLimitMiddleware";
 import { createBodyParserErrorHandler, createSecurityHeaders, getHttpSecurityConfig } from "./securityMiddleware";
 
@@ -49,6 +50,7 @@ getAuthRoutes(v1Router, sqlManager, appLogger, publicRateLimiter);
 getBusinessRoutes(v1Router, sqlManager, appLogger);
 getLeadRoutes(v1Router, sqlManager, appLogger, publicRateLimiter);
 getLeadIngestionRoutes(v1Router, sqlManager, appLogger, publicRateLimiter);
+getPublicFormRoutes(v1Router, sqlManager, appLogger, publicRateLimiter);
 getIntegrationRoutes(v1Router, sqlManager, appLogger);
 getDocumentBundleRoutes(v1Router, sqlManager, appLogger);
 getCaseRoutes(v1Router, sqlManager, appLogger);

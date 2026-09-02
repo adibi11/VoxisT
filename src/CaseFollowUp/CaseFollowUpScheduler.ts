@@ -65,8 +65,21 @@ export class CaseFollowUpScheduler {
 
   async runOnce(now: Date = new Date()): Promise<CaseFollowUpSchedulerResult> {
     const result = { examined: 0, created: 0, duplicates: 0 };
+    const recovered = await this.repository.recoverAbandoned(now, this.pageSize);
+    const recoveredIds = new Set(recovered.map((followUp) => followUp.id));
+    for (const followUp of recovered) {
+      try {
+        await this.queue.enqueue(followUp.id, `recovery-${followUp.attemptCount}`);
+      } catch (error) {
+        this.schedulerLogger.error("case_follow_up.scheduler.recovery_enqueue.failed", {
+          caseFollowUpId: followUp.id,
+          errorType: error instanceof Error ? error.name : "UnknownError"
+        });
+      }
+    }
     const pendingIds = await this.repository.listPendingIdsForEnqueue(now, this.pageSize);
     for (const caseFollowUpId of pendingIds) {
+      if (recoveredIds.has(caseFollowUpId)) continue;
       try {
         await this.queue.enqueue(caseFollowUpId);
       } catch (error) {

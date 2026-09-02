@@ -8,7 +8,7 @@ export type CaseFollowUpJobData = {
 };
 
 export interface ICaseFollowUpQueue {
-  enqueue(caseFollowUpId: number): Promise<unknown>;
+  enqueue(caseFollowUpId: number, executionKey?: string): Promise<unknown>;
 }
 
 export class CaseFollowUpQueue implements ICaseFollowUpQueue {
@@ -26,12 +26,12 @@ export class CaseFollowUpQueue implements ICaseFollowUpQueue {
     });
   }
 
-  async enqueue(caseFollowUpId: number): Promise<unknown> {
+  async enqueue(caseFollowUpId: number, executionKey?: string): Promise<unknown> {
     const job = await this.queue.add(
       "send-case-follow-up",
       { caseFollowUpId },
       {
-        jobId: `case-follow-up-${caseFollowUpId}`,
+        jobId: `case-follow-up-${caseFollowUpId}${executionKey ? `-${executionKey}` : ""}`,
         attempts: 1,
         removeOnComplete: 1000,
         removeOnFail: 1000

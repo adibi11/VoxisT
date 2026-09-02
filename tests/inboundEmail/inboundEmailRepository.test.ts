@@ -79,3 +79,53 @@ describe("InboundEmailRepository document classification linkage", () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ caseDocumentSpecificationId: null, schemaId: null, documentTypeId: null }) }));
   });
 });
+
+describe("Borrower interaction timestamps", () => {
+  it("records a client portal upload only when the object upload is observed", async () => {
+    const tx = {
+      document: {
+        findUnique: vi.fn().mockResolvedValue({ caseId: 20, source: "CLIENT_PORTAL" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      case: { update: vi.fn().mockResolvedValue({}) }
+    };
+    const repository = new DocumentRepository({ $transaction: (callback: any) => callback(tx) } as any);
+
+    await expect(repository.markUploaded(50)).resolves.toBe(true);
+    expect(tx.case.update).toHaveBeenCalledWith({
+      where: { id: 20 },
+      data: { lastBorrowerInteractionAt: expect.any(Date) }
+    });
+  });
+
+  it("does not count an advisor upload as borrower interaction", async () => {
+    const tx = {
+      document: {
+        findUnique: vi.fn().mockResolvedValue({ caseId: 20, source: "ADVISOR_UPLOAD" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      case: { update: vi.fn() }
+    };
+    const repository = new DocumentRepository({ $transaction: (callback: any) => callback(tx) } as any);
+
+    await repository.markUploaded(50);
+    expect(tx.case.update).not.toHaveBeenCalled();
+  });
+
+  it("records accepted inbound email attachments using the receipt tenant and case", async () => {
+    const tx = {
+      inboundEmailReceipt: {
+        findFirst: vi.fn().mockResolvedValue({ caseId: 20, businessId: 7 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 })
+      },
+      case: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) }
+    };
+    const repository = new InboundEmailRepository({ $transaction: (callback: any) => callback(tx) } as any);
+
+    await repository.markReceiptProcessed(4);
+    expect(tx.case.updateMany).toHaveBeenCalledWith({
+      where: { id: 20, businessId: 7 },
+      data: { lastBorrowerInteractionAt: expect.any(Date) }
+    });
+  });
+});

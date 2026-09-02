@@ -34,6 +34,7 @@ function collaborators(candidates: CaseFollowUpCandidate[]) {
   const unique = new Map<string, number>();
   let nextId = 1;
   const repository = {
+    recoverAbandoned: vi.fn().mockResolvedValue([]),
     listPendingIdsForEnqueue: vi.fn().mockResolvedValue([]),
     listSchedulerCandidates: vi.fn().mockImplementation(async () => candidates),
     createPending: vi.fn().mockImplementation(async (
@@ -119,6 +120,13 @@ describe("CaseFollowUpScheduler", () => {
     repository.listPendingIdsForEnqueue.mockResolvedValue([44]);
     await scheduler.runOnce(firstDay);
     expect(queue.enqueue).toHaveBeenCalledWith(44);
+  });
+
+  it("enqueues recovered pre-dispatch work with a new execution key", async () => {
+    const { repository, queue, scheduler } = collaborators([]);
+    repository.recoverAbandoned.mockResolvedValue([{ id: 44, attemptCount: 2 }]);
+    await scheduler.runOnce(firstDay);
+    expect(queue.enqueue).toHaveBeenCalledWith(44, "recovery-2");
   });
 
   it("does not create a reminder before the configured local hour", async () => {

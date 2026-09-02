@@ -1,7 +1,5 @@
 export type IntegrationType = "FORM" | "LANDING_PAGE" | "CUSTOM_API";
 export type IntegrationConnectionStatus = "PENDING" | "ACTIVE" | "DISABLED" | "FAILED";
-export type IncomingLeadStatus = "RECEIVED" | "QUEUED" | "PROCESSING" | "PROCESSED" | "FAILED" | "IGNORED";
-export type IngestionOutboxStatus = "PENDING" | "PUBLISHED" | "FAILED";
 
 export type IntegrationConnectionDto = {
   id: number;
@@ -25,44 +23,3 @@ export type CreateIntegrationConnectionInput =
     credentialsEncrypted?: string | null;
     webhookSecretEncrypted?: string | null;
   };
-
-export type CreateIncomingLeadInput = {
-  businessId: number;
-  integrationConnectionId: number;
-  provider: string;
-  eventType: string;
-  providerEventId?: string | null;
-  idempotencyKey: string;
-  payloadHash: string;
-  rawPayload?: unknown;
-  canonicalPayload: unknown;
-};
-
-export type IncomingLeadDto = CreateIncomingLeadInput & {
-  id: number;
-  status: IncomingLeadStatus;
-  failureCode: string | null;
-  failureDetail: string | null;
-  receivedAt: string;
-  processedAt: string | null;
-  externalLeadId: number | null;
-};
-
-export type CreateIngestionOutboxInput = {
-  businessId: number;
-  aggregateType: string;
-  aggregateId: number;
-  eventType: string;
-  payload: unknown;
-  availableAt?: Date;
-};
-
-export type IngestionOutboxDto = CreateIngestionOutboxInput & {
-  id: number;
-  status: IngestionOutboxStatus;
-  attempts: number;
-  publishedAt: string | null;
-  lastError: string | null;
-  createdAt: string;
-  updatedAt: string;
-};

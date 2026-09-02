@@ -31,6 +31,9 @@ export type CaseFollowUpWorkItem = {
     businessId: number;
     status: CaseFollowUpCaseStatus;
     archivedAt: Date | null;
+    lastBorrowerInteractionAt: Date | null;
+    firstSuccessfulFollowUpAt: Date | null;
+    voiceSubmissionUnresolved: boolean;
     businessName: string;
     clientId: number | null;
     clientName: string;
@@ -45,8 +48,14 @@ export type CreatePendingCaseFollowUpResult =
   | { outcome: "created"; id: number }
   | { outcome: "duplicate" };
 
+export type RecoverableCaseFollowUp = {
+  id: number;
+  attemptCount: number;
+};
+
 export interface ICaseFollowUpRepository {
   listPendingIdsForEnqueue(now: Date, limit: number): Promise<number[]>;
+  recoverAbandoned(now: Date, limit: number): Promise<RecoverableCaseFollowUp[]>;
   listSchedulerCandidates(
     afterCaseId: number | null,
     limit: number
@@ -57,9 +66,12 @@ export interface ICaseFollowUpRepository {
     cadenceKey: string,
     scheduledFor: Date
   ): Promise<CreatePendingCaseFollowUpResult>;
-  claimPending(id: number): Promise<CaseFollowUpWorkItem | null>;
-  markAccepted(id: number, providerMessageId: string, acceptedAt: Date): Promise<boolean>;
-  markFailed(id: number, failureCode: string, failureReason: string): Promise<boolean>;
-  defer(id: number, scheduledFor: Date): Promise<boolean>;
-  markSkipped(id: number, reasonCode: string, reason: string): Promise<boolean>;
+  claimPending(id: number, leaseId: string, leaseExpiresAt: Date): Promise<CaseFollowUpWorkItem | null>;
+  reloadClaimed(id: number, leaseId: string, now: Date): Promise<CaseFollowUpWorkItem | null>;
+  markDispatchStarted(id: number, leaseId: string, startedAt: Date): Promise<boolean>;
+  selectDispatchPath(id: number, leaseId: string, channel: "sms" | "voice", provider: string): Promise<boolean>;
+  markAccepted(id: number, leaseId: string, providerMessageId: string, acceptedAt: Date): Promise<boolean>;
+  markFailed(id: number, leaseId: string, failureCode: string, failureReason: string): Promise<boolean>;
+  defer(id: number, leaseId: string, scheduledFor: Date): Promise<boolean>;
+  markSkipped(id: number, leaseId: string, reasonCode: string, reason: string): Promise<boolean>;
 }

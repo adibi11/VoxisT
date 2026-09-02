@@ -23,6 +23,25 @@ export type UpdateSmsSettingsRequestDto = {
   senderId: string | null;
 };
 
+export type VoiceSettingsDto = {
+  enabled: boolean;
+  thresholdDays: number | null;
+  providerEnabled: boolean;
+  provider: string | null;
+  outboundNumberId: string | null;
+  agentId: string | null;
+  providerConfigured: boolean;
+};
+
+export type UpdateVoiceSettingsRequestDto = {
+  enabled: boolean;
+  thresholdDays: number | null;
+  providerEnabled: boolean;
+  provider: "elevenlabs";
+  outboundNumberId: string | null;
+  agentId: string | null;
+};
+
 export type LeadStatusDto =
   | "NEW"
   | "QUALIFYING"

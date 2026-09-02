@@ -8,6 +8,11 @@ import {
 } from "../../src/dataClients/SqlClient/Repositories/CaseFollowUpRepo/ICaseFollowUpRepository";
 import { ILogger, LogData } from "../../src/logging/logger";
 import { TwilioProviderRejectedError, TwilioSendOutcomeUnknownError } from "../../src/MessageSender/twilioMessageSender";
+import { FakeVoiceCallProvider } from "../../src/Voice/Providers/FakeVoiceCallProvider";
+import {
+  VoiceProviderOutcomeUnknownError,
+  VoiceProviderRejectedError
+} from "../../src/Voice/Providers/VoiceCallProvider";
 
 class CaptureLogger implements ILogger {
   entries: Array<{ message: string; data?: LogData }> = [];
@@ -30,6 +35,8 @@ function workItem(overrides: {
   policyHour?: number | null;
   policyTimezone?: string;
   cadenceKey?: string;
+  lastBorrowerInteractionAt?: Date | null;
+  firstSuccessfulFollowUpAt?: Date | null;
 } = {}): CaseFollowUpWorkItem {
   return {
     id: 55,
@@ -41,6 +48,9 @@ function workItem(overrides: {
       businessId: overrides.caseBusinessId ?? 7,
       status: overrides.status ?? "IN_PROGRESS",
       archivedAt: overrides.archivedAt ?? null,
+      lastBorrowerInteractionAt: overrides.lastBorrowerInteractionAt ?? null,
+      firstSuccessfulFollowUpAt: overrides.firstSuccessfulFollowUpAt ?? null,
+      voiceSubmissionUnresolved: false,
       businessName: "Voxis Finance",
       clientId: 9,
       clientName: "Dana",
@@ -68,9 +78,72 @@ function workItem(overrides: {
   };
 }
 
+function voiceCollaborators(
+  item: CaseFollowUpWorkItem,
+  configurationOverrides: Record<string, unknown> = {},
+  provider: any = new FakeVoiceCallProvider()
+) {
+  const deps = collaborators(item);
+  const configuration = {
+    get: vi.fn().mockResolvedValue({
+      enabled: true,
+      thresholdDays: 1,
+      providerEnabled: true,
+      providerConfigured: true,
+      provider: provider.provider,
+      outboundNumberId: "business-7-number",
+      agentId: "business-7-agent",
+      ...configurationOverrides
+    })
+  };
+  const interactions = {
+    getOrCreate: vi.fn().mockResolvedValue({
+      id: 90,
+      businessId: 7,
+      caseId: 20,
+      caseFollowUpId: 55,
+      provider: provider.provider,
+      providerInteractionId: null,
+      idempotencyKey: "voice-case-follow-up-55",
+      status: "PENDING"
+    }),
+    markSubmitting: vi.fn().mockResolvedValue(true),
+    markAccepted: vi.fn().mockResolvedValue(true),
+    markAcceptedWithFollowUp: vi.fn().mockResolvedValue(true),
+    markFailed: vi.fn().mockResolvedValue(true),
+    markUnknown: vi.fn().mockResolvedValue(true)
+  };
+  const contextBuilder = {
+    build: vi.fn().mockResolvedValue({
+      caseId: 20,
+      businessName: "Voxis Finance",
+      borrowerName: "Dana",
+      missingDocuments: [{ label: "Payslip — May" }],
+      receivedDocuments: [],
+      uploadUrl: "https://portal.example/c/token"
+    })
+  };
+  const worker = new CaseFollowUpWorker(
+    deps.repository as any,
+    deps.channelRepository as any,
+    deps.portalAccess as any,
+    deps.inboundEmail as any,
+    deps.sender,
+    new CaseMissingRequirementResolver(),
+    new CaseFollowUpMessageBuilder(),
+    deps.logger,
+    () => new Date("2026-08-23T10:00:00.000Z"),
+    { configuration, interactions: interactions as any, contextBuilder, provider }
+  );
+  return { ...deps, worker, configuration, interactions, contextBuilder, provider };
+}
+
 function collaborators(item: CaseFollowUpWorkItem = workItem()) {
   const repository = {
     claimPending: vi.fn().mockResolvedValue(item),
+    reloadClaimed: vi.fn().mockResolvedValue(item),
+    markDispatchStarted: vi.fn().mockResolvedValue(true),
+    selectDispatchPath: vi.fn().mockResolvedValue(true),
     markAccepted: vi.fn().mockResolvedValue(true),
     markFailed: vi.fn().mockResolvedValue(true),
     defer: vi.fn().mockResolvedValue(true),
@@ -124,7 +197,11 @@ describe("CaseFollowUpWorker", () => {
       outcome: "accepted",
       providerMessageId: "SM123"
     });
-    expect(repository.claimPending).toHaveBeenCalledWith(55);
+    expect(repository.claimPending).toHaveBeenCalledWith(
+      55,
+      expect.any(String),
+      new Date("2026-08-23T10:05:00.000Z")
+    );
     expect(channelRepository.GetSmsProviderConfiguration).toHaveBeenCalledWith(7);
     expect(portalAccess.getOrCreateActiveAccess).toHaveBeenCalledWith(7, 20);
     expect(inboundEmail.getOrCreateAddress).toHaveBeenCalledWith(7, 20);
@@ -142,8 +219,14 @@ describe("CaseFollowUpWorker", () => {
     expect(outbound.body).toContain("https://portal.example/c/raw-secret-token");
     expect(outbound.body).toContain("case-abc123@docs.example.com");
     expect(sender.sendMessage).toHaveBeenCalledWith(outbound);
+    expect(repository.markDispatchStarted).toHaveBeenCalledWith(
+      55,
+      expect.any(String),
+      new Date("2026-08-23T10:00:00.000Z")
+    );
     expect(repository.markAccepted).toHaveBeenCalledWith(
       55,
+      expect.any(String),
       "SM123",
       new Date("2026-08-23T10:00:01.000Z")
     );
@@ -171,6 +254,7 @@ describe("CaseFollowUpWorker", () => {
     });
     expect(deps.repository.markSkipped).toHaveBeenCalledWith(
       55,
+      expect.any(String),
       "NO_MISSING_REQUIREMENTS",
       expect.any(String)
     );
@@ -195,6 +279,7 @@ describe("CaseFollowUpWorker", () => {
     });
     expect(deps.repository.markFailed).toHaveBeenCalledWith(
       55,
+      expect.any(String),
       "TENANT_MISMATCH",
       expect.any(String)
     );
@@ -228,6 +313,7 @@ describe("CaseFollowUpWorker", () => {
     });
     expect(deps.repository.markFailed).toHaveBeenCalledWith(
       55,
+      expect.any(String),
       "INBOUND_EMAIL_UNAVAILABLE",
       expect.any(String)
     );
@@ -243,6 +329,7 @@ describe("CaseFollowUpWorker", () => {
     });
     expect(deps.repository.markFailed).toHaveBeenCalledWith(
       55,
+      expect.any(String),
       "TWILIO_REJECTED_21606",
       "Twilio rejected the SMS request"
     );
@@ -260,6 +347,7 @@ describe("CaseFollowUpWorker", () => {
     expect(deps.sender.sendMessage).toHaveBeenCalledTimes(1);
     expect(deps.repository.markFailed).toHaveBeenCalledWith(
       55,
+      expect.any(String),
       "PROVIDER_RESULT_UNKNOWN",
       "SMS submission outcome is unknown and will not be retried automatically"
     );
@@ -283,6 +371,7 @@ describe("CaseFollowUpWorker", () => {
     });
     expect(deps.repository.defer).toHaveBeenCalledWith(
       55,
+      expect.any(String),
       new Date("2026-08-23T12:00:00.000Z")
     );
     expect(deps.sender.sendMessage).not.toHaveBeenCalled();
@@ -299,6 +388,156 @@ describe("CaseFollowUpWorker", () => {
       code: "POLICY_SCHEDULE_CHANGED"
     });
     expect(deps.sender.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not contact the provider when lease ownership is lost before dispatch", async () => {
+    const deps = collaborators();
+    deps.repository.markDispatchStarted.mockResolvedValue(false);
+
+    await expect(deps.worker.process(55)).resolves.toEqual({ outcome: "not_claimed" });
+    expect(deps.sender.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps SMS below the voice escalation threshold", async () => {
+    const deps = voiceCollaborators(workItem({
+      firstSuccessfulFollowUpAt: new Date("2026-08-23T09:00:00.000Z")
+    }));
+    await deps.worker.process(55);
+    expect(deps.sender.sendMessage).toHaveBeenCalledTimes(1);
+    expect(deps.provider.calls).toHaveLength(0);
+    expect(deps.repository.selectDispatchPath).toHaveBeenCalledWith(55, expect.any(String), "sms", "twilio");
+  });
+
+  it("selects VOICE at X=1 and persists the complete internal lifecycle", async () => {
+    const deps = voiceCollaborators(workItem({
+      firstSuccessfulFollowUpAt: new Date("2026-08-22T10:00:00.000Z")
+    }));
+
+    const result = await deps.worker.process(55);
+    expect(result).toEqual({ outcome: "accepted", providerMessageId: expect.stringMatching(/^fake-/) });
+    expect(deps.sender.sendMessage).not.toHaveBeenCalled();
+    expect(deps.interactions.getOrCreate).toHaveBeenCalledWith(expect.objectContaining({
+      businessId: 7,
+      caseId: 20,
+      caseFollowUpId: 55,
+      idempotencyKey: "voice-case-follow-up-55"
+    }));
+    expect(deps.contextBuilder.build).toHaveBeenCalledWith({ businessId: 7, caseId: 20 });
+    expect(deps.provider.calls).toHaveLength(1);
+    expect(deps.interactions.markAcceptedWithFollowUp).toHaveBeenCalledWith(expect.objectContaining({
+      businessId: 7,
+      providerInteractionId: expect.stringMatching(/^fake-/)
+    }));
+    expect(deps.repository.selectDispatchPath).toHaveBeenCalledWith(55, expect.any(String), "voice", "fake");
+  });
+
+  it("uses a newer borrower interaction to reset voice escalation", async () => {
+    const deps = voiceCollaborators(workItem({
+      firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z"),
+      lastBorrowerInteractionAt: new Date("2026-08-23T09:00:00.000Z")
+    }));
+    await deps.worker.process(55);
+    expect(deps.sender.sendMessage).toHaveBeenCalledTimes(1);
+    expect(deps.provider.calls).toHaveLength(0);
+  });
+
+  it("falls back to SMS when voice is disabled", async () => {
+    const deps = voiceCollaborators(
+      workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") }),
+      { enabled: false }
+    );
+    await deps.worker.process(55);
+    expect(deps.sender.sendMessage).toHaveBeenCalledTimes(1);
+    expect(deps.provider.calls).toHaveLength(0);
+  });
+
+  it("falls back safely to SMS when voice provider configuration is incomplete", async () => {
+    const deps = voiceCollaborators(
+      workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") }),
+      { providerConfigured: false, outboundNumberId: null }
+    );
+    await deps.worker.process(55);
+    expect(deps.sender.sendMessage).toHaveBeenCalledTimes(1);
+    expect(deps.provider.calls).toHaveLength(0);
+  });
+
+  it("does not create a duplicate interaction or call when duplicate worker execution loses the claim", async () => {
+    const deps = voiceCollaborators(workItem({
+      firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z")
+    }));
+    deps.repository.claimPending
+      .mockResolvedValueOnce(workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") }))
+      .mockResolvedValueOnce(null);
+    await deps.worker.process(55);
+    await expect(deps.worker.process(55)).resolves.toEqual({ outcome: "not_claimed" });
+    expect(deps.interactions.getOrCreate).toHaveBeenCalledTimes(1);
+    expect(deps.provider.calls).toHaveLength(1);
+  });
+
+  it("records a definite voice provider failure", async () => {
+    const provider = {
+      provider: "fake",
+      startCall: vi.fn().mockRejectedValue(new VoiceProviderRejectedError("VOICE_REJECTED"))
+    };
+    const deps = voiceCollaborators(
+      workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") }),
+      {},
+      provider
+    );
+    await expect(deps.worker.process(55)).resolves.toEqual({ outcome: "failed", code: "VOICE_REJECTED" });
+    expect(deps.interactions.markFailed).toHaveBeenCalledWith(90, 7, "VOICE_REJECTED");
+  });
+
+  it("marks an ambiguous voice result UNKNOWN and never submits it again", async () => {
+    const provider = {
+      provider: "fake",
+      startCall: vi.fn().mockRejectedValue(new VoiceProviderOutcomeUnknownError())
+    };
+    const deps = voiceCollaborators(
+      workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") }),
+      {},
+      provider
+    );
+    await expect(deps.worker.process(55)).resolves.toEqual({ outcome: "failed", code: "PROVIDER_RESULT_UNKNOWN" });
+    expect(provider.startCall).toHaveBeenCalledTimes(1);
+    expect(deps.interactions.markUnknown).toHaveBeenCalledWith(90, 7, "PROVIDER_RESULT_UNKNOWN");
+  });
+
+  it("revalidates newly received documents immediately before voice dispatch", async () => {
+    const initial = workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") });
+    const deps = voiceCollaborators(initial);
+    deps.repository.reloadClaimed.mockResolvedValue(workItem({
+      firstSuccessfulFollowUpAt: initial.case.firstSuccessfulFollowUpAt,
+      documentStatus: "EXTRACTED"
+    }));
+
+    await expect(deps.worker.process(55)).resolves.toEqual({ outcome: "skipped", code: "NO_MISSING_REQUIREMENTS" });
+    expect(deps.provider.calls).toHaveLength(0);
+  });
+
+  it("uses the current recipient from the final lease-scoped reload", async () => {
+    const initial = workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") });
+    const deps = voiceCollaborators(initial);
+    deps.repository.reloadClaimed.mockResolvedValue(workItem({
+      firstSuccessfulFollowUpAt: initial.case.firstSuccessfulFollowUpAt,
+      clientPhoneNumber: "+972501111111"
+    }));
+
+    await deps.worker.process(55);
+    expect(deps.provider.calls[0].recipient).toBe("+972501111111");
+  });
+
+  it("falls back to SMS when a fresh borrower interaction resets escalation before dispatch", async () => {
+    const initial = workItem({ firstSuccessfulFollowUpAt: new Date("2026-08-20T10:00:00.000Z") });
+    const deps = voiceCollaborators(initial);
+    deps.repository.reloadClaimed.mockResolvedValue(workItem({
+      firstSuccessfulFollowUpAt: initial.case.firstSuccessfulFollowUpAt,
+      lastBorrowerInteractionAt: new Date("2026-08-23T09:59:00.000Z")
+    }));
+
+    await deps.worker.process(55);
+    expect(deps.provider.calls).toHaveLength(0);
+    expect(deps.sender.sendMessage).toHaveBeenCalledTimes(1);
   });
 
 });

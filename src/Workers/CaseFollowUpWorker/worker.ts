@@ -17,23 +17,30 @@ import {
   getBullMqPrefix
 } from "../../QueueClient/queueNames";
 import { logger } from "../../logging/logger";
+import { createVoiceRuntime } from "../../Voice/VoiceRuntime";
+import { ElevenLabsVoiceCallProvider } from "../../Voice/Providers/ElevenLabs/ElevenLabsVoiceCallProvider";
 
 const workerLogger = logger.child({
   component: "CaseFollowUpWorkerEntrypoint",
   queueName: CASE_FOLLOW_UP_QUEUE_NAME
 });
 const sql = new SqlManager(workerLogger.child({ component: "SqlManager" }));
+const portalAccess = new PortalAccessService(sql.casePortalAccessRepository);
+const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY?.trim();
+if (!elevenLabsApiKey) throw new Error("ELEVENLABS_API_KEY is required for the case follow-up worker");
 const processor = new CaseFollowUpWorker(
   sql.caseFollowUpRepository,
   sql.businessChannelRepository,
-  new PortalAccessService(sql.casePortalAccessRepository),
+  portalAccess,
   new CaseInboundEmailService(sql.inboundEmailRepository, inboundEmailDomainFromEnv()),
   new TwilioMessageSender({
     logger: workerLogger.child({ component: "TwilioMessageSender" })
   }),
   new CaseMissingRequirementResolver(),
   new CaseFollowUpMessageBuilder(),
-  workerLogger.child({ component: "CaseFollowUpWorker" })
+  workerLogger.child({ component: "CaseFollowUpWorker" }),
+  () => new Date(),
+  createVoiceRuntime(sql, portalAccess, new ElevenLabsVoiceCallProvider({ apiKey: elevenLabsApiKey }))
 );
 
 const worker = new Worker<CaseFollowUpJobData>(

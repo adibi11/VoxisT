@@ -90,6 +90,7 @@ model Business {
   documentTypes          DocumentType[]
   documentBundles        DocumentBundle[]
   caseFollowUps          CaseFollowUp[]
+  voiceInteractions      VoiceInteraction[]
   inboundEmailReceipts   InboundEmailReceipt[]
 }
 
@@ -296,6 +297,8 @@ model BusinessFollowUpPolicy {
   messageTemplate             String?
   caseDocumentFollowUpEnabled Boolean  @default(false)
   caseDocumentFollowUpHour    Int?
+  caseDocumentVoiceEnabled       Boolean  @default(false)
+  caseDocumentVoiceThresholdDays Int?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
   business                    Business @relation(fields: [businessId], references: [id])
@@ -378,6 +381,7 @@ model Case {
   completedAt       DateTime?
   archivedAt        DateTime?
   inboundEmailToken String?    @unique
+  lastBorrowerInteractionAt DateTime?
 
   business               Business                    @relation(fields: [businessId], references: [id])
   lead                   Lead                        @relation(fields: [leadId], references: [id])
@@ -387,6 +391,7 @@ model Case {
   comments               CaseComment[]
   portalAccesses         CasePortalAccess[]
   followUps              CaseFollowUp[]
+  voiceInteractions      VoiceInteraction[]
   inboundEmailReceipts   InboundEmailReceipt[]
 
   // The service layer must ensure the lead and assignee belong to businessId.
@@ -418,6 +423,11 @@ model CaseFollowUp {
   status            CaseFollowUpStatus @default(PENDING)
   scheduledFor      DateTime
   attemptCount      Int                @default(0)
+  processingLeaseId String?
+  leaseExpiresAt    DateTime?
+  dispatchStartedAt DateTime?
+  dispatchChannel   String?
+  dispatchProvider  String?
   providerMessageId String?
   acceptedAt        DateTime?
   failureCode       String?
@@ -426,11 +436,38 @@ model CaseFollowUp {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
-  business Business @relation(fields: [businessId], references: [id])
-  case     Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  business         Business          @relation(fields: [businessId], references: [id])
+  case             Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  voiceInteraction VoiceInteraction?
 
   @@unique([caseId, cadenceKey])
   @@index([businessId, status, scheduledFor])
+  @@index([status, leaseExpiresAt])
+  @@index([caseId, createdAt])
+}
+
+model VoiceInteraction {
+  id                    Int                    @id @default(autoincrement())
+  businessId            Int
+  caseId                Int
+  caseFollowUpId        Int                    @unique
+  provider              String
+  providerInteractionId String?
+  idempotencyKey        String                 @unique
+  status                VoiceInteractionStatus @default(PENDING)
+  providerStatus        String?
+  outboundNumberId      String
+  agentId               String
+  failureCode           String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  business     Business     @relation(fields: [businessId], references: [id])
+  case         Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  caseFollowUp CaseFollowUp @relation(fields: [caseFollowUpId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerInteractionId])
+  @@index([businessId, status, createdAt])
   @@index([caseId, createdAt])
 }
 
@@ -1220,6 +1257,14 @@ enum CaseFollowUpStatus {
   ACCEPTED
   FAILED
   SKIPPED
+}
+
+enum VoiceInteractionStatus {
+  PENDING
+  SUBMITTING
+  ACCEPTED
+  FAILED
+  UNKNOWN
 }
 
 enum DocumentStatus {

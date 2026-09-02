@@ -1,5 +1,10 @@
 import express from "express";
-import { AdminCreateBusinessRequestDto, SmsSettingsDto, UpdateSmsSettingsRequestDto } from "../../contracts";
+import {
+  AdminCreateBusinessRequestDto,
+  SmsSettingsDto,
+  UpdateSmsSettingsRequestDto,
+  UpdateVoiceSettingsRequestDto
+} from "../../contracts";
 import { IDatabaseClient } from "../../dataClients/SqlClient/sqlInterface";
 import { ILogger } from "../../logging/logger";
 import {
@@ -18,6 +23,8 @@ import {
 export function getBusinessRoutes(app: express.Router, sql: IDatabaseClient, logger: ILogger): void {
   app.get("/businesses/:businessId/sms-settings", requireAuth, createGetSmsSettingsHandler(sql, logger));
   app.put("/businesses/:businessId/sms-settings", requireAuth, createUpdateSmsSettingsHandler(sql, logger));
+  app.get("/businesses/:businessId/voice-settings", requireAuth, createGetVoiceSettingsHandler(sql, logger));
+  app.put("/businesses/:businessId/voice-settings", requireAuth, createUpdateVoiceSettingsHandler(sql, logger));
 
   app.post("/admin/businesses", requireAuth, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
@@ -69,6 +76,42 @@ export function getBusinessRoutes(app: express.Router, sql: IDatabaseClient, log
       return res.status(500).json({ message: "Failed to fetch business members" });
     }
   });
+}
+
+export function createGetVoiceSettingsHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = positiveBusinessId(req.params.businessId);
+    if (!businessId) return res.status(400).json({ message: "Invalid businessId" });
+    if (!requireBusinessOwner(authReq, res, businessId)) return;
+    try {
+      const settings = await sql.voiceConfigurationRepository.get(businessId);
+      return res.status(200).json(settings);
+    } catch (error) {
+      logger.error("business.voice_settings.fetch.failed", { businessId, error });
+      return res.status(500).json({ message: "Failed to fetch voice settings" });
+    }
+  };
+}
+
+export function createUpdateVoiceSettingsHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
+  return async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = positiveBusinessId(req.params.businessId);
+    if (!businessId) return res.status(400).json({ message: "Invalid businessId" });
+    if (!requirePlatformAdmin(authReq, res)) return;
+    const request = req.body as Partial<UpdateVoiceSettingsRequestDto> | undefined;
+    if (!isValidVoiceSettingsRequest(request)) {
+      return res.status(400).json({ message: "Invalid voice settings request" });
+    }
+    try {
+      const settings = await sql.voiceConfigurationRepository.update(businessId, request);
+      return res.status(200).json(settings);
+    } catch (error) {
+      logger.error("business.voice_settings.update.failed", { businessId, error });
+      return res.status(500).json({ message: "Failed to update voice settings" });
+    }
+  };
 }
 
 export function createGetSmsSettingsHandler(sql: IDatabaseClient, logger: ILogger): express.RequestHandler {
@@ -149,6 +192,19 @@ export function isValidSmsSettingsRequest(
   const senderId = request.senderId?.trim() || null;
   if (request.enabled && !senderId) return false;
   return senderId === null || /^[A-Za-z][A-Za-z0-9]{2,10}$/.test(senderId);
+}
+
+export function isValidVoiceSettingsRequest(
+  request: Partial<UpdateVoiceSettingsRequestDto> | undefined
+): request is UpdateVoiceSettingsRequestDto {
+  if (!request || typeof request.enabled !== "boolean" || typeof request.providerEnabled !== "boolean") return false;
+  if (request.provider !== "elevenlabs") return false;
+  if (request.thresholdDays !== null && (!Number.isInteger(request.thresholdDays) || request.thresholdDays! < 1)) return false;
+  if (request.enabled && request.thresholdDays === null) return false;
+  if (request.outboundNumberId !== null && typeof request.outboundNumberId !== "string") return false;
+  if (request.agentId !== null && typeof request.agentId !== "string") return false;
+  if (request.providerEnabled && (!request.outboundNumberId?.trim() || !request.agentId?.trim())) return false;
+  return true;
 }
 
 function positiveBusinessId(value: unknown): number | null {

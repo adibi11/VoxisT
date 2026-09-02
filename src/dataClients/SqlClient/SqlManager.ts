@@ -24,19 +24,15 @@ import { DocumentRepository } from "./Repositories/DocumentRepo/DocumentReposito
 import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
 import { InboundEmailRepository } from "./Repositories/InboundEmailRepo/InboundEmailRepository";
 import { IInboundEmailRepository } from "./Repositories/InboundEmailRepo/IInboundEmailRepository";
-import { IngestionOutboxRepository } from "./Repositories/IngestionOutboxRepo/IngestionOutboxRepository";
-import { IIngestionOutboxRepository } from "./Repositories/IngestionOutboxRepo/IIngestionOutboxRepository";
 import { IntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IntegrationConnectionRepository";
 import { IIntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IIntegrationConnectionRepository";
-import { LeadIngestionRepository } from "./Repositories/LeadIngestionRepo/LeadIngestionRepository";
-import { ILeadIngestionRepository } from "./Repositories/LeadIngestionRepo/ILeadIngestionRepository";
-import { LeadProcessingRepository } from "./Repositories/LeadProcessingRepo/LeadProcessingRepository";
-import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
 import { LeadRepository } from "./Repositories/LeadRepo/LeadRepository";
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { SchemaRepository } from "./Repositories/SchemaRepo/SchemaRepository";
 import { ISchemaRepository } from "./Repositories/SchemaRepo/ISchemaRepository";
 import { IDatabaseClient } from "./sqlInterface";
+import { VoiceConfigurationRepository } from "../../Voice/State/VoiceConfigurationRepository";
+import { VoiceInteractionRepository } from "../../Voice/State/VoiceInteractionRepository";
 
 export const prisma = new PrismaClient();
 
@@ -48,9 +44,6 @@ export class SqlManager implements IDatabaseClient {
   readonly leadRepository: ILeadRepository;
   readonly businessChannelRepository: IBusinessChannelRepository;
   readonly integrationConnectionRepository: IIntegrationConnectionRepository;
-  readonly ingestionOutboxRepository: IIngestionOutboxRepository;
-  readonly leadIngestionRepository: ILeadIngestionRepository;
-  readonly leadProcessingRepository: ILeadProcessingRepository;
   readonly schemaRepository: ISchemaRepository;
   readonly caseRepository: ICaseRepository;
   readonly casePortalAccessRepository: ICasePortalAccessRepository;
@@ -58,6 +51,8 @@ export class SqlManager implements IDatabaseClient {
   readonly documentBundleRepository: IDocumentBundleRepository;
   readonly documentRepository: IDocumentRepository;
   readonly inboundEmailRepository: IInboundEmailRepository;
+  readonly voiceConfigurationRepository: VoiceConfigurationRepository;
+  readonly voiceInteractionRepository: VoiceInteractionRepository;
 
   constructor(
     private readonly sqlLogger: ILogger = logger.child({ component: "SqlManager" }),
@@ -66,9 +61,6 @@ export class SqlManager implements IDatabaseClient {
     this.leadRepository = new LeadRepository(client);
     this.businessChannelRepository = new BusinessChannelRepository(client);
     this.integrationConnectionRepository = new IntegrationConnectionRepository(client);
-    this.ingestionOutboxRepository = new IngestionOutboxRepository(client);
-    this.leadIngestionRepository = new LeadIngestionRepository(client);
-    this.leadProcessingRepository = new LeadProcessingRepository(client);
     this.schemaRepository = new SchemaRepository(client);
     this.caseRepository = new CaseRepository(client);
     this.casePortalAccessRepository = new CasePortalAccessRepository(client);
@@ -76,6 +68,8 @@ export class SqlManager implements IDatabaseClient {
     this.documentBundleRepository = new DocumentBundleRepository(client);
     this.documentRepository = new DocumentRepository(client);
     this.inboundEmailRepository = new InboundEmailRepository(client);
+    this.voiceConfigurationRepository = new VoiceConfigurationRepository(client);
+    this.voiceInteractionRepository = new VoiceInteractionRepository(client);
   }
 
   getPrismaClient(): PrismaClient {

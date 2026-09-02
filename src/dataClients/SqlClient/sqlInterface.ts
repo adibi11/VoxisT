@@ -8,6 +8,7 @@ import {
   PlatformRoleDto
 } from "../../contracts";
 import { BusinessDto } from "../Types/apiTypes";
+import { PrismaClient } from "../../generated/prisma/client";
 import { IBusinessChannelRepository } from "./Repositories/BusinessChannelRepo/IBusinessChannelRepository";
 import { ICaseFollowUpRepository } from "./Repositories/CaseFollowUpRepo/ICaseFollowUpRepository";
 import { ICasePortalAccessRepository } from "./Repositories/CasePortalAccessRepo/ICasePortalAccessRepository";
@@ -15,20 +16,16 @@ import { ICaseRepository } from "./Repositories/CaseRepo/ICaseRepository";
 import { IDocumentBundleRepository } from "./Repositories/DocumentBundleRepo/IDocumentBundleRepository";
 import { IDocumentRepository } from "./Repositories/DocumentRepo/IDocumentRepository";
 import { IInboundEmailRepository } from "./Repositories/InboundEmailRepo/IInboundEmailRepository";
-import { IIngestionOutboxRepository } from "./Repositories/IngestionOutboxRepo/IIngestionOutboxRepository";
 import { IIntegrationConnectionRepository } from "./Repositories/IntegrationConnectionRepo/IIntegrationConnectionRepository";
-import { ILeadIngestionRepository } from "./Repositories/LeadIngestionRepo/ILeadIngestionRepository";
-import { ILeadProcessingRepository } from "./Repositories/LeadProcessingRepo/ILeadProcessingRepository";
 import { ILeadRepository } from "./Repositories/LeadRepo/ILeadRepository";
 import { ISchemaRepository } from "./Repositories/SchemaRepo/ISchemaRepository";
+import { IVoiceConfigurationRepository } from "../../Voice/State/VoiceConfigurationRepository";
+import { VoiceInteractionRepository } from "../../Voice/State/VoiceInteractionRepository";
 
 export interface IDatabaseClient {
   readonly leadRepository: ILeadRepository;
   readonly businessChannelRepository: IBusinessChannelRepository;
   readonly integrationConnectionRepository: IIntegrationConnectionRepository;
-  readonly ingestionOutboxRepository: IIngestionOutboxRepository;
-  readonly leadIngestionRepository: ILeadIngestionRepository;
-  readonly leadProcessingRepository: ILeadProcessingRepository;
   readonly schemaRepository: ISchemaRepository;
   readonly caseRepository: ICaseRepository;
   readonly casePortalAccessRepository: ICasePortalAccessRepository;
@@ -36,6 +33,10 @@ export interface IDatabaseClient {
   readonly documentBundleRepository: IDocumentBundleRepository;
   readonly documentRepository: IDocumentRepository;
   readonly inboundEmailRepository: IInboundEmailRepository;
+  readonly voiceConfigurationRepository: IVoiceConfigurationRepository;
+  readonly voiceInteractionRepository: VoiceInteractionRepository;
+
+  getPrismaClient(): PrismaClient;
 
   getBusiness(businessId: number): Promise<BusinessDto | null>;
   registerBusinessOwner(
