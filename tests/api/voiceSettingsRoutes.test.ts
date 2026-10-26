@@ -73,13 +73,13 @@ describe("voice settings routes", () => {
     expect(repository.update).not.toHaveBeenCalled();
   });
 
-  it("enforces Business ownership before reading voice configuration", async () => {
+  it("keeps provider IDs platform-admin-only when reading voice configuration", async () => {
     const repository = { get: vi.fn() };
     const res = response();
     await createGetVoiceSettingsHandler(
       { voiceConfigurationRepository: repository } as any,
       new NullLogger()
-    )(request(8, undefined, [7], "user"), res, vi.fn());
+    )(request(7, undefined, [7], "user"), res, vi.fn());
     expect(res.statusCode).toBe(403);
     expect(repository.get).not.toHaveBeenCalled();
   });

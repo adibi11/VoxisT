@@ -83,7 +83,7 @@ export function createGetVoiceSettingsHandler(sql: IDatabaseClient, logger: ILog
     const authReq = req as AuthenticatedRequest;
     const businessId = positiveBusinessId(req.params.businessId);
     if (!businessId) return res.status(400).json({ message: "Invalid businessId" });
-    if (!requireBusinessOwner(authReq, res, businessId)) return;
+    if (!requirePlatformAdmin(authReq, res)) return;
     try {
       const settings = await sql.voiceConfigurationRepository.get(businessId);
       return res.status(200).json(settings);
